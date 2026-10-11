@@ -95,7 +95,14 @@ ticked in `.ralph/IMPLEMENTATION_PLAN.md`.
   never errors. It handles CRLF, `core.commentChar`, scissors, merge/revert/
   autosquash forms and the `BREAKING CHANGE` footer, and reports rune-accurate
   columns for linter diagnostics. `FuzzParse` is seeded from
-  `assets/testdata/commits`; a 45s run did 26M execs with no panics.
+  `assets/testdata/commits`; runs total ~38M execs with no panics.
+- *Linter (plan 1.2).* All nine spec 08 §2 rules, each with severity, a column
+  pointing at the offending text, and fix text. `commits.Settings` mirrors
+  `.flow.yaml` rather than importing `config`, keeping the package stdlib-only.
+  The corpus is rewritten to v2 rule ids with decisions recorded in spec 08;
+  `# expect:` sets are matched **exactly**, so an unexpected violation fails the
+  build, and `TestCorpusCoversEveryRule` fails if a rule has no sample.
+
 
 **What currently verifies.** The spec's Verify command cannot pass until
 `doctor` exists. Today's equivalent, all green:
@@ -124,15 +131,18 @@ above, and its three unticked acceptance criteria track exactly that.
 4. Approve installing `gh` (Homebrew) so the agent can seed issues and drive the
    Project. Until then `bootstrap/seed-issues.sh` cannot run.
 
-**Single best next step:** plan item 1.2 — the linter rules in
-`internal/commits` (spec 08 §2), implementing every `cc.*` rule id with
-severity, message, column and fix text. It must also rewrite
-`assets/testdata/commits/{valid,invalid}.txt` to v2 rule ids **in the same
-commit** and record a Decision in spec 08: the seeds still expect the retired
-`cc.footer.*`, `cc.trailer.*`, `cc.body.wrap` and `cc.description.imperative`
-rules, and carry `Refs:`/`Flag-Added:`/`Migration:` footers from the earlier,
-wider design. `TestCorpusInvalidSamplesMatchHeaderFormat` already pins which
-samples must fail the grammar, so keep it passing through the rewrite. Then 1.3
-(`check commit` + safe autofix) gives the first genuinely implemented command.
+**Single best next step:** plan item 1.3 — safe autofixes plus the `flow check
+commit` command (spec 08 §3, spec 02 §2). The fixes are exactly four and nothing
+else is ever rewritten: lowercase the type, trim header whitespace, insert the
+missing blank line after the header, strip a trailing full stop. They must be
+idempotent, which is worth a test that applies them twice. The command reads a
+message file or `-`, exits 1 on errors, supports `--fix` in place and `--json`.
+It needs a `commits.Settings` from somewhere: `internal/config` is plan item 1.4
+and does not exist yet, so either do 1.4 first or have `check commit` fall back
+to built-in defaults and wire config in at 1.4 — prefer doing 1.4 first, since
+1.3's AC mentions CLI exit codes and the command will want real config. Either
+way this yields flow's first genuinely implemented command, replacing an
+`ErrUnsupported` stub.
+
 
 
