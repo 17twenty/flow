@@ -371,6 +371,31 @@ func (t *FakeTracker) Comment(ctx context.Context, key string, m core.Marker, bo
 	return nil
 }
 
+// Close closes a ticket, recording why.
+func (t *FakeTracker) Close(ctx context.Context, key string, reason string) error {
+	if err := t.enter(ctx, "Close"); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	at := t.indexOf(key)
+	if at < 0 {
+		return notFound("ticket", key)
+	}
+	if t.tickets[at].Closed {
+		return nil
+	}
+	if reason == "" {
+		reason = core.ClosedCompleted
+	}
+	now := t.clock.Now()
+	t.tickets[at].Closed = true
+	t.tickets[at].CloseReason = reason
+	t.tickets[at].ClosedAt = now
+	t.tickets[at].UpdatedAt = now
+	return nil
+}
+
 // Reopen reopens a closed ticket, recording why.
 func (t *FakeTracker) Reopen(ctx context.Context, key string, reason string) error {
 	if err := t.enter(ctx, "Reopen"); err != nil {

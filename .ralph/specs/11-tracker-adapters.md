@@ -104,3 +104,13 @@ reopen, pagination, error mapping.
   done_merged` in spec 07 §6 exempts work closed as not planned. Both are
   facts about the ticket, so they belong on it: `Size` is zero when the
   tracker has no such field, and `CloseReason` is empty when it does not say.
+- **§1 `core.Tracker` gains `Close` (item 2.10).** Spec 07 §4's lifecycle ends
+  "verified: comment + close", and the interface had only the inverse,
+  `Reopen`. Moving the ticket to the Done column is not the same thing — a
+  follow-up about repository protection need not be on the board at all, and a
+  tracker's "closed" is a property of the issue rather than of a view. `Close`
+  takes a close reason, because spec 07 §6 already distinguishes `completed`
+  from `not_planned` and the two ends of the lifecycle mean different things.
+  It is idempotent: doctor runs daily, and the second run must not move the
+  date the work was finished. Added now rather than later because the fake is
+  still the only implementation.

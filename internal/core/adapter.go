@@ -104,6 +104,10 @@ type Tracker interface {
 	FindFollowUp(ctx context.Context, m Marker) (*Ticket, error)
 	// Comment writes a marked comment on a ticket.
 	Comment(ctx context.Context, key string, m Marker, body string) error
+	// Close closes a ticket, recording why, with one of the close reasons the
+	// tracker distinguishes. It is idempotent: closing a closed ticket does
+	// nothing. Flow closes only tickets it opened (spec 07 §4).
+	Close(ctx context.Context, key string, reason string) error
 	// Reopen reopens a closed ticket, recording why.
 	Reopen(ctx context.Context, key string, reason string) error
 

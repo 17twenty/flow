@@ -100,6 +100,11 @@ type FollowUp struct {
 	Owner string `yaml:"owner,omitempty"`
 	// OpenedAt is when flow filed it.
 	OpenedAt time.Time `yaml:"opened_at"`
+	// NudgedAt is when flow last commented to say it is still outstanding,
+	// zero when it never has. It is what rations the nudge to one a week: the
+	// ticket's own comment is edited in place, so the tracker cannot be asked
+	// how long ago that was without reading every comment back (spec 07 §4).
+	NudgedAt time.Time `yaml:"nudged_at,omitempty"`
 	// State is open or closed.
 	State string `yaml:"state"`
 }
@@ -188,6 +193,7 @@ func (l *Lock) Normalise() {
 	}
 	for i := range l.FollowUps {
 		l.FollowUps[i].OpenedAt = l.FollowUps[i].OpenedAt.UTC().Truncate(time.Second)
+		l.FollowUps[i].NudgedAt = l.FollowUps[i].NudgedAt.UTC().Truncate(time.Second)
 	}
 	for i := range l.Attestations {
 		l.Attestations[i].At = l.Attestations[i].At.UTC().Truncate(time.Second)
@@ -391,6 +397,7 @@ func (l *Lock) node() *yaml.Node {
 				"ticket", scalar("!!str", f.Ticket),
 				"owner", scalar("!!str", f.Owner),
 				"opened_at", timestamp(f.OpenedAt),
+				"nudged_at", optionalTimestamp(f.NudgedAt),
 				"state", scalar("!!str", f.State),
 			))
 		}
@@ -433,6 +440,15 @@ func scalar(tag, value string) *yaml.Node {
 // timestamp renders a moment as RFC3339 in UTC, to the second.
 func timestamp(t time.Time) *yaml.Node {
 	return scalar("!!timestamp", t.UTC().Truncate(time.Second).Format(time.RFC3339))
+}
+
+// optionalTimestamp renders a moment, or an empty scalar that [record] drops,
+// so that a follow-up nobody has had to chase yet carries no key at all.
+func optionalTimestamp(t time.Time) *yaml.Node {
+	if t.IsZero() {
+		return scalar("!!str", "")
+	}
+	return timestamp(t)
 }
 
 // blockMap builds an empty mapping written one key per line.

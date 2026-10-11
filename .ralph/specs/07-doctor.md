@@ -234,3 +234,56 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   has decided yet, which is a question for a human and exit 2. A provider that
   could not be asked at all is `error`: that is a fault to report, not a
   decision to make.
+- **§4 the marker is asked before the lock is believed (item 2.10).** Every
+  round starts with `FindFollowUp`, whatever the lock says. A lock that lost
+  its record — a bad merge, a fresh clone of a branch that never had it — must
+  not cause a second ticket for the same thing, and a lock that claims a ticket
+  somebody deleted must not stop flow filing a real one. The lock is the thing
+  most likely to be wrong, so it is the thing that gets corrected.
+- **§4 a ticket found without a record is adopted silently (item 2.10).** It is
+  written into the lock and not chased, because flow does not know how long it
+  has really been outstanding; the nudge clock starts at the adoption. Chasing
+  on sight would mean a comment on every fresh clone.
+- **§4 the nudge is one comment, edited (item 2.10).** Six weeks of chasing is
+  one comment that says "42d", not six comments. Because the comment is edited
+  in place, the tracker cannot say when flow last chased without reading every
+  comment back, so the lock records it: `followups[].nudged_at`, absent until
+  there has been one. A key whose value is the zero time is a line in a
+  reviewed file that says nothing.
+- **§4 an open follow-up makes the check `external`, not `fail` (item 2.10).**
+  The work is on somebody's plate with their name on it and a ticket to watch,
+  which is a different fact from "broken" and is not something the person
+  running doctor can act on. Reporting it as a failure every morning for a year
+  is what makes people stop reading the report. It still does not satisfy, so
+  it still costs the run its clean exit.
+- **§4 "no longer required" is not "verified" (item 2.10).** Both end in a
+  comment and a close, but a check that now holds closes as `completed` with
+  what flow saw, and a check that stopped wanting a ticket — flow can do it
+  itself now, or the configuration stopped asking — closes as `not_planned`
+  saying which. Closing the second as completed would record work as done that
+  nobody did.
+- **§4 a follow-up closed without the work being done is reopened, with
+  evidence (item 2.10).** This is the whole value of verifying rather than
+  trusting the ticket: a closed follow-up nobody acted on is how a workflow
+  quietly stops being true. The comment says what flow still sees and says how
+  to stop being asked — change the configuration — because otherwise the reopen
+  reads as flow arguing with a human.
+- **§4 flow does not take a ticket back off whoever picked it up (item 2.10).**
+  The assignee on the ticket wins over the owner the configuration routes to.
+  Somebody reassigned it because they knew better than the configuration did,
+  and re-assigning every morning would be a daily argument. The lock follows
+  the ticket.
+- **§4 an unfilled owner role falls back to the default, and an unfilled
+  default is nobody (item 2.10).** Assigning a ticket to the literal string
+  `${pending:owners.platform}` would be rejected by every real tracker; an
+  unassigned ticket with the right label, in the right tracker, is still
+  useful. Owners are resolved from the configuration first and from what
+  doctor resolved into the lock second, which is what makes
+  `--set followups.owners.platform=@sre` take effect.
+- **§4 failing to file is not reported in place of what it was about (item
+  2.10).** A tracker that will not answer leaves the check's own finding
+  intact and carries the reason separately. Being unable to open a ticket
+  about a problem is not a second problem to report instead of the first.
+- **§4 a lock record for a follow-up nobody wants and nothing holds is dropped
+  (item 2.10).** The lock is a statement of what is true, not a changelog of
+  every ticket flow ever filed.

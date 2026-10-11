@@ -382,6 +382,41 @@ func TrackerContract(t *testing.T, newTracker NewTracker) {
 		}
 	})
 
+	t.Run("a ticket is closed, and closing it again is no work", func(t *testing.T) {
+		tracker := newTracker(t, ContractTracker())
+		if err := tracker.Close(t.Context(), "#13", core.ClosedCompleted); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		closed, err := tracker.Ticket(t.Context(), "#13")
+		if err != nil {
+			t.Fatalf("Ticket after Close: %v", err)
+		}
+		if !closed.Closed {
+			t.Fatal("the ticket is still open after being closed")
+		}
+		if closed.CloseReason != core.ClosedCompleted {
+			t.Errorf("close reason = %q, want %q", closed.CloseReason, core.ClosedCompleted)
+		}
+		if closed.ClosedAt.IsZero() {
+			t.Error("a closed ticket has no closed-at time")
+		}
+		// Idempotent: doctor runs daily, and the second run must not move the
+		// moment the work was finished.
+		if err := tracker.Close(t.Context(), "#13", core.ClosedCompleted); err != nil {
+			t.Fatalf("Close again: %v", err)
+		}
+		again, err := tracker.Ticket(t.Context(), "#13")
+		if err != nil {
+			t.Fatalf("Ticket after the second Close: %v", err)
+		}
+		if !again.ClosedAt.Equal(closed.ClosedAt) {
+			t.Errorf("closed at %v then %v: closing a closed ticket moved the date", closed.ClosedAt, again.ClosedAt)
+		}
+		if err := tracker.Close(t.Context(), "#4040", core.ClosedCompleted); !errors.Is(err, core.ErrNotFound) {
+			t.Errorf("closing a ticket that is not there = %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("a closed ticket is reopened", func(t *testing.T) {
 		tracker := newTracker(t, ContractTracker())
 		before, err := tracker.Ticket(t.Context(), "#11")
