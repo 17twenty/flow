@@ -129,7 +129,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 3 — GitHub forge and GitHub Projects tracker
 
-- [ ] 3.1 GitHub: repo, PRs, reviews, commits, compare — specs: 10 §2 — deps: 2.16, 2.3 (#45)
+- [x] 3.1 GitHub: repo, PRs, reviews, commits, compare — specs: 10 §2 — deps: 2.16, 2.3 (#45)
+  - note: internal/forge/{github,github_wire}.go. The read half of the forge contract now passes against GitHub's own REST shapes, served by a fake that paginates and answers conditional requests — the two things an in-memory fake can never exercise. The contract suite became addressable case by case (`ForgeContractSubset`) so that an adapter can be held to the part of it that has landed. The methods of 3.2–3.7 refuse with ErrUnsupported and name what they wanted.
   - AC: pagination via Link; conditional requests; contract suite subset passes
 - [ ] 3.2 GitHub: commit statuses and marker comments — specs: 10 §2, 09 §2 — deps: 3.1, 2.15 (#46)
   - AC: status idempotency; comment upsert/delete by marker

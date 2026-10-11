@@ -78,3 +78,18 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   `go-version-file: go.mod`, so the runner and every developer follow. This is
   what "latest stable" in AGENTS.md means in practice — a deliberate edit to
   `go.mod` when a gate says so, never an ambient drift.
+- **A contract suite is addressable case by case (item 3.1).** An adapter lands
+  a few methods at a time, and a suite that can only be run whole cannot be run
+  at all until the last plan item — which is exactly when its pressure is worth
+  least. `coretest.ForgeContractCases` therefore names every case, and
+  `ForgeContractSubset` runs the ones an adapter already claims. Naming a case
+  that does not exist fails the test rather than passing quietly, so a renamed
+  case cannot shrink a subset to nothing unnoticed, and the methods still to
+  come refuse with `ErrUnsupported` rather than returning a plausible zero.
+- **A real adapter is tested against the provider's own wire shapes (item
+  3.1).** `internal/forge`'s fake serves GitHub's documented JSON over the same
+  `coretest.ForgeFixture` the in-memory fake is built from, so both answer the
+  same questions about the same repository. It paginates, it answers
+  conditional requests with 304, it records the escaped path, and it refuses a
+  request that does not pin the API version — the things an in-memory fake can
+  never exercise and a live test must never be needed for.
