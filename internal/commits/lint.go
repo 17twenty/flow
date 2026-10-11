@@ -95,6 +95,20 @@ const (
 // DefaultHeaderMax is the header limit used when Settings leaves it at zero.
 const DefaultHeaderMax = 72
 
+// DefaultTypes is the commit type list spec 03 §1 ships as the default. It is
+// repeated here, rather than imported, because this package must not depend on
+// internal/config (spec 01 §2); config overrides it from .flow.yaml.
+func DefaultTypes() []string {
+	return []string{"feat", "fix", "perf", "refactor", "test", "docs", "build",
+		"ci", "chore", "revert", "style"}
+}
+
+// DefaultSettings returns the configuration spec 03 §1 defaults to, for callers
+// that have no .flow.yaml to read.
+func DefaultSettings() Settings {
+	return Settings{Types: DefaultTypes(), HeaderMax: DefaultHeaderMax}
+}
+
 // Settings mirrors the commits.* section of .flow.yaml. This package never
 // reads configuration files: internal/config maps into this struct, keeping
 // commits dependent on the standard library alone (spec 01 §2).

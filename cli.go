@@ -79,6 +79,9 @@ type Context struct {
 	Ctx context.Context
 	// CLI holds the parsed global flags.
 	CLI *CLI
+	// Stdin is the message source for commands that read one, such as
+	// check commit with no file argument.
+	Stdin io.Reader
 	// Stdout receives human and JSON output.
 	Stdout io.Writer
 	// Stderr receives logs and error explanations.

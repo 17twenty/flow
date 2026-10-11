@@ -40,7 +40,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - note: all 9 rules; corpus rewritten to v2 ids, decisions in spec 08
   - AC: every v2 rule id implemented with column + fix text
   - AC: seed files rewritten to v2 rule ids; valid.txt → zero errors; invalid.txt → exact expected sets
-- [ ] 1.3 Safe autofix and `flow check commit` — specs: 08 §3, 02 §2 — deps: 1.2 (#16)
+- [x] 1.3 Safe autofix and `flow check commit` — specs: 08 §3, 02 §2 — deps: 1.2 (#16)  
+  - note: commits/fix.go + cmd_check.go; FuzzFix clean over 171M execs. Settings are spec 03 defaults until config lands in 1.4.
   - AC: idempotent fixes; CLI exit codes; --json output
 - [ ] 1.4 Config types with strict YAML decoding — specs: 03 §1 — deps: 0.2 (#17)
   - AC: unknown keys error with line:col; durations with d/w

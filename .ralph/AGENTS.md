@@ -38,3 +38,7 @@ CURRENT MODE: direct
 - `internal/commits` must not import `internal/config` (spec 01 §2). Config maps into `commits.Settings` instead.
 - Unpinned analysers break CI with no repo change: `staticcheck@latest` cannot read Go 1.27 export data, so `go-version: stable` turned every push red. Pin the toolchain to `go.mod` and the analyser to a version.
 - Verify CI from the API after pushing — a green local tree proves nothing about the runner's Go version.
+- Fuzz every rewriter for idempotence, not just for panics: `FuzzFix` found two real bugs in minutes that table tests missed.
+- A commit-message rewriter must never change which lines git treats as comments or scissors — trimming `" #x"` to `"#x"` deletes the line.
+- Mixing whitespace definitions (`TrimRight` cutset vs `unicode.IsSpace`) breaks idempotence. Pick one per concern.
+- `run()` takes stdin as a parameter so commands reading `-` stay testable in-process.

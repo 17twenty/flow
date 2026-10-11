@@ -22,7 +22,7 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // exitPanic unwinds kong's internal os.Exit calls (help, parse errors) so that
@@ -30,7 +30,7 @@ func main() {
 type exitPanic int
 
 // run parses args, executes the selected command and returns its exit code.
-func run(args []string, stdout, stderr io.Writer) (code int) {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 	var cli CLI
 
 	opts := []kong.Option{
@@ -78,6 +78,7 @@ func run(args []string, stdout, stderr io.Writer) (code int) {
 	err = kctx.Run(&Context{
 		Ctx:    runCtx,
 		CLI:    &cli,
+		Stdin:  stdin,
 		Stdout: stdout,
 		Stderr: stderr,
 		Log:    cli.newLogger(stderr),

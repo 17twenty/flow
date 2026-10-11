@@ -87,3 +87,26 @@ invalid samples preceded by `# expect: <rule-ids>`). NOTE: these seeds include
   colon are stripped, equals "breaking change" or "breaking changes" in any
   case; a `BREAKING CHANGE:` footer in the body also satisfies the rule.
 
+- **§3 "strip trailing period" strips every trailing stop, and the spaces with
+  them.** Removing exactly one stop would leave `feat: done...` as `feat: done..`,
+  still violating the rule and still needing a fix — so a second `--fix` would
+  change the file again and the autofix would not be idempotent, which §3
+  requires. Stops and trailing whitespace are therefore trimmed together in one
+  pass, using the same definition of whitespace as the header trim. Fuzzing found
+  both halves of this: `"A:  ."` oscillated between `"a:  "` and `"a:"` when the
+  cutsets were separate, and `"A: \r."` did the same when one cutset counted a
+  carriage return as space and the other did not.
+- **§3 a description of nothing but stops is left alone.** `feat(cli): ...`
+  would become `feat(cli): ` — a header with no description, which no longer
+  parses. The fixer declines rather than turning a lintable message into an
+  unparseable one; the linter still reports the stop.
+- **§3 leading whitespace is not trimmed when it would expose the comment
+  character.** git decides what is a comment from the line's first character, so
+  rewriting `" #ops: thing"` to `"#ops: thing"` would not tidy the header, it
+  would delete the line from the commit; the same move on a `" # ---- >8 ----"`
+  line would truncate everything after it. Such a header keeps its indentation
+  and only loses trailing whitespace. Found by fuzzing.
+- **§3 the blank line is inserted directly after the header, before any
+  comments.** git strips comment lines before applying its own cleanup, so a
+  blank inserted after an intervening comment would not survive to separate
+  header from body.

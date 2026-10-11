@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestInterruptExits130(t *testing.T) {
 	defer signal.Stop(guard)
 
 	done := make(chan int, 1)
-	go func() { done <- run([]string{"sleep", "--for=30s"}, io.Discard, io.Discard) }()
+	go func() { done <- run([]string{"sleep", "--for=30s"}, strings.NewReader(""), io.Discard, io.Discard) }()
 
 	select {
 	case <-sleepStarted():
@@ -46,7 +47,7 @@ func TestInterruptExits130(t *testing.T) {
 
 // Exceeding --timeout is an availability failure, not an interrupt.
 func TestTimeoutExitsUnavailable(t *testing.T) {
-	code := run([]string{"--timeout=20ms", "sleep", "--for=30s"}, io.Discard, io.Discard)
+	code := run([]string{"--timeout=20ms", "sleep", "--for=30s"}, strings.NewReader(""), io.Discard, io.Discard)
 	if code != core.ExitUnavailable {
 		t.Errorf("exited %d, want %d", code, core.ExitUnavailable)
 	}

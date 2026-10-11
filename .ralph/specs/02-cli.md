@@ -91,3 +91,24 @@ Secrets never printed.
 
 0 OK · 1 FAIL · 2 ACTION REQUIRED · 64 USAGE · 69 UNAVAILABLE · 77 NOPERM ·
 130 INTERRUPTED. Kong parse errors → 64.
+
+## Decisions
+
+- **§2 `check commit` JSON kind is `flow.commit/v1`.** §3 requires every `--json`
+  document to carry `flow.<kind>/v1`, but §2 names kinds only for `flow schema`.
+  `commit` is the kind for this command: it describes one commit message, not
+  the check that read it.
+- **§2 `check commit --fix` with stdin writes to stdout.** "In place" has no
+  meaning for a message read from `-`. The fixed text goes to stdout so a hook
+  can pipe it onward. Under `--json` it is suppressed instead, because §3 allows
+  exactly one document on stdout; the `fixed` field reports what changed.
+- **§2 violations go to stdout, the P10 explanation to stderr.** The violations
+  are the command's human output, which §3 puts on stdout. The `error:`/`why:`/
+  `fix:` summary is the failure explanation and goes to stderr with every other
+  command's. A clean message prints nothing at all: this backs a commit-msg
+  hook, where silence is success.
+- **§4 a lint failure exits 1 without a sentinel.** §2 fixes `check commit` at
+  exit 1 on errors. None of spec 01 §5's sentinels fits — the message is neither
+  missing, conflicting nor unsupported, and `ErrValidation` would map to 64. The
+  command returns a `core.UserError` with no wrapped sentinel, which
+  `core.ExitCode` maps to `ExitFail` by default.

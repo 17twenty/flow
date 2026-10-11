@@ -14,7 +14,7 @@ import (
 func exec(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code = run(args, &out, &errb)
+	code = run(args, strings.NewReader(""), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -63,6 +63,8 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 
 // Unimplemented commands are the only permitted stub, and they must fail
 // cleanly as ErrUnsupported rather than pretending to work (plan item 0.1).
+// Commands drop off this list as their plan item lands: check commit did so
+// with item 1.3.
 func TestUnimplementedCommandsExitFail(t *testing.T) {
 	cases := [][]string{
 		{"init"},
@@ -72,7 +74,6 @@ func TestUnimplementedCommandsExitFail(t *testing.T) {
 		{"doctor"},
 		{"check", "pr"},
 		{"check", "deploy"},
-		{"check", "commit"},
 		{"hook", "install"},
 		{"hook", "uninstall"},
 		{"schema"},

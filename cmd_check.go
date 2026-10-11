@@ -1,5 +1,16 @@
 package main
 
+import (
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"strings"
+
+	"github.com/17twenty/flow/internal/commits"
+	"github.com/17twenty/flow/internal/core"
+)
+
 // CheckCmd groups the CI entry points (spec 02 §2, specs 08, 09, 13).
 type CheckCmd struct {
 	PR     CheckPRCmd     `cmd:"" name:"pr" help:"Evaluate the policy gate and publish the flow/policy status."`
@@ -38,5 +49,180 @@ type CheckCommitCmd struct {
 	Fix  bool   `help:"Apply safe autofixes in place."`
 }
 
-// Run implements the check commit command.
-func (c *CheckCommitCmd) Run(app *Context) error { return app.unimplemented("check commit") }
+// commitReport is the --json document for check commit, schema flow.commit/v1.
+type commitReport struct {
+	Schema string `json:"schema"`
+	// File is the message's source, "-" when it came from stdin.
+	File string `json:"file"`
+	// Header is the subject line the rules were measured against.
+	Header string `json:"header"`
+	// Kind is the message form: normal, merge, revert, fixup, squash or amend.
+	Kind string `json:"kind"`
+	// Conventional reports whether the header parsed.
+	Conventional bool `json:"conventional"`
+	// Skipped reports that git wrote this message, so no rule was applied.
+	Skipped bool `json:"skipped"`
+	// Fixed lists the rule ids --fix resolved, in the order they were applied.
+	Fixed []string `json:"fixed"`
+	// Violations lists what is still wrong after any fixes.
+	Violations []commitViolation `json:"violations"`
+	// Errors and Warnings count Violations by severity.
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+}
+
+// commitViolation is one violation rendered for JSON. It exists because
+// commits.Violation keeps Severity unexported from JSON, the wire format
+// wanting the name rather than the enum.
+type commitViolation struct {
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Column   int    `json:"column"`
+	Fix      string `json:"fix"`
+}
+
+// Run implements the check commit command. It lints one message, optionally
+// rewriting it with the safe autofixes first, and exits 1 if any error-severity
+// rule is still violated (spec 02 §2).
+func (c *CheckCommitCmd) Run(app *Context) error {
+	raw, err := c.read(app)
+	if err != nil {
+		return err
+	}
+
+	var fixed []string
+	if c.Fix {
+		updated, rules := commits.Fix(raw)
+		if updated != raw {
+			if err := c.write(app, updated); err != nil {
+				return err
+			}
+		}
+		raw, fixed = updated, rules
+	}
+
+	// Configuration arrives with plan item 1.4; until then the defaults spec 03
+	// §1 publishes are the contract.
+	msg := commits.Parse(raw)
+	violations := commits.Lint(msg, commits.LintOptions{
+		Settings: commits.DefaultSettings(),
+		Subject:  commits.SubjectCommit,
+	})
+
+	if app.CLI.JSON {
+		if err := c.reportJSON(app, msg, fixed, violations); err != nil {
+			return err
+		}
+	} else {
+		c.reportText(app, fixed, violations)
+	}
+
+	if n := len(commits.Errors(violations)); n > 0 {
+		return &core.UserError{
+			What: "accept the commit message",
+			Why:  plural(n, "rule") + " failed",
+			Fix:  "correct the message, or run flow check commit --fix to apply the safe fixes",
+		}
+	}
+	return nil
+}
+
+// read loads the message from the file argument, or stdin when it is "-".
+func (c *CheckCommitCmd) read(app *Context) (string, error) {
+	if c.File == "-" {
+		b, err := io.ReadAll(app.Stdin)
+		if err != nil {
+			return "", core.Errorf(core.ErrValidation, "read the commit message from stdin").
+				WithWhy("%v", err).
+				WithFix("pass the message file as an argument instead")
+		}
+		return string(b), nil
+	}
+	b, err := os.ReadFile(c.File)
+	if err != nil {
+		return "", core.Errorf(core.ErrNotFound, "read the commit message from %s", c.File).
+			WithWhy("%v", err).
+			WithFix("check the path, or pass - to read the message from stdin")
+	}
+	return string(b), nil
+}
+
+// write stores a fixed message back where it came from. A message read from
+// stdin has nowhere to go but stdout, so the hook can pipe it onward.
+func (c *CheckCommitCmd) write(app *Context, message string) error {
+	if c.File == "-" {
+		if app.CLI.JSON {
+			return nil // the JSON document carries the result instead
+		}
+		_, err := io.WriteString(app.Stdout, message)
+		return err
+	}
+	// Preserve the file's existing mode: git creates COMMIT_EDITMSG at 0644,
+	// and a hook has no business changing that.
+	mode := fs.FileMode(0o644)
+	if info, err := os.Stat(c.File); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.WriteFile(c.File, []byte(message), mode); err != nil {
+		return core.Errorf(core.ErrValidation, "write the fixed message to %s", c.File).
+			WithWhy("%v", err).
+			WithFix("check the file is writable")
+	}
+	return nil
+}
+
+// reportJSON writes the single flow.commit/v1 document.
+func (c *CheckCommitCmd) reportJSON(app *Context, msg commits.Message, fixed []string, vs []commits.Violation) error {
+	doc := commitReport{
+		Schema:       core.SchemaID("commit"),
+		File:         c.File,
+		Header:       msg.Header,
+		Kind:         msg.Kind.String(),
+		Conventional: msg.Conventional(),
+		Skipped:      msg.Kind.Generated(),
+		Fixed:        fixed,
+		Violations:   make([]commitViolation, 0, len(vs)),
+	}
+	if doc.Fixed == nil {
+		doc.Fixed = []string{}
+	}
+	for _, v := range vs {
+		doc.Violations = append(doc.Violations, commitViolation{
+			Rule:     v.Rule,
+			Severity: v.Severity.String(),
+			Message:  v.Message,
+			Column:   v.Column,
+			Fix:      v.Fix,
+		})
+		if v.Severity == commits.SeverityError {
+			doc.Errors++
+		} else {
+			doc.Warnings++
+		}
+	}
+	return core.WriteJSON(app.Stdout, doc)
+}
+
+// reportText writes the human rendering. A clean message says nothing: this is
+// a hook, and silence is the good case.
+func (c *CheckCommitCmd) reportText(app *Context, fixed []string, vs []commits.Violation) {
+	if len(fixed) > 0 {
+		fmt.Fprintf(app.Stdout, "fixed: %s\n", strings.Join(fixed, ", "))
+	}
+	for _, v := range vs {
+		fmt.Fprintf(app.Stdout, "%-5s col %-3d %-22s %s\n",
+			v.Severity, v.Column, v.Rule, v.Message)
+		if v.Fix != "" {
+			fmt.Fprintf(app.Stdout, "      fix: %s\n", v.Fix)
+		}
+	}
+}
+
+// plural renders a count with its noun, pluralised the easy way.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
