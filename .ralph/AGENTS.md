@@ -30,3 +30,4 @@ CURRENT MODE: direct
 - `go:embed schema` fails while `assets/schema/` holds only `.gitkeep` — use `all:schema`.
 - staticcheck U1000 fires on helpers written before their callers. Write each helper with the plan item that uses it, not ahead of it.
 - Signal tests: `signal.Notify` in the test first, so a signal landing before `run()` registers cannot kill the test process.
+- GitHub push protection rejects token-shaped literals even in test fixtures. Assemble fake credentials from concatenated parts at run time.

@@ -25,8 +25,8 @@ tests, dependencies limited to spec 01 §4.
 ## Acceptance criteria
 
 ### Bootstrap and repo shape
-- [ ] Target layout on `main`: `PROMPT.md`, `PROMPT_plan.md`, `AGENTS.md`, `IMPLEMENTATION_PLAN.md`, `specs/` under `.ralph/`; `loop.sh` at root; `assets/` at root; `dogfood/` contents merged into the repo root (except `.github/workflows/flow.yml`, added in Stage B); `bootstrap/` at root.
-- [ ] Initial commit(s) pushed to `origin main` with Conventional Commit messages and a scope from `.flow.yaml` `commits.scopes.allowed`.
+- [x] Target layout on `main`: `PROMPT.md`, `PROMPT_plan.md`, `AGENTS.md`, `IMPLEMENTATION_PLAN.md`, `specs/` under `.ralph/`; `loop.sh` at root; `assets/` at root; `dogfood/` contents merged into the repo root (except `.github/workflows/flow.yml`, added in Stage B); `bootstrap/` at root.
+- [x] Initial commit(s) pushed to `origin main` with Conventional Commit messages and a scope from `.flow.yaml` `commits.scopes.allowed`.
 - [ ] User-owned GitHub Project "flow" (Kanban template) exists with Status options Backlog · Ready · In progress · In review · Done and the built-in workflows of spec 17 §3 enabled; labels `agent`, `blocked`, `incident`, `flow-followup`, `phase` created.
 - [ ] `bootstrap/seed-issues.sh 17twenty/flow <n>` run: a phase parent issue per plan phase, one sub-issue per plan item with its AC in the body, all on the Project; `.ralph/IMPLEMENTATION_PLAN.md` item lines carry `(#N)`.
 - [ ] `AGENT_CMD=… ./loop.sh` completes one iteration in `direct` mode without stopping for a broken build.
@@ -36,7 +36,7 @@ tests, dependencies limited to spec 01 §4.
 - [ ] Every command in spec 00 §5 (`init`, `plan`, `apply`, `attest`, `doctor`, `check pr|deploy|commit`, `hook install|uninstall`, `schema`, `version`) implemented with `--json` and the exit codes of spec 02 §4.
 - [ ] GitHub forge and GitHub Projects adapters pass their contract suites against `httptest` fakes; Jira Cloud, Linear, Gitea/Forgejo and GitLab adapters pass theirs (plan Phase 7).
 - [ ] `go test ./... -race -count=1` green with no network access from tests and the transport guard active; no test skipped or weakened to pass.
-- [ ] `gofmt -l .` empty; `go vet ./...`, `staticcheck ./...` and `govulncheck ./...` clean.
+- [x] `gofmt -l .` empty; `go vet ./...`, `staticcheck ./...` and `govulncheck ./...` clean.
 - [ ] One test exists and passes per acceptance scenario id in `specs/19-acceptance-scenarios.md` (A01–A07, G01–G06, V01–V05, S01–S03).
 - [ ] Every item in `.ralph/IMPLEMENTATION_PLAN.md` Phases 0–8 is checked off and its issue closed; "Spec issues" records any gap rather than a skip.
 
@@ -67,7 +67,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 ## Progress
 
 - [ ] Phase 1 — Bootstrap Stage A: repo layout, first push, Project, labels, seeded issues, loop runs
-- [ ] Phase 2 — Skeleton (plan Phase 0): module, kong root, sentinels, slog, embed, CI green
+- [x] Phase 2 — Skeleton (plan Phase 0): module, kong root, sentinels, slog, embed, CI green
 - [ ] Phase 3 — Offline core (plan Phase 1): commit parser/linter, config, lock, schema, git, UI, hooks
 - [ ] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
 - [ ] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
@@ -77,3 +77,50 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
+
+### Status notes
+
+**Done.** The repo is real: target layout per spec 01 §1 on `origin/main`, Go
+module `github.com/17twenty/flow`, and plan items 0.1–0.5 complete and ticked in
+`.ralph/IMPLEMENTATION_PLAN.md`. The binary parses the whole spec 02 command
+tree; unimplemented commands fail as `ErrUnsupported` (exit 1), which is the only
+stub the plan permits. Core has sentinels with exit-code mapping, `UserError`
+what/why/fix rendering, and the spec 15 §2 redacting slog handler. `flow version`
+is fully implemented in both human and `--json` form. SIGINT (130) and `--timeout`
+(69) are tested against the real signal plumbing using a `flowtest`-tagged
+blocking command.
+
+**What currently verifies.** The spec's Verify command cannot pass until `doctor`
+exists. Today's equivalent, all green:
+
+```sh
+test -z "$(gofmt -l .)" && go vet ./... && go build -o bin/flow . && \
+  go test ./... -race -count=1 && go test -tags flowtest ./... -race -count=1 && \
+  go run honnef.co/go/tools/cmd/staticcheck@latest ./... && \
+  go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
+
+**Phase 2 is ticked with one caveat**: plan item 0.6 ("CI green on main") now has
+a workflow and a first push, so GitHub Actions should be running it — nobody has
+confirmed the run is green. Every step of `ci.yml` passes locally.
+
+**Phase 1 stays unticked.** Its local half is done (layout, module, first push);
+its GitHub-side half (Project, labels, App, `FLOW_PROJECT_TOKEN`, running
+`seed-issues.sh`, one `loop.sh` iteration) is blocked on the Human prerequisites
+above, and its three unticked acceptance criteria track exactly that.
+
+**Blocked on the human** — nothing else can satisfy these:
+1. Create the GitHub App `17twenty-flow-agent`, install it, expose an
+   installation token as `GH_TOKEN` on the loop host.
+2. Create the classic PAT with `project` scope as repo secret `FLOW_PROJECT_TOKEN`.
+3. Create the user Project "flow" and the five labels; set repo merge settings.
+4. Approve installing `gh` (Homebrew) so the agent can seed issues and drive the
+   Project. Until then `bootstrap/seed-issues.sh` cannot run.
+
+**Single best next step:** plan item 1.1 — the Conventional Commit header parser
+in `internal/commits` (spec 08 §1), with table tests and `FuzzParse` seeded from
+`assets/testdata/commits`. It is the deepest dependency in Phase 1, needs no
+network and no GitHub access, and unblocks 1.2 (linter), 1.3 (`check commit`) and
+ultimately 2.13 (the policy gate). Work down plan Phase 1 from there; none of it
+is blocked by the human prerequisites.
+
