@@ -54,7 +54,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.7 Lockfile reader/writer — specs: 03 §3 — deps: 1.4 (#20)
   - note: config/lock.go; rendered from an explicit node tree so determinism is ours, atomic write via temp+rename, churn rule only moves a timestamp a full TTL forward. assets/examples/flow.lock is now byte-for-byte what flow writes.
   - AC: deterministic golden; atomic write; observed timestamp churn rule
-- [ ] 1.8 TOML config, precedence, token_cmd trust rules — specs: 03 §4–5, 15 §1 — deps: 1.4 (#21)
+- [x] 1.8 TOML config, precedence, token_cmd trust rules — specs: 03 §4–5, 15 §1 — deps: 1.4 (#21)
+  - note: config/personal.go; strict TOML limited to user/ui/log/auth, token_cmd refused outside the user's own config, tracked override refused via an injected Tracked func (config must not import git). Preset layering of .flow.yaml waits for 1.10; credential resolution split out as 1.14.
   - AC: precedence table test; tracked .flow.local.toml refused
 - [ ] 1.9 JSON Schema and `flow schema` — specs: 03 §6 — deps: 1.4 (#22)
   - AC: struct↔schema parity test; go generate writes assets/schema/flow.v1.json; staleness test
@@ -66,6 +67,9 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: golden renders for sample plan and doctor results; ASCII + NO_COLOR
 - [ ] 1.13 flow hook install/uninstall — specs: 02 §2, 08 — deps: 1.3, 1.11 (#26)
   - AC: respects core.hooksPath; refuses foreign hooks; prints lefthook/husky/pre-commit snippets
+- [ ] 1.14 Credential resolution: env name, FLOW_<PROVIDER>_TOKEN, token_cmd — specs: 03 §5, 15 §1 — deps: 1.8 (#88)
+  - AC: resolution order per provider with a table test; token_cmd run as argv with no shell, with a timeout, and only from the user's own config
+  - AC: the resolved token is never logged or returned in an error; absent credential names the variable to set
 
 ## Phase 2 — Engine with fakes
 

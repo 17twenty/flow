@@ -264,3 +264,33 @@ gate, relaxed policy).
 - **§3 an observation whose clock went backwards is left alone (item 1.7).**
   Only a full TTL *forward* moves a timestamp, so a machine with a skewed clock
   cannot make the lock churn.
+- **§4 one vocabulary for both personal files (item 1.8).** `user`, `ui`, `log`
+  and `auth` are all a personal TOML may contain, and strict decoding refuses
+  the rest with a message naming `.flow.yaml`. A `[commits]` table in someone's
+  own file is them quietly holding themselves to a different standard than the
+  team agreed, which is exactly what flow exists to prevent.
+- **§4 `token_cmd` is refused inside the repository; `hosts` is not (item
+  1.8).** `token_cmd` names a program flow executes, so it is only read from
+  the user's own config (spec 15 §1). `hosts` is data — it can only narrow
+  where a credential may be sent — so `.flow.local.toml` may set it.
+- **§4 the tracked check is injected (item 1.8).** `config` may not import
+  `internal/git` (spec 01 §2), so `LoadPersonal` takes a `Tracked` function and
+  the caller supplies git. If git cannot answer, flow refuses to read the
+  override rather than assuming it is personal; if there is no git to ask at
+  all the file is read, which is safe because it may not carry a `token_cmd`
+  either way.
+- **§4 unset and false are different (item 1.8).** Boolean personal settings
+  decode into pointers, so `ascii = false` in a user config survives a
+  repository override that says nothing about it.
+- **§4 TOML problems carry a position only when the library knows one (item
+  1.8).** A syntax error is reported `path:line:col`; an unknown key is
+  reported by its dotted name alone, because the decoder records which keys
+  went unused but not where they were written.
+- **§5 `NO_COLOR` follows the convention, not flow's boolean rules (item
+  1.8).** Any non-empty value — including `0` — means no colour, and it beats
+  `FLOW_NO_COLOR`. An unparseable `FLOW_*` boolean is ignored rather than
+  guessed at, leaving the layer below in charge.
+- **§5 credential resolution is its own piece of work (item 1.8).** This item
+  defines where credential *sources* are configured and who may configure
+  them. Reading the named variable, falling back to `FLOW_<PROVIDER>_TOKEN`
+  and running `token_cmd` is plan item 1.14.
