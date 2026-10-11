@@ -1,0 +1,12 @@
+  item                                                                    github-projects             jira-cloud
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  tracker.project (project)                                               ⚠ follow-up                 ⚠ follow-up
+  tracker.status_options (status_options)                                 ✓ native                    ✓ native
+  tracker.labels (labels)                                                 ✓ native                    ✓ native
+  tracker.native.changes_requested (native_transition_changes_requested)  ✎ attest                    ✎ attest
+  tracker.native.pr_merged (native_transition_pr_merged)                  ✎ attest                    ✎ attest
+≠ tracker.native.issue_closed (native_transition_issue_closed)            ✎ attest                    ✗ unsupported
+  tracker.wip (wip_limits)                                                ↻ compensated → policy.wip  ↻ compensated → policy.wip
+  tracker.expedite (expedite_view)                                        ✎ attest                    ✎ attest
+
+1 of 8 items is handled differently

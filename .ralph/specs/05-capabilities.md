@@ -139,3 +139,27 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   beside the decision they describe, so the terminal, the markdown report
   (spec 12) and the CI annotation cannot disagree about what flow said it
   would do. What spec 12 adds is colour, width and arrangement.
+- **§6 both sides are judged as a greenfield (item 2.6).** `Compare` plans the
+  workflow against each declaration with no observations and no lock, so
+  neither tracker is flattered by the state its board happens to be in. §6
+  forbids a network, which means the tracker being compared against cannot be
+  looked at — and comparing a board flow can see against one it cannot would
+  answer "how far along are you" rather than "what would this cost".
+- **§6 assumed permissions are the declaration's own `requires` (item 2.6).**
+  `CapabilitySet.RequiredTokens` is the union of every token the file asks
+  for, and that is the credential the comparison pretends to hold. §1's
+  decision keeps permission tokens per-adapter, so there is no central list of
+  what "full" means; the declaration is the only thing that knows. The effect
+  is that a comparison is about what a provider can do, not about whose token
+  is in the environment today.
+- **§6 the table holds only what the workflow asks of a tracker (item 2.6).**
+  `--tracker-override` changes the tracker; the repository and the deployment
+  records are the same on both sides by construction, and rows that cannot
+  differ are padding in a table whose whole purpose is the rows that do.
+  `Compare` refuses a declaration that is not a tracker rather than comparing
+  a board against a repository.
+- **§6 the comparison takes declarations, not adapters (item 2.6).** `Compare`
+  has no way to reach a provider, so "no network" is a property of the
+  signature rather than a rule someone has to remember. It is also what makes
+  the mode usable before adopting a tracker at all: flow ships the research,
+  and the research is enough.

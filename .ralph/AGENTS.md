@@ -47,3 +47,4 @@ CURRENT MODE: direct
 - A custom `UnmarshalYAML` must return a `*yaml.TypeError` with a `line N:` prefix, or yaml aborts the decode at that value and drops the position.
 - Walking a `yaml.Node` tree must guard against cycles: `&a [*a]` parses into a self-referential node and ate all the memory. Keep a set of nodes currently open.
 - Generated YAML: build a `yaml.Node` tree instead of marshalling a struct. Key order, list order and quoting then belong to flow, not to the encoder's internal sort.
+- Spec filenames are `05-capabilities.md` and `06-plan-apply.md`. Appending a Decision with `cat >> .ralph/specs/06-*.md` creates a new file when the glob misses, instead of failing. `ls .ralph/specs/` first.

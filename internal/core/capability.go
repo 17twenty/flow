@@ -126,6 +126,21 @@ func (s CapabilitySet) Researched() time.Time {
 	return day
 }
 
+// RequiredTokens is every permission token the declaration ever asks for,
+// sorted. It is what a credential would have to hold for nothing here to be
+// refused on permissions — which is what spec 05 §6's comparison assumes, so
+// that two providers are judged on what they can do rather than on whose
+// token happened to be in the environment.
+func (s CapabilitySet) RequiredTokens() []string {
+	seen := map[string]bool{}
+	for _, capability := range s.Capabilities {
+		for _, token := range capability.Requires {
+			seen[token] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
 // Registry is every capability declaration flow ships, keyed by adapter.
 type Registry map[string]CapabilitySet
 

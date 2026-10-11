@@ -94,7 +94,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.5 Planner and plan JSON — specs: 06 §2, 05 §5 — deps: 2.4, 2.3 (#32)
   - note: engine/observe.go asks each adapter what it holds for every desired item; engine/plan.go is the pure diff, taking providers as {kind, capabilities, permissions} rather than adapters so the same configuration can be planned against another tracker with no network. Contents compare by name and a provider may know more than flow asked. Every item lists its changes whatever the outcome, since those are the content of a follow-up or an attestation. engine/render.go holds spec 05 §5's words; noop renders as `· up to date`. A status option's board position left the desired state: reordering a GitHub Projects option set can clear every item's status.
   - AC: golden plain/JSON for lean-kanban vs GitHub-Projects-like and Jira-like fakes
-- [ ] 2.6 Comparison mode — specs: 05 §6 — deps: 2.5 (#33)
+- [x] 2.6 Comparison mode — specs: 05 §6 — deps: 2.5 (#33)
+  - note: engine/compare.go takes two capability declarations rather than adapters, so "no network" is a property of the signature. Both sides are planned as a greenfield with the union of the declaration's own `requires` assumed, which makes the answer about the provider instead of about today's board or today's token. Only tracker items are held: nothing else changes when the tracker does. Rows the two disagree about are marked `≠`. CLI wiring is item 4.2.
   - AC: no network; side-by-side golden
 - [ ] 2.7 Apply executor — specs: 06 §3–4 — deps: 2.5, 1.7 (#34)
   - AC: partial failure leaves lock consistent; prune refuses in-use options
