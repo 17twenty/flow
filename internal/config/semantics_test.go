@@ -221,6 +221,13 @@ func TestValidate(t *testing.T) {
 			wantIn: "is not an event flow knows",
 		},
 		{
+			name: "an event that is really two events",
+			change: func(c *Config) {
+				c.Workflow.Transitions[EventPROpened] = Transition{To: "in_review", Owner: OwnerFlow}
+			},
+			wantIn: "is not configured on its own",
+		},
+		{
 			name: "a transition to nowhere",
 			change: func(c *Config) {
 				c.Workflow.Transitions[EventPROpenedDraft] = Transition{To: "doing", Owner: OwnerFlow}

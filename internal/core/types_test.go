@@ -119,6 +119,64 @@ func TestPullRequestApprovals(t *testing.T) {
 	}
 }
 
+// A pull request is held up by a review asking for changes only while it is
+// still the reviewer's last word (spec 04 §4's changes_requested event).
+func TestPullRequestChangesRequested(t *testing.T) {
+	at := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		reviews []core.Review
+		want    bool
+	}{
+		{name: "nobody has looked"},
+		{
+			name:    "somebody wants changes",
+			reviews: []core.Review{{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at}},
+			want:    true,
+		},
+		{
+			name: "they got them and approved",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewApproved, SubmittedAt: at.Add(time.Hour)},
+			},
+		},
+		{
+			name: "somebody else still wants changes",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewApproved, SubmittedAt: at.Add(time.Hour)},
+				{Author: "zoe", State: core.ReviewChangesRequested, SubmittedAt: at.Add(2 * time.Hour)},
+			},
+			want: true,
+		},
+		{
+			name: "a dismissed refusal no longer holds",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewDismissed, SubmittedAt: at.Add(time.Hour)},
+			},
+		},
+		{
+			name: "a comment afterwards is not an answer",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewCommented, SubmittedAt: at.Add(time.Hour)},
+			},
+			want: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pr := core.PullRequest{Reviews: test.reviews}
+			if got := pr.ChangesRequested(); got != test.want {
+				t.Errorf("ChangesRequested() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCommitHeader(t *testing.T) {
 	commit := core.Commit{Message: "fix(core): stop the leak\n\nIt leaked.\n"}
 	if got := commit.Header(); got != "fix(core): stop the leak" {

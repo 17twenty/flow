@@ -157,3 +157,55 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   command does the reconciling and hands the gate one list per column. The
   gate's rules stay pure, which is what lets `flow check pr` and doctor's live
   audit agree (spec 09 decisions).
+- **§4–5 the engine reads state, not events (item 2.14).** §4 names the events
+  by their source — "PR opened as draft", "draft → ready" — which reads like a
+  stream of webhooks. A payload's action is a claim about a moment that has
+  already passed by the time flow sees it, and doctor's catch-up of missed
+  transitions (spec 07 §6) has no payload at all. So the engine asks which
+  event describes a pull request's state *now*, and looks that event up. It
+  makes `flow check pr` in CI and doctor's catch-up literally the same
+  function, which is the only way they cannot disagree about where a ticket
+  belongs — the same argument the policy gate makes (spec 09 decisions).
+- **§4 `pr_opened` is a source, not a transition anybody configures (item
+  2.14).** §4 defines it as `pr_opened_draft` followed by
+  `pr_ready_for_review`, so a `workflow.transitions.pr_opened` would be a key
+  flow silently ignored. Configuration validation now refuses it and names the
+  two to use instead. Both of the pair really are applied in order, so a
+  workflow that configures only the first still starts the work.
+- **§4 the events describe a pull request as it stands, not as it was (item
+  2.14).** A pull request closed without merging never asks for the review
+  column on its way out, because it is not in review and never will be again;
+  replaying a history would strand the ticket wherever the last configured
+  event in it pointed. The exception is §4's own: open and ready is the pair
+  above.
+- **§4 `approved` waits for somebody, even where the branch requires nobody
+  (item 2.14).** "Required approvals met" is vacuously true on a repository
+  that requires none, which would fire the event the moment a pull request
+  opened. A repository requiring no approvals has not said nobody need look at
+  the work — it has said it does not enforce it — so the event waits for at
+  least one approval, which is what `approved` means to everybody who reads it.
+- **§4 a draft is a conversion only when the ticket has gone past it (item
+  2.14).** Nothing on a pull request records that it was once ready, and the
+  two events differ only in being allowed to move work backwards. A draft pull
+  request whose ticket is already past the column drafts belong in can only
+  have come about one way, so the ticket's own position is the evidence — and
+  a pull request opened as a draft is never reported as one that was put back.
+- **§5 the pull request furthest along the board decides (item 2.14).** Rule 4
+  says the review column when *any* linked pull request is ready, so each pull
+  request is judged from the ticket's real column and the furthest-along
+  answer wins. Folding them one after another would let a review asking for
+  changes on the second pull request undo the first one being in review. The
+  ones that lose are reported as overruled rather than dropped: they were not
+  wrong about their own pull request, they are behind the work as a whole.
+  Being already in the target column counts as an opinion — that is what holds
+  a ticket in review.
+- **§5 a back-move goes where the configuration sends it (item 2.14).** Rule 1
+  says `changes_requested` and `pr_converted_to_draft` "may move back to
+  `in_progress`". The engine decides *who* may go backwards; which column they
+  land in is the team's, exactly as it is for every other event. A workflow
+  that configures neither gets no back-moves, which is the honest reading of a
+  team that did not ask for one.
+- **§5 a pull request closed without merging is not unfinished work (item
+  2.14).** Rule 4 holds Done until all linked pull requests are merged. An
+  abandoned one never will be, and counting it would leave the ticket short of
+  Done for ever. Done waits for the work that is still open.

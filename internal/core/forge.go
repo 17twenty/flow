@@ -278,6 +278,35 @@ func (p PullRequest) Merged() bool { return p.State == PRStateMerged }
 // Approvals returns the logins that approved and have not been dismissed or
 // overtaken by a later review from the same person.
 func (p PullRequest) Approvals() []string {
+	latest, order := p.latestReviews()
+	var approvals []string
+	for _, author := range order {
+		if latest[author] == ReviewApproved {
+			approvals = append(approvals, author)
+		}
+	}
+	slices.Sort(approvals)
+	return approvals
+}
+
+// ChangesRequested reports whether anybody's latest verdict asks for changes.
+// It is what makes spec 04 §4's `changes_requested` event true of a pull
+// request as it stands, rather than of a moment that has passed: a review
+// answered by a later review from the same person no longer holds the work up.
+func (p PullRequest) ChangesRequested() bool {
+	latest, _ := p.latestReviews()
+	for _, state := range latest {
+		if state == ReviewChangesRequested {
+			return true
+		}
+	}
+	return false
+}
+
+// latestReviews is each reviewer's last verdict, and the order they first gave
+// one in. A review that only commented is not a verdict and does not overtake
+// the one before it.
+func (p PullRequest) latestReviews() (map[string]string, []string) {
 	latest := map[string]string{}
 	var order []string
 	for _, review := range p.Reviews {
@@ -289,14 +318,7 @@ func (p PullRequest) Approvals() []string {
 		}
 		latest[review.Author] = review.State
 	}
-	var approvals []string
-	for _, author := range order {
-		if latest[author] == ReviewApproved {
-			approvals = append(approvals, author)
-		}
-	}
-	slices.Sort(approvals)
-	return approvals
+	return latest, order
 }
 
 // PRQuery selects pull requests. The live-health audit asks for everything

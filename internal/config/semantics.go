@@ -341,6 +341,10 @@ func (v *validator) transitions() {
 			v.add("%s is not an event flow knows; the vocabulary is %s", at, strings.Join(Events, ", "))
 			continue
 		}
+		if event == EventPROpened {
+			v.add("%s is not configured on its own: spec 04 §4 defines %s as %s followed by %s, so configure those two instead", at, EventPROpened, EventPROpenedDraft, EventPRReadyForReview)
+			continue
+		}
 		if v.required(at+".to", transition.To, "the id of the column the ticket moves to") {
 			if _, ok := v.cfg.Workflow.Column(transition.To); !ok {
 				v.add("%s.to is %q, which is not a column id in workflow.columns", at, transition.To)
