@@ -165,7 +165,7 @@ func TestParseFull(t *testing.T) {
 				Platform:     Known("@platform"),
 			},
 		},
-		Attestation: Attestation{DefaultTTL: 30 * Day},
+		Attestation: AttestationPolicy{DefaultTTL: 30 * Day},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Parse gave\n%#v\nwant\n%#v", got, want)

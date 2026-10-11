@@ -51,7 +51,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: Pending values only at allowed paths; block-style requirement documented in error
 - [ ] 1.6 Semantic validation and secret heuristics — specs: 03 §1.1 — deps: 1.4, 2.1 (#19)
   - AC: one test per rule incl. native-owner capability check
-- [ ] 1.7 Lockfile reader/writer — specs: 03 §3 — deps: 1.4 (#20)
+- [x] 1.7 Lockfile reader/writer — specs: 03 §3 — deps: 1.4 (#20)
+  - note: config/lock.go; rendered from an explicit node tree so determinism is ours, atomic write via temp+rename, churn rule only moves a timestamp a full TTL forward. assets/examples/flow.lock is now byte-for-byte what flow writes.
   - AC: deterministic golden; atomic write; observed timestamp churn rule
 - [ ] 1.8 TOML config, precedence, token_cmd trust rules — specs: 03 §4–5, 15 §1 — deps: 1.4 (#21)
   - AC: precedence table test; tracked .flow.local.toml refused

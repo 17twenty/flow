@@ -245,3 +245,22 @@ gate, relaxed policy).
   bytes of valid YAML that parses into a cyclic node tree; walking it for
   placeholders exhausted memory. The walk now keeps a record of the nodes it is
   inside and refuses to re-enter one.
+- **§3 the lock is written in block style (item 1.7).** The example in §3 shows
+  records as flow mappings (`{ hash: …, at: … }`). flow writes them one field
+  per line instead: inside `{…}` a plain scalar may not contain `:`, so YAML
+  quotes every `sha256:…` and every timestamp, and the compact form costs more
+  noise than it saves. The example in `assets/examples/flow.lock` is now
+  byte-for-byte what flow writes, and a test keeps it that way.
+- **§3 the lock is rendered from an explicit node tree (item 1.7).** Key order,
+  list order and quoting are flow's decision rather than the encoder's, so
+  "deterministic" is a property of flow's code and not of a dependency's
+  internal sort. Lists sort by their natural key (kind+id, check+ticket,
+  check+by) and timestamps are UTC truncated to the second.
+- **§3 a lock from another version is refused, not migrated (item 1.7).**
+  `ParseLock` decodes as strictly as `.flow.yaml` does. The file says it is
+  generated and not to be edited, so an unknown key means it was hand-edited or
+  written by a build that knew something this one does not — guessing at either
+  is worse than saying so.
+- **§3 an observation whose clock went backwards is left alone (item 1.7).**
+  Only a full TTL *forward* moves a timestamp, so a machine with a skewed clock
+  cannot make the lock churn.

@@ -110,7 +110,7 @@ type Config struct {
 	// FollowUps is how flow files work it cannot do itself.
 	FollowUps FollowUps `yaml:"followups"`
 	// Attestation is how long a human's word stands for.
-	Attestation Attestation `yaml:"attestation"`
+	Attestation AttestationPolicy `yaml:"attestation"`
 }
 
 // Auth names the environment variables a credential is read from. It never
@@ -317,9 +317,9 @@ type Owners struct {
 	Platform Pending `yaml:"platform,omitempty"`
 }
 
-// Attestation is how long a human's "I checked this myself" counts for
-// (spec 07 §8).
-type Attestation struct {
+// AttestationPolicy is how long a human's "I checked this myself" counts for
+// (spec 07 §8). The attestations themselves live in the lock.
+type AttestationPolicy struct {
 	// DefaultTTL is how long an attestation stands before it must be renewed.
 	DefaultTTL Duration `yaml:"default_ttl,omitempty"`
 }
