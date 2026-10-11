@@ -314,3 +314,41 @@ gate, relaxed policy).
   plan, doctor and policy documents do not exist yet and the lock schema has no
   consumer, so flow says so and names the kind that works rather than printing
   a schema nobody wrote.
+- **§5 the provider is the adapter kind, and the fallback is spelled from it
+  (item 1.14).** `FLOW_<PROVIDER>_TOKEN` takes `<PROVIDER>` from `forge.type`
+  or `tracker.type` exactly as written in `.flow.yaml`, upper-cased with every
+  character that is not a letter or digit turned into `_`: `github-projects`
+  becomes `FLOW_GITHUB_PROJECTS_TOKEN`. The same string keys the user's
+  `[auth.<provider>]` table, so one name serves all three sources.
+- **§5 an empty variable falls through to the next source (item 1.14).** A
+  variable set to the empty string, or to nothing but whitespace, is treated as
+  unset rather than as an empty credential. `GITHUB_TOKEN=` left over from a
+  shell profile should not mask a working `token_cmd`. Values are trimmed of
+  surrounding whitespace, since a trailing newline is what `export
+  GITHUB_TOKEN=$(cat token)` usually produces.
+- **§5 no credential at all exits 77, not 2 (item 1.14).** Spec 02 §4's ACTION
+  REQUIRED is for work flow has finished and filed for a human; a command that
+  cannot authenticate has not started. Absent credentials therefore wrap
+  `core.ErrPermission`, and the message names the variable to export and the
+  `token_cmd` that would have been run.
+- **§5 `token_cmd` must print one line within 30 seconds (item 1.14).** It is
+  run as argv with no shell, with an immediate EOF on stdin so a helper that
+  asks a question fails instead of hanging, and is given 30s — enough for a
+  vault to prompt for a fingerprint, short enough that CI does not sit on it.
+  Output is trimmed; empty output is `ErrPermission`; more than one line is
+  `ErrValidation`, because a token is one line and the second line is usually
+  a warning the user cannot see. A helper that is missing or not executable is
+  a configuration error (64); one that runs and fails, or times out, is
+  `ErrUnavailable` (69). Only the exit status and the first line of stderr,
+  passed through `core.Redact`, appear in the error: a failing helper often
+  quotes the secret back.
+- **§5 a resolved credential is kept for the life of the process (item 1.14).**
+  Concurrent callers for one provider wait for each other, so a vault is
+  unlocked once rather than once per API call. Failures are not remembered, so
+  a helper that was merely locked can succeed on the next attempt.
+- **§5 `auth.*_env` holding a secret is refused at resolution too (item
+  1.14).** `config.semantics` (§1.1) is where the full heuristics live, but the
+  resolver will not read a variable whose *name* is itself a credential shape
+  — `core.Redact` changing the string is the test. Nothing is gained by
+  deferring a check that stops flow sending a pasted token to a provider, and
+  the error never repeats the value back.

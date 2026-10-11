@@ -70,7 +70,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.13 flow hook install/uninstall — specs: 02 §2, 08 — deps: 1.3, 1.11 (#26)
   - note: cmd_hook.go; writes through a temp file, recognises its own work by a marker, defers to lefthook/husky/pre-commit with exit 2. The shipped templates called `flow hook run`, a command that never existed — rewritten to spec 02's `flow check commit --fix`, prepare-commit-msg deleted, and a test now runs every template's invocation with --help.
   - AC: respects core.hooksPath; refuses foreign hooks; prints lefthook/husky/pre-commit snippets
-- [ ] 1.14 Credential resolution: env name, FLOW_<PROVIDER>_TOKEN, token_cmd — specs: 03 §5, 15 §1 — deps: 1.8 (#88)
+- [x] 1.14 Credential resolution: env name, FLOW_<PROVIDER>_TOKEN, token_cmd — specs: 03 §5, 15 §1 — deps: 1.8 (#88)
+  - note: config/credential.go. `Credential` hides its secret behind Secret(), and formats and logs as its source, so it cannot leak through %v or an error. token_cmd is argv with no shell, EOF on stdin, 30s, one line of stdout; only the exit status and a redacted first line of stderr reach the user. Resolution is cached per provider and single-flighted; failures are not cached. Host binding stays with 7.6.
   - AC: resolution order per provider with a table test; token_cmd run as argv with no shell, with a timeout, and only from the user's own config
   - AC: the resolved token is never logged or returned in an error; absent credential names the variable to set
 
