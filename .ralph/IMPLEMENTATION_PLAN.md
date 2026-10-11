@@ -109,7 +109,7 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: per-rule tables; strictness mapping; 140-char truncation golden; determinism
 - [ ] 2.14 Transition engine — specs: 04 §4–5 — deps: 1.4 (#41)
   - AC: owner routing; forward-only; back moves; multi-PR; never out of done
-- [ ] 2.15 Markers — specs: 11 §1 — deps: 0.2 (#42)
+- [x] 2.15 Markers — specs: 11 §1 — deps: 0.2 (#42)
   - AC: both styles round-trip; FuzzMarkerParse
 - [ ] 2.16 core.Client — specs: 01 §5 — deps: 0.3 (#43)
   - AC: retries, ETag cache keyed by token fingerprint, rate-limit headers, transport guard

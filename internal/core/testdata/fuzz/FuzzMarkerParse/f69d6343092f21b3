@@ -1,0 +1,2 @@
+go test fuzz v1
+string("flow:0 0=\"\\x80\"")

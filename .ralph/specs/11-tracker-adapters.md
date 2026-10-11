@@ -57,3 +57,38 @@ the PR URL first, identifier in branch/title fallback. 5,000 req/h, 3M complexit
 `coretest.TrackerContract`: probe mapping, discover/ParseRef, observe
 canonicalisation stability, move idempotency, follow-up marker upsert/find,
 reopen, pagination, error mapping.
+
+## Decisions
+
+- **§1 markers live in `core`, and the caller picks the rendering (item
+  2.15).** `Marker.String()` is the visible form, `Marker.HTML()` the comment
+  form, and `MarkBody(body, marker, html)` takes which one to use. Both a
+  forge comment and a tracker ticket carry markers, so the type cannot sit in
+  either adapter package; and whether HTML comments survive is a fact each
+  adapter knows about its provider, not something the marker can infer from
+  the text it is given.
+- **§1 a marker is a kind and a set of fields, and round-tripping is the
+  contract (item 2.15).** `flow:<kind> k=v`, fields rendered in sorted order
+  so the same marker always renders identically, values Go-quoted whenever
+  they would not read back as one bare field — whitespace, control characters,
+  a quote, a backslash, `=`, the empty string, or bytes that are not valid
+  UTF-8. `FuzzMarkerParse` holds the property that anything flow parses it can
+  write and parse again unchanged. A marker that did not survive the trip
+  would make flow file a second follow-up instead of finding its first.
+- **§1 the parser accepts kinds it does not know (item 2.15).**
+  `MarkerFollowUp`, `MarkerPolicy`, `MarkerHealth` and `MarkerFlag` name what
+  flow writes today; `ParseMarker` takes any non-empty kind. A ticket written
+  by a newer flow must still be recognised as flow's own work by an older one,
+  which errs towards updating a stranger's comment rather than towards
+  duplicating one of flow's.
+- **§1 `Matches` is one-way, `Equal` is equality (item 2.15).** A search
+  marker matches when the kinds agree and every field it names agrees;
+  `flow:followup check=tracker.columns` therefore finds the marker that also
+  carries `repo=`, and a search naming no fields finds every follow-up. That
+  is what lets a check look for its own ticket without knowing how many
+  fields the version that filed it wrote.
+- **§1 marking a body replaces every marker in it (item 2.15).** `MarkBody`
+  strips markers wherever they are before appending the new one as the last
+  line, so editing a comment ten times leaves one marker, and switching a
+  provider from the HTML form to the visible form does not leave both. Flow
+  reads bodies it did not write last.
