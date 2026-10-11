@@ -291,10 +291,10 @@ func (a *applier) forge(ctx context.Context, planned PlanItem, wanted DesiredIte
 // writeForge is the one call that makes a forge item true.
 func (a *applier) writeForge(ctx context.Context, planned PlanItem, wanted DesiredItem) (string, error) {
 	switch planned.ID {
-	case ItemForgeProtection, ItemForgeRequiredStatus:
+	case core.ItemForgeProtection, core.ItemForgeRequiredStatus:
 		return a.protect(ctx)
 
-	case ItemForgeMergeSettings:
+	case core.ItemForgeMergeSettings:
 		if len(wanted.Items) == 0 {
 			return "", fmt.Errorf("the desired merge settings have nothing in them")
 		}
@@ -303,7 +303,7 @@ func (a *applier) writeForge(ctx context.Context, planned PlanItem, wanted Desir
 		}
 		return "set the merge strategies", nil
 
-	case ItemForgeFiles:
+	case core.ItemForgeFiles:
 		return a.propose(ctx, planned, wanted)
 	}
 	return "", fmt.Errorf("%w: nothing applies %s", core.ErrUnsupported, planned.ID)
@@ -324,11 +324,11 @@ func (a *applier) protect(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var protection core.Item
-	if wanted, ok := a.in.Desired.Find(ItemForgeProtection); ok && len(wanted.Items) > 0 {
+	if wanted, ok := a.in.Desired.Find(core.ItemForgeProtection); ok && len(wanted.Items) > 0 {
 		protection = wanted.Items[0]
 	}
 	var checks []core.Item
-	if wanted, ok := a.in.Desired.Find(ItemForgeRequiredStatus); ok {
+	if wanted, ok := a.in.Desired.Find(core.ItemForgeRequiredStatus); ok {
 		checks = wanted.Items
 	}
 	want := ProtectionFor(branch, protection, checks)
@@ -414,7 +414,7 @@ func (a *applier) refuse(ctx context.Context, wanted DesiredItem, change core.Ch
 // the tracker rather than one it answers from the lock: the whole hazard is
 // that somebody put work in a column flow does not know about.
 func (a *applier) inUse(ctx context.Context, wanted DesiredItem, item core.Item) int {
-	if wanted.ID != ItemTrackerStatusOptions || a.in.Adapters.Tracker == nil {
+	if wanted.ID != core.ItemTrackerStatusOptions || a.in.Adapters.Tracker == nil {
 		return 0
 	}
 	tickets, err := a.in.Adapters.Tracker.Tickets(ctx, core.TicketQuery{})

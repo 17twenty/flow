@@ -22,41 +22,6 @@ const (
 	TargetDeploys = "deploys"
 )
 
-// Desired item ids (spec 06 §1). They are also the doctor check ids (spec 07
-// §5) and the keys of the lock's `observed:` map (spec 03 §3), because they
-// name the same things: one vocabulary for one subject.
-const (
-	// ItemTrackerProject is the board itself.
-	ItemTrackerProject = "tracker.project"
-	// ItemTrackerStatusOptions is the set of columns on it.
-	ItemTrackerStatusOptions = "tracker.status_options"
-	// ItemTrackerLabels is the labels flow's rules read.
-	ItemTrackerLabels = "tracker.labels"
-	// ItemTrackerWIP is the work-in-progress limits.
-	ItemTrackerWIP = "tracker.wip"
-	// ItemTrackerExpedite is the view that shows expedited work.
-	ItemTrackerExpedite = "tracker.expedite"
-	// ItemForgeDefaultBranch is the trunk.
-	ItemForgeDefaultBranch = "forge.default_branch"
-	// ItemForgeProtection is the protection on it.
-	ItemForgeProtection = "forge.protection"
-	// ItemForgeRequiredStatus is the checks a merge must pass.
-	ItemForgeRequiredStatus = "forge.required_status"
-	// ItemForgeMergeSettings is how a pull request is allowed to land.
-	ItemForgeMergeSettings = "forge.merge_settings"
-	// ItemForgeFiles is the files flow proposes to the repository.
-	ItemForgeFiles = "forge.files"
-	// ItemDeploysRecords is the deployment history flow reads.
-	ItemDeploysRecords = "deploys.records"
-)
-
-// NativeItemPrefix begins the id of the item for one transition the tracker's
-// own automation is to perform: tracker.native.pr_merged.
-const NativeItemPrefix = "tracker.native."
-
-// NativeItem returns the desired item id for a native transition on event.
-func NativeItem(event string) string { return NativeItemPrefix + event }
-
 // Fields a desired item's contents carry. A field is only ever something the
 // provider can report back, so that a comparison means something.
 const (
@@ -144,7 +109,7 @@ type DesiredItem struct {
 	// ever something the provider can report back.
 	Items []core.Item
 	// Files are the file contents behind the items, for the proposal apply
-	// makes. Only [ItemForgeFiles] has any.
+	// makes. Only [core.ItemForgeFiles] has any.
 	Files []core.ProposedFile
 }
 
@@ -234,7 +199,7 @@ func (d Desired) Target(target string) []DesiredItem {
 // the lock rather than into `.flow.yaml` (spec 07 §3).
 func trackerProject() DesiredItem {
 	return DesiredItem{
-		ID:         ItemTrackerProject,
+		ID:         core.ItemTrackerProject,
 		Capability: core.CapProject,
 		Target:     TargetTracker,
 		Resolve:    true,
@@ -255,10 +220,10 @@ func trackerStatusOptions(cfg *config.Config) DesiredItem {
 		items = append(items, core.Item{Name: column.Name})
 	}
 	return DesiredItem{
-		ID:         ItemTrackerStatusOptions,
+		ID:         core.ItemTrackerStatusOptions,
 		Capability: core.CapStatusOptions,
 		Target:     TargetTracker,
-		DependsOn:  []string{ItemTrackerProject},
+		DependsOn:  []string{core.ItemTrackerProject},
 		Additive:   true,
 		Items:      items,
 	}
@@ -288,10 +253,10 @@ func trackerLabels(cfg *config.Config) DesiredItem {
 		items = append(items, core.Item{Name: name})
 	}
 	return DesiredItem{
-		ID:         ItemTrackerLabels,
+		ID:         core.ItemTrackerLabels,
 		Capability: core.CapLabels,
 		Target:     TargetTracker,
-		DependsOn:  []string{ItemTrackerProject},
+		DependsOn:  []string{core.ItemTrackerProject},
 		Additive:   true,
 		Items:      items,
 	}
@@ -322,10 +287,10 @@ func trackerNative(cfg *config.Config) []DesiredItem {
 			to = column.Name
 		}
 		items = append(items, DesiredItem{
-			ID:         NativeItem(event),
+			ID:         core.NativeItem(event),
 			Capability: name,
 			Target:     TargetTracker,
-			DependsOn:  []string{ItemTrackerStatusOptions},
+			DependsOn:  []string{core.ItemTrackerStatusOptions},
 			Items:      []core.Item{{Name: event, Fields: map[string]string{FieldTo: to}}},
 		})
 	}
@@ -352,10 +317,10 @@ func trackerWIP(cfg *config.Config) DesiredItem {
 		items = append(items, core.Item{Name: column.Name, Fields: fields})
 	}
 	return DesiredItem{
-		ID:         ItemTrackerWIP,
+		ID:         core.ItemTrackerWIP,
 		Capability: core.CapWIPLimits,
 		Target:     TargetTracker,
-		DependsOn:  []string{ItemTrackerStatusOptions},
+		DependsOn:  []string{core.ItemTrackerStatusOptions},
 		Items:      items,
 	}
 }
@@ -370,10 +335,10 @@ func trackerExpedite(cfg *config.Config) DesiredItem {
 	}
 	slices.Sort(labels)
 	return DesiredItem{
-		ID:         ItemTrackerExpedite,
+		ID:         core.ItemTrackerExpedite,
 		Capability: core.CapExpediteView,
 		Target:     TargetTracker,
-		DependsOn:  []string{ItemTrackerProject},
+		DependsOn:  []string{core.ItemTrackerProject},
 		Items: []core.Item{{
 			Name:   NameExpedite,
 			Fields: map[string]string{FieldLabels: strings.Join(labels, ",")},
@@ -385,7 +350,7 @@ func trackerExpedite(cfg *config.Config) DesiredItem {
 // the forge is about.
 func forgeDefaultBranch() DesiredItem {
 	return DesiredItem{
-		ID:      ItemForgeDefaultBranch,
+		ID:      core.ItemForgeDefaultBranch,
 		Target:  TargetForge,
 		Resolve: true,
 	}
@@ -410,10 +375,10 @@ func forgeProtection(cfg *config.Config) DesiredItem {
 		fields[FieldRequireLinearHistory] = "true"
 	}
 	return DesiredItem{
-		ID:         ItemForgeProtection,
+		ID:         core.ItemForgeProtection,
 		Capability: core.CapBranchProtection,
 		Target:     TargetForge,
-		DependsOn:  []string{ItemForgeDefaultBranch},
+		DependsOn:  []string{core.ItemForgeDefaultBranch},
 		Items:      []core.Item{{Name: NameProtection, Fields: fields}},
 	}
 }
@@ -425,10 +390,10 @@ func forgeRequiredStatus(cfg *config.Config) DesiredItem {
 		return DesiredItem{}
 	}
 	return DesiredItem{
-		ID:         ItemForgeRequiredStatus,
+		ID:         core.ItemForgeRequiredStatus,
 		Capability: core.CapRequiredStatusChecks,
 		Target:     TargetForge,
-		DependsOn:  []string{ItemForgeProtection},
+		DependsOn:  []string{core.ItemForgeProtection},
 		Additive:   true,
 		Items:      []core.Item{{Name: cfg.Policy.StatusContext}},
 	}
@@ -453,7 +418,7 @@ func forgeMergeSettings(cfg *config.Config) DesiredItem {
 		fields[FieldSquashMessage] = core.SquashMessagePRBody
 	}
 	return DesiredItem{
-		ID:         ItemForgeMergeSettings,
+		ID:         core.ItemForgeMergeSettings,
 		Capability: core.CapMergeSettings,
 		Target:     TargetForge,
 		Items:      []core.Item{{Name: NameMerge, Fields: fields}},
@@ -479,7 +444,7 @@ func forgeFiles(cfg *config.Config, templates fs.FS) (DesiredItem, error) {
 	}
 
 	item := DesiredItem{
-		ID:         ItemForgeFiles,
+		ID:         core.ItemForgeFiles,
 		Capability: core.CapFileProposal,
 		Target:     TargetForge,
 		Additive:   true,
@@ -506,10 +471,10 @@ func deploysRecords(cfg *config.Config) DesiredItem {
 		return DesiredItem{}
 	}
 	return DesiredItem{
-		ID:         ItemDeploysRecords,
+		ID:         core.ItemDeploysRecords,
 		Capability: core.CapDeployRecords,
 		Target:     TargetDeploys,
-		DependsOn:  []string{ItemForgeDefaultBranch},
+		DependsOn:  []string{core.ItemForgeDefaultBranch},
 		Items:      []core.Item{{Name: cfg.Deploys.Environment}},
 	}
 }

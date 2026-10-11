@@ -222,3 +222,24 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
   `core.Explain` and the forge adapter now uses them. What is really GitHub's —
   its media type, its API version, the shape of a repository path — stays with
   each adapter that speaks GitHub, where a second provider will not inherit it.
+- **§2 the desired item ids are `core`'s vocabulary, not the engine's (item
+  3.8).** They were constants in `internal/engine`, which was fine while only
+  the engine said them: the forge adapter is asked for a protection or a merge
+  setting through a method of its own and never sees an id. A tracker is not.
+  `core.Tracker.Observe` and `Discover` take the id as their argument, so the
+  GitHub Projects adapter has to switch on `tracker.status_options` — and an
+  adapter may not import the engine. Two spellings of one word, one per side of
+  that line, is exactly the drift the ids exist to prevent, so they moved to
+  `core` whole and the engine says `core.ItemTrackerProject` like everybody
+  else. Nothing about them is provider-specific; they are what flow asks of a
+  provider, which is the subject `core` already holds.
+- **§2 the GraphQL envelope is `core`'s; reading its errors is each adapter's
+  (item 3.8).** A GraphQL provider answers 200 whatever happened and puts what
+  went wrong beside the data, so every adapter that speaks GraphQL needs the
+  same unwrapping — and `internal/tracker` may not import `internal/forge` to
+  get the one already written there. `core.GraphQL` sends the query, unwraps
+  the envelope and makes an answer carrying errors a refusal. What stays with
+  the adapter is the mapping from the provider's own error type onto a
+  sentinel, which it passes in: two adapters that happen to speak to the same
+  company are not thereby one adapter, and the next provider's vocabulary will
+  not be GitHub's.

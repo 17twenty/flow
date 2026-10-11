@@ -101,20 +101,20 @@ func TestDesiredIsPure(t *testing.T) {
 func TestDesiredCoversSpecTable(t *testing.T) {
 	state := desired(t, preset(t, config.PresetLeanKanban))
 	want := []string{
-		engine.ItemTrackerProject,
-		engine.ItemTrackerStatusOptions,
-		engine.ItemTrackerLabels,
-		engine.NativeItem(config.EventChangesRequested),
-		engine.NativeItem(config.EventPRMerged),
-		engine.NativeItem(config.EventIssueClosed),
-		engine.ItemTrackerWIP,
-		engine.ItemTrackerExpedite,
-		engine.ItemForgeDefaultBranch,
-		engine.ItemForgeProtection,
-		engine.ItemForgeRequiredStatus,
-		engine.ItemForgeMergeSettings,
-		engine.ItemForgeFiles,
-		engine.ItemDeploysRecords,
+		core.ItemTrackerProject,
+		core.ItemTrackerStatusOptions,
+		core.ItemTrackerLabels,
+		core.NativeItem(config.EventChangesRequested),
+		core.NativeItem(config.EventPRMerged),
+		core.NativeItem(config.EventIssueClosed),
+		core.ItemTrackerWIP,
+		core.ItemTrackerExpedite,
+		core.ItemForgeDefaultBranch,
+		core.ItemForgeProtection,
+		core.ItemForgeRequiredStatus,
+		core.ItemForgeMergeSettings,
+		core.ItemForgeFiles,
+		core.ItemDeploysRecords,
 	}
 	got := state.IDs()
 	slices.Sort(got)
@@ -189,7 +189,7 @@ func TestDesiredResolveItemsHaveNoContents(t *testing.T) {
 // the fixed Definition of Ready vocabulary spec 04 §7 names.
 func TestDesiredLabels(t *testing.T) {
 	cfg := preset(t, config.PresetLeanKanban)
-	item, ok := desired(t, cfg).Find(engine.ItemTrackerLabels)
+	item, ok := desired(t, cfg).Find(core.ItemTrackerLabels)
 	if !ok {
 		t.Fatal("no labels are wanted")
 	}
@@ -207,7 +207,7 @@ func TestDesiredLabels(t *testing.T) {
 
 	cfg.Workflow.Blocked.Label = "stuck"
 	cfg.Workflow.Expedite.Labels = nil
-	item, _ = desired(t, cfg).Find(engine.ItemTrackerLabels)
+	item, _ = desired(t, cfg).Find(core.ItemTrackerLabels)
 	if _, found := labelled(item, "stuck"); !found {
 		t.Error("renaming the blocked label did not change what flow wants")
 	}
@@ -231,7 +231,7 @@ func TestDesiredNativeTransitions(t *testing.T) {
 	cfg := preset(t, config.PresetLeanKanban)
 	state := desired(t, cfg)
 	for event, transition := range cfg.Workflow.Transitions {
-		item, ok := state.Find(engine.NativeItem(event))
+		item, ok := state.Find(core.NativeItem(event))
 		if transition.Owner != config.OwnerNative {
 			if ok {
 				t.Errorf("%s is owned by flow, but flow asks the tracker to do it", event)
@@ -265,10 +265,10 @@ func TestDesiredOmitsWhatWasNotAskedFor(t *testing.T) {
 	}
 	state := desired(t, cfg)
 	for _, id := range []string{
-		engine.ItemDeploysRecords,
-		engine.ItemTrackerExpedite,
-		engine.ItemForgeRequiredStatus,
-		engine.ItemTrackerWIP,
+		core.ItemDeploysRecords,
+		core.ItemTrackerExpedite,
+		core.ItemForgeRequiredStatus,
+		core.ItemTrackerWIP,
 	} {
 		if _, ok := state.Find(id); ok {
 			t.Errorf("%s is wanted by a configuration that did not ask for it", id)
@@ -281,7 +281,7 @@ func TestDesiredOmitsWhatWasNotAskedFor(t *testing.T) {
 // layout flow does not ship.
 func TestDesiredFiles(t *testing.T) {
 	cfg := preset(t, config.PresetLeanKanban)
-	item, ok := desired(t, cfg).Find(engine.ItemForgeFiles)
+	item, ok := desired(t, cfg).Find(core.ItemForgeFiles)
 	if !ok {
 		t.Fatal("no files are proposed to a GitHub repository")
 	}
@@ -302,14 +302,14 @@ func TestDesiredFiles(t *testing.T) {
 	}
 
 	cfg.Workflow.DoneOn = config.DoneOnDeployed
-	item, _ = desired(t, cfg).Find(engine.ItemForgeFiles)
+	item, _ = desired(t, cfg).Find(core.ItemForgeFiles)
 	workflow, _ = labelled(item, ".github/workflows/flow.yml")
 	if got := workflow.Field(engine.FieldRuns); !strings.Contains(got, "flow check deploy") {
 		t.Errorf("done means deployed, but the workflow is only asked to run %q", got)
 	}
 
 	cfg.Forge.Type = config.ForgeGitLab
-	if _, ok := desired(t, cfg).Find(engine.ItemForgeFiles); ok {
+	if _, ok := desired(t, cfg).Find(core.ItemForgeFiles); ok {
 		t.Error("GitHub's files are proposed to a GitLab repository")
 	}
 }
@@ -352,7 +352,7 @@ func TestDesiredMergeSettings(t *testing.T) {
 			cfg.Commits.MergeStrategy = tc.strategy
 			state := desired(t, cfg)
 
-			item, ok := state.Find(engine.ItemForgeMergeSettings)
+			item, ok := state.Find(core.ItemForgeMergeSettings)
 			if !ok {
 				t.Fatal("no merge settings are wanted")
 			}
@@ -360,7 +360,7 @@ func TestDesiredMergeSettings(t *testing.T) {
 				t.Errorf("merge settings are %v, want %v", item.Items[0].Fields, tc.fields)
 			}
 
-			protection, _ := state.Find(engine.ItemForgeProtection)
+			protection, _ := state.Find(core.ItemForgeProtection)
 			linear := protection.Items[0].Field(engine.FieldRequireLinearHistory)
 			if want := tc.strategy != config.MergeCommit; (linear == "true") != want {
 				t.Errorf("a %s merge wants linear history %q", tc.strategy, linear)
@@ -372,7 +372,7 @@ func TestDesiredMergeSettings(t *testing.T) {
 // TestDesiredProtectionIsWhatTheConfigurationImplies: flow protects the trunk
 // and does not invent a review policy nobody wrote down (spec 06 §4).
 func TestDesiredProtectionIsWhatTheConfigurationImplies(t *testing.T) {
-	item, ok := desired(t, preset(t, config.PresetLeanKanban)).Find(engine.ItemForgeProtection)
+	item, ok := desired(t, preset(t, config.PresetLeanKanban)).Find(core.ItemForgeProtection)
 	if !ok {
 		t.Fatal("the trunk is not protected")
 	}
@@ -401,7 +401,7 @@ func TestHashIgnoresOrder(t *testing.T) {
 		{ID: "1", Name: "Backlog", Fields: map[string]string{"position": "0"}},
 		{ID: "3", Name: "Done", Fields: map[string]string{"position": "2"}},
 	}
-	observation := core.Observation{What: engine.ItemTrackerStatusOptions, Exists: true, Items: items}
+	observation := core.Observation{What: core.ItemTrackerStatusOptions, Exists: true, Items: items}
 	want := engine.HashObservation(observation)
 
 	for range 64 {
@@ -413,7 +413,7 @@ func TestHashIgnoresOrder(t *testing.T) {
 			maps.Copy(rebuilt, item.Fields)
 			shuffled[i].Fields = rebuilt
 		}
-		got := engine.HashObservation(core.Observation{What: engine.ItemTrackerStatusOptions, Exists: true, Items: shuffled})
+		got := engine.HashObservation(core.Observation{What: core.ItemTrackerStatusOptions, Exists: true, Items: shuffled})
 		if got != want {
 			t.Fatalf("the same board hashed to %s and then %s", want, got)
 		}
@@ -424,7 +424,7 @@ func TestHashIgnoresOrder(t *testing.T) {
 // through unseen (spec 07 §7).
 func TestHashNoticesEveryDifference(t *testing.T) {
 	base := core.Observation{
-		What:   engine.ItemTrackerStatusOptions,
+		What:   core.ItemTrackerStatusOptions,
 		Exists: true,
 		Items:  []core.Item{{ID: "1", Name: "Backlog", Fields: map[string]string{"position": "0"}}},
 	}
@@ -495,13 +495,13 @@ func TestDesiredItemHashIsPerItem(t *testing.T) {
 	if before.Hash() == after.Hash() {
 		t.Fatal("renaming a column did not change the desired state")
 	}
-	beforeOptions, _ := before.Find(engine.ItemTrackerStatusOptions)
-	afterOptions, _ := after.Find(engine.ItemTrackerStatusOptions)
+	beforeOptions, _ := before.Find(core.ItemTrackerStatusOptions)
+	afterOptions, _ := after.Find(core.ItemTrackerStatusOptions)
 	if beforeOptions.Hash() == afterOptions.Hash() {
 		t.Error("renaming a column did not change the status options")
 	}
-	beforeLabels, _ := before.Find(engine.ItemTrackerLabels)
-	afterLabels, _ := after.Find(engine.ItemTrackerLabels)
+	beforeLabels, _ := before.Find(core.ItemTrackerLabels)
+	afterLabels, _ := after.Find(core.ItemTrackerLabels)
 	if beforeLabels.Hash() != afterLabels.Hash() {
 		t.Error("renaming a column changed the labels")
 	}
@@ -511,7 +511,7 @@ func TestDesiredItemHashIsPerItem(t *testing.T) {
 // plan promises, so a changed template is a changed plan.
 func TestDesiredFileHashesFollowTheTemplates(t *testing.T) {
 	cfg := preset(t, config.PresetLeanKanban)
-	item, _ := desired(t, cfg).Find(engine.ItemForgeFiles)
+	item, _ := desired(t, cfg).Find(core.ItemForgeFiles)
 	changed := item
 	changed.Files = slices.Clone(item.Files)
 	changed.Files[0].Content = append(slices.Clone(changed.Files[0].Content), '\n')

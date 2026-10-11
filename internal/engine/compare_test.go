@@ -94,14 +94,14 @@ func TestCompareFindsWhatWouldChange(t *testing.T) {
 			// GitHub Projects has the automation and flow simply cannot see
 			// whether it is on.
 			left: "github-projects", right: "jira-cloud",
-			id:   engine.NativeItem("issue_closed"),
+			id:   core.NativeItem("issue_closed"),
 			want: [2]engine.Outcome{engine.OutcomeAttest, engine.OutcomeUnsupported},
 		},
 		{
 			// Linear has no saved view to expedite with, so the gate enforces
 			// it instead.
 			left: "github-projects", right: "linear",
-			id:        engine.ItemTrackerExpedite,
+			id:        core.ItemTrackerExpedite,
 			want:      [2]engine.Outcome{engine.OutcomeAttest, engine.OutcomeCompensated},
 			mechanism: core.CompensatePolicyExpedite,
 		},
@@ -111,7 +111,7 @@ func TestCompareFindsWhatWouldChange(t *testing.T) {
 			// what a comparison is about: the question is which tracker can
 			// do this, not whose token is in the environment today.
 			left: "github-projects", right: "jira-cloud",
-			id:          engine.ItemTrackerStatusOptions,
+			id:          core.ItemTrackerStatusOptions,
 			want:        [2]engine.Outcome{engine.OutcomeNative, engine.OutcomeNative},
 			sameVerdict: true,
 		},

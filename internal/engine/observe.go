@@ -157,26 +157,26 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 		return core.Observation{}, err
 	}
 	switch item.ID {
-	case ItemForgeDefaultBranch:
+	case core.ItemForgeDefaultBranch:
 		return core.Observation{
 			Exists: repo.DefaultBranch != "",
 			Items:  []core.Item{{ID: repo.DefaultBranch, Name: repo.DefaultBranch}},
 		}, nil
 
-	case ItemForgeProtection, ItemForgeRequiredStatus:
+	case core.ItemForgeProtection, core.ItemForgeRequiredStatus:
 		protection, err := o.adapters.Forge.Protection(ctx, repo.DefaultBranch)
 		if err != nil {
 			return core.Observation{}, err
 		}
-		if item.ID == ItemForgeRequiredStatus {
+		if item.ID == core.ItemForgeRequiredStatus {
 			return requiredStatus(protection), nil
 		}
 		return protectionObservation(protection), nil
 
-	case ItemForgeMergeSettings:
+	case core.ItemForgeMergeSettings:
 		return mergeObservation(repo.Merge), nil
 
-	case ItemForgeFiles:
+	case core.ItemForgeFiles:
 		return o.files(ctx, item, repo.DefaultBranch)
 	}
 	return core.Observation{}, fmt.Errorf("%w: nothing observes %s", core.ErrUnsupported, item.ID)

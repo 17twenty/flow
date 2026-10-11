@@ -694,7 +694,7 @@ func (f *gitHubFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		f.fail(w, http.StatusMethodNotAllowed, "a GraphQL query is sent with POST")
 		return
 	}
-	var query ghGraphQLRequest
+	var query core.GraphQLQuery
 	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
 		f.fail(w, http.StatusBadRequest, "the query did not decode: "+err.Error())
 		return

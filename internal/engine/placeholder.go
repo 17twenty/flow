@@ -69,7 +69,7 @@ func Placeholders(cfg *config.Config) []Placeholder {
 			pending = append(pending, Placeholder{Path: path, Name: value.Name, Discoverable: discoverable})
 		}
 	}
-	add(ItemTrackerProject, cfg.Tracker.Project, true)
+	add(core.ItemTrackerProject, cfg.Tracker.Project, true)
 	add("followups.owners.default", cfg.FollowUps.Owners.Default, false)
 	add("followups.owners.tracker_admin", cfg.FollowUps.Owners.TrackerAdmin, false)
 	add("followups.owners.forge_admin", cfg.FollowUps.Owners.ForgeAdmin, false)
@@ -358,7 +358,7 @@ func refFor(p Placeholder, candidate core.Candidate) core.Ref {
 // creatable returns the capability that would have to allow creating this,
 // and whether it does.
 func creatable(in ResolveInput, p Placeholder) (core.Capability, bool) {
-	if p.Path != ItemTrackerProject {
+	if p.Path != core.ItemTrackerProject {
 		return core.Capability{}, false
 	}
 	capability := in.Tracker.Capabilities().Capability(core.CapProject)
@@ -370,7 +370,7 @@ func creatable(in ResolveInput, p Placeholder) (core.Capability, bool) {
 // invent a better name, and one that matches the repo is the one a human
 // would have typed.
 func newName(cfg *config.Config, p Placeholder) string {
-	if cfg == nil || p.Path != ItemTrackerProject {
+	if cfg == nil || p.Path != core.ItemTrackerProject {
 		return ""
 	}
 	_, name, found := strings.Cut(cfg.Forge.Repo, "/")
@@ -382,7 +382,7 @@ func newName(cfg *config.Config, p Placeholder) string {
 
 // hintFor is what flow already knows that narrows the search.
 func hintFor(cfg *config.Config, p Placeholder) map[string]string {
-	if cfg == nil || p.Path != ItemTrackerProject {
+	if cfg == nil || p.Path != core.ItemTrackerProject {
 		return nil
 	}
 	hint := map[string]string{}

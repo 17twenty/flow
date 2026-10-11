@@ -31,7 +31,7 @@ func resolveTracker(t *testing.T, candidates ...core.Candidate) *coretest.FakeTr
 	fixture := coretest.ContractTracker()
 	fixture.Kind = "fake-tracker"
 	if candidates != nil {
-		fixture.Candidates = map[string][]core.Candidate{engine.ItemTrackerProject: candidates}
+		fixture.Candidates = map[string][]core.Candidate{core.ItemTrackerProject: candidates}
 	}
 	return coretest.NewFakeTracker(fixture)
 }
@@ -130,7 +130,7 @@ func TestResolveTakesTheOnlyCandidate(t *testing.T) {
 		Fix:     true,
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowDiscovered {
 		t.Errorf("how = %q, want %q", got.How, engine.HowDiscovered)
 	}
@@ -140,10 +140,10 @@ func TestResolveTakesTheOnlyCandidate(t *testing.T) {
 	if got.Ref.Name != "Delivery" {
 		t.Errorf("ref name = %q, want Delivery: the name comes from the tracker", got.Ref.Name)
 	}
-	if got.Ref.What != engine.ItemTrackerProject {
-		t.Errorf("ref what = %q, want %q", got.Ref.What, engine.ItemTrackerProject)
+	if got.Ref.What != core.ItemTrackerProject {
+		t.Errorf("ref what = %q, want %q", got.Ref.What, core.ItemTrackerProject)
 	}
-	if lock.Resolved[engine.ItemTrackerProject] != "PVT_1" {
+	if lock.Resolved[core.ItemTrackerProject] != "PVT_1" {
 		t.Errorf("lock resolved = %v, want tracker.project=PVT_1", lock.Resolved)
 	}
 }
@@ -157,7 +157,7 @@ func TestResolveWithoutFixChangesNothing(t *testing.T) {
 	only := core.Candidate{ID: "PVT_1", Name: "Delivery", URL: "https://tracker.test/projects/1"}
 	answers, lock := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, only)})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Errorf("how = %q, want %q", got.How, engine.HowAsked)
 	}
@@ -183,7 +183,7 @@ func TestResolveAsksWhenThereIsMoreThanOneAnswer(t *testing.T) {
 
 	answers, lock := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t), Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Errorf("how = %q, want %q", got.How, engine.HowAsked)
 	}
@@ -213,17 +213,17 @@ func TestResolveLetsAHumanChoose(t *testing.T) {
 		},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowChosen {
 		t.Fatalf("how = %q, want %q", got.How, engine.HowChosen)
 	}
 	if got.Ref.ID != "PVT_2" {
 		t.Errorf("ref id = %q, want the one that was chosen", got.Ref.ID)
 	}
-	if asked.Path != engine.ItemTrackerProject {
-		t.Errorf("chooser was asked about %q, want %q", asked.Path, engine.ItemTrackerProject)
+	if asked.Path != core.ItemTrackerProject {
+		t.Errorf("chooser was asked about %q, want %q", asked.Path, core.ItemTrackerProject)
 	}
-	if lock.Resolved[engine.ItemTrackerProject] != "PVT_2" {
+	if lock.Resolved[core.ItemTrackerProject] != "PVT_2" {
 		t.Errorf("lock resolved = %v, want the chosen board", lock.Resolved)
 	}
 }
@@ -243,7 +243,7 @@ func TestNobodyAtTheTerminalFallsThroughToTheQuestion(t *testing.T) {
 		},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Fatalf("how = %q, want %q", got.How, engine.HowAsked)
 	}
@@ -269,7 +269,7 @@ func TestAPickerThatBrokeIsAFailure(t *testing.T) {
 		},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if !errors.Is(got.Err, broken) {
 		t.Errorf("err = %v, want the picker's own failure", got.Err)
 	}
@@ -285,10 +285,10 @@ func TestResolveAcceptsAPastedURL(t *testing.T) {
 
 	answers, lock := resolve(t, engine.ResolveInput{
 		Tracker: resolveTracker(t),
-		Set:     map[string]string{engine.ItemTrackerProject: " https://tracker.test/projects/2 "},
+		Set:     map[string]string{core.ItemTrackerProject: " https://tracker.test/projects/2 "},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowSet {
 		t.Fatalf("how = %q, want %q (err: %v)", got.How, engine.HowSet, got.Err)
 	}
@@ -298,7 +298,7 @@ func TestResolveAcceptsAPastedURL(t *testing.T) {
 	if got.Ref.Name != "Research" {
 		t.Errorf("ref name = %q, want the tracker's own name for it", got.Ref.Name)
 	}
-	if lock.Resolved[engine.ItemTrackerProject] != "PVT_2" {
+	if lock.Resolved[core.ItemTrackerProject] != "PVT_2" {
 		t.Errorf("lock resolved = %v, want the pasted board", lock.Resolved)
 	}
 }
@@ -311,13 +311,13 @@ func TestSetIsAcceptedWithoutFix(t *testing.T) {
 
 	answers, lock := resolve(t, engine.ResolveInput{
 		Tracker: resolveTracker(t),
-		Set:     map[string]string{engine.ItemTrackerProject: "PVT_1"},
+		Set:     map[string]string{core.ItemTrackerProject: "PVT_1"},
 	})
 
-	if got := answer(t, answers, engine.ItemTrackerProject); got.How != engine.HowSet {
+	if got := answer(t, answers, core.ItemTrackerProject); got.How != engine.HowSet {
 		t.Fatalf("how = %q, want %q (err: %v)", got.How, engine.HowSet, got.Err)
 	}
-	if lock.Resolved[engine.ItemTrackerProject] != "PVT_1" {
+	if lock.Resolved[core.ItemTrackerProject] != "PVT_1" {
 		t.Errorf("lock resolved = %v, want what the user named", lock.Resolved)
 	}
 }
@@ -331,10 +331,10 @@ func TestResolveRefusesAValueTheTrackerDoesNotHave(t *testing.T) {
 	answers, lock := resolve(t, engine.ResolveInput{
 		Tracker: resolveTracker(t),
 		Fix:     true,
-		Set:     map[string]string{engine.ItemTrackerProject: "PVT_999"},
+		Set:     map[string]string{core.ItemTrackerProject: "PVT_999"},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.Resolved() {
 		t.Fatalf("recorded an unverified id: %+v", got.Ref)
 	}
@@ -354,10 +354,10 @@ func TestAPastedURLTheTrackerCannotReadIsReported(t *testing.T) {
 	answers, lock := resolve(t, engine.ResolveInput{
 		Tracker: resolveTracker(t),
 		Fix:     true,
-		Set:     map[string]string{engine.ItemTrackerProject: "https://example.invalid/not-a-board"},
+		Set:     map[string]string{core.ItemTrackerProject: "https://example.invalid/not-a-board"},
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if !errors.Is(got.Err, core.ErrValidation) {
 		t.Errorf("err = %v, want the tracker's complaint about the address", got.Err)
 	}
@@ -372,11 +372,11 @@ func TestWhatTheLockKnowsIsCheckedAndKept(t *testing.T) {
 	t.Parallel()
 
 	lock := config.NewLock("v0.3.0")
-	lock.Resolve(engine.ItemTrackerProject, "PVT_2")
+	lock.Resolve(core.ItemTrackerProject, "PVT_2")
 
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t), Lock: lock})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowLocked {
 		t.Fatalf("how = %q, want %q", got.How, engine.HowLocked)
 	}
@@ -393,21 +393,21 @@ func TestTheLockSurvivesATrackerThatWouldNotAnswer(t *testing.T) {
 	t.Parallel()
 
 	lock := config.NewLock("v0.3.0")
-	lock.Resolve(engine.ItemTrackerProject, "PVT_2")
+	lock.Resolve(core.ItemTrackerProject, "PVT_2")
 	tracker := resolveTracker(t)
 	busy := core.Errorf(core.ErrRateLimited, "list the boards").WithWhy("the tracker is rate limiting")
 	tracker.Fail("Discover", busy)
 
 	answers, after := resolve(t, engine.ResolveInput{Tracker: tracker, Lock: lock, Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowLocked || got.Ref.ID != "PVT_2" {
 		t.Fatalf("how = %q, ref = %+v, want the locked answer kept", got.How, got.Ref)
 	}
 	if !errors.Is(got.Err, core.ErrRateLimited) {
 		t.Errorf("err = %v, want the reason it could not be confirmed", got.Err)
 	}
-	if after.Resolved[engine.ItemTrackerProject] != "PVT_2" {
+	if after.Resolved[core.ItemTrackerProject] != "PVT_2" {
 		t.Errorf("lock resolved = %v, want it left alone", after.Resolved)
 	}
 }
@@ -419,11 +419,11 @@ func TestALockedBoardThatIsGoneIsNotTheAnswer(t *testing.T) {
 	t.Parallel()
 
 	lock := config.NewLock("v0.3.0")
-	lock.Resolve(engine.ItemTrackerProject, "PVT_DELETED")
+	lock.Resolve(core.ItemTrackerProject, "PVT_DELETED")
 
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t), Lock: lock, Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Fatalf("how = %q, want the ladder to have started again", got.How)
 	}
@@ -438,18 +438,18 @@ func TestADeletedBoardWithOneReplacementIsTakenStraightAway(t *testing.T) {
 	t.Parallel()
 
 	lock := config.NewLock("v0.3.0")
-	lock.Resolve(engine.ItemTrackerProject, "PVT_DELETED")
+	lock.Resolve(core.ItemTrackerProject, "PVT_DELETED")
 	only := core.Candidate{ID: "PVT_1", Name: "Delivery", URL: "https://tracker.test/projects/1"}
 
 	answers, after := resolve(t, engine.ResolveInput{
 		Tracker: resolveTracker(t, only), Lock: lock, Fix: true,
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowDiscovered || got.Ref.ID != "PVT_1" {
 		t.Fatalf("how = %q, ref = %+v, want the one board that is left", got.How, got.Ref)
 	}
-	if after.Resolved[engine.ItemTrackerProject] != "PVT_1" {
+	if after.Resolved[core.ItemTrackerProject] != "PVT_1" {
 		t.Errorf("lock resolved = %v, want the replacement", after.Resolved)
 	}
 }
@@ -470,7 +470,7 @@ func TestResolveCreatesTheBoardWhenItCan(t *testing.T) {
 		Fix:         true,
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowCreated {
 		t.Fatalf("how = %q, want %q (err: %v)", got.How, engine.HowCreated, got.Err)
 	}
@@ -480,7 +480,7 @@ func TestResolveCreatesTheBoardWhenItCan(t *testing.T) {
 	if got.Ref.ID == "" {
 		t.Error("created board has no id: the identifier must come from the tracker")
 	}
-	if lock.Resolved[engine.ItemTrackerProject] != got.Ref.ID {
+	if lock.Resolved[core.ItemTrackerProject] != got.Ref.ID {
 		t.Errorf("lock resolved = %v, want the created board's id", lock.Resolved)
 	}
 }
@@ -505,7 +505,7 @@ func TestCreationNeedsThePermissionItDeclared(t *testing.T) {
 		Fix:         true,
 	})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Fatalf("how = %q, want it to have asked rather than tried", got.How)
 	}
@@ -527,7 +527,7 @@ func TestATrackerThatCannotCreateIsNotAskedTo(t *testing.T) {
 
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: tracker, Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject)
+	got := answer(t, answers, core.ItemTrackerProject)
 	if got.How != engine.HowAsked {
 		t.Fatalf("how = %q, want %q", got.How, engine.HowAsked)
 	}
@@ -668,7 +668,7 @@ func TestAnswerBecomesADoctorResult(t *testing.T) {
 	only := core.Candidate{ID: "PVT_1", Name: "Delivery", URL: "https://tracker.test/projects/1"}
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, only), Fix: true})
 
-	done := answer(t, answers, engine.ItemTrackerProject).Result()
+	done := answer(t, answers, core.ItemTrackerProject).Result()
 	if done.State != engine.StatePass {
 		t.Errorf("state = %q, want pass", done.State)
 	}
@@ -700,7 +700,7 @@ func TestAnAnswerThatCouldNotBeAttemptedIsAnError(t *testing.T) {
 
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: tracker, Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject).Result()
+	got := answer(t, answers, core.ItemTrackerProject).Result()
 	if got.State != engine.StateError {
 		t.Fatalf("state = %q, want %q", got.State, engine.StateError)
 	}
@@ -716,7 +716,7 @@ func TestCandidatesBecomeEvidence(t *testing.T) {
 
 	answers, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t), Fix: true})
 
-	got := answer(t, answers, engine.ItemTrackerProject).Result()
+	got := answer(t, answers, core.ItemTrackerProject).Result()
 	if len(got.Evidence) != 2 {
 		t.Fatalf("evidence = %v, want one line per candidate", got.Evidence)
 	}

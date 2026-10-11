@@ -97,11 +97,11 @@ func TestApplyMakesTheProviderAgree(t *testing.T) {
 	// column flow created and the configuration dropped.
 	after := planFor(t, w)
 	for _, id := range []string{
-		engine.ItemTrackerStatusOptions,
-		engine.ItemTrackerLabels,
-		engine.ItemForgeProtection,
-		engine.ItemForgeRequiredStatus,
-		engine.ItemForgeMergeSettings,
+		core.ItemTrackerStatusOptions,
+		core.ItemTrackerLabels,
+		core.ItemForgeProtection,
+		core.ItemForgeRequiredStatus,
+		core.ItemForgeMergeSettings,
 	} {
 		planned, ok := after.Find(id)
 		if !ok {
@@ -114,7 +114,7 @@ func TestApplyMakesTheProviderAgree(t *testing.T) {
 
 	// The files are proposed, not written, so they are still wanted: a pull
 	// request nobody has merged has changed nothing on the trunk.
-	files := item(t, applied, engine.ItemForgeFiles)
+	files := item(t, applied, core.ItemForgeFiles)
 	if !files.Done() {
 		t.Fatalf("the file proposal did not land: %v %s", files.Err, files.Skipped)
 	}
@@ -172,7 +172,7 @@ func TestApplyWithoutPruneKeepsWhatItWouldRemove(t *testing.T) {
 	w := githubProjectsWorld(t)
 	applied, records := applyTo(t, w, engine.ApplyInput{})
 
-	options := item(t, applied, engine.ItemTrackerStatusOptions)
+	options := item(t, applied, core.ItemTrackerStatusOptions)
 	refusals := refused(options)
 	if len(refusals) != 1 {
 		t.Fatalf("%d refusals, want 1: %+v", len(refusals), options.Changes)
@@ -184,7 +184,7 @@ func TestApplyWithoutPruneKeepsWhatItWouldRemove(t *testing.T) {
 		t.Errorf("the item failed, but a refusal is not a failure: %v", options.Err)
 	}
 
-	observation, err := w.tracker.Observe(context.Background(), engine.ItemTrackerStatusOptions)
+	observation, err := w.tracker.Observe(context.Background(), core.ItemTrackerStatusOptions)
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestPruneRefusesAnOptionInUse(t *testing.T) {
 	})
 
 	applied, _ := applyTo(t, w, engine.ApplyInput{Prune: true})
-	options := item(t, applied, engine.ItemTrackerStatusOptions)
+	options := item(t, applied, core.ItemTrackerStatusOptions)
 
 	refusals := refused(options)
 	if len(refusals) != 1 {
@@ -219,7 +219,7 @@ func TestPruneRefusesAnOptionInUse(t *testing.T) {
 		t.Errorf("the refusal is %q, want it to say how much work is in there", refusals[0])
 	}
 
-	observation, err := w.tracker.Observe(context.Background(), engine.ItemTrackerStatusOptions)
+	observation, err := w.tracker.Observe(context.Background(), core.ItemTrackerStatusOptions)
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestPruneRefusesWhatTheLockDoesNotOwn(t *testing.T) {
 	w.lock.Created = nil
 
 	applied, _ := applyTo(t, w, engine.ApplyInput{Plan: plan, Prune: true})
-	refusals := refused(item(t, applied, engine.ItemTrackerStatusOptions))
+	refusals := refused(item(t, applied, core.ItemTrackerStatusOptions))
 	if len(refusals) != 1 || !strings.Contains(refusals[0], "lock") {
 		t.Fatalf("refusals are %v, want one naming the lock", refusals)
 	}
@@ -262,7 +262,7 @@ func TestApplyStopsAtAFailureAndLeavesTheLockTrue(t *testing.T) {
 
 	applied, records := applyTo(t, w, engine.ApplyInput{Plan: plan, Adapters: adapters, Prune: true})
 
-	options := item(t, applied, engine.ItemTrackerStatusOptions)
+	options := item(t, applied, core.ItemTrackerStatusOptions)
 	if !errors.Is(options.Err, halt) {
 		t.Fatalf("the item's failure is %v, want the one injected", options.Err)
 	}
@@ -287,7 +287,7 @@ func TestApplyStopsAtAFailureAndLeavesTheLockTrue(t *testing.T) {
 	}
 
 	// Everything the failure did not depend on still happened.
-	labels := item(t, applied, engine.ItemTrackerLabels)
+	labels := item(t, applied, core.ItemTrackerLabels)
 	if !labels.Done() {
 		t.Errorf("one failure stopped an unrelated item: %v %s", labels.Err, labels.Skipped)
 	}
@@ -302,23 +302,23 @@ func TestApplyBlocksOnlyDependants(t *testing.T) {
 
 	applied, _ := applyTo(t, w, engine.ApplyInput{})
 
-	protection := item(t, applied, engine.ItemForgeProtection)
+	protection := item(t, applied, core.ItemForgeProtection)
 	if !errors.Is(protection.Err, refusal) {
 		t.Fatalf("protection failed with %v, want the injected refusal", protection.Err)
 	}
 
-	checks := item(t, applied, engine.ItemForgeRequiredStatus)
+	checks := item(t, applied, core.ItemForgeRequiredStatus)
 	if checks.Err != nil {
 		t.Errorf("the dependant failed rather than being left alone: %v", checks.Err)
 	}
-	if checks.BlockedBy != engine.ItemForgeProtection {
-		t.Errorf("the dependant was blocked by %q, want %s", checks.BlockedBy, engine.ItemForgeProtection)
+	if checks.BlockedBy != core.ItemForgeProtection {
+		t.Errorf("the dependant was blocked by %q, want %s", checks.BlockedBy, core.ItemForgeProtection)
 	}
 	if w.forge.Calls("SetProtection") != 1 {
 		t.Errorf("the forge was asked %d times, want once: a blocked item is not attempted", w.forge.Calls("SetProtection"))
 	}
 
-	merge := item(t, applied, engine.ItemForgeMergeSettings)
+	merge := item(t, applied, core.ItemForgeMergeSettings)
 	if !merge.Done() {
 		t.Errorf("an item that depends on nothing was stopped: %v %s", merge.Err, merge.Skipped)
 	}
@@ -336,10 +336,10 @@ func TestApplySkipsWhatIsNotFlowsToDo(t *testing.T) {
 	applied, _ := applyTo(t, w, engine.ApplyInput{})
 
 	for _, id := range []string{
-		engine.ItemTrackerWIP,
-		engine.ItemTrackerExpedite,
-		engine.NativeItem("issue_closed"),
-		engine.ItemDeploysRecords,
+		core.ItemTrackerWIP,
+		core.ItemTrackerExpedite,
+		core.NativeItem("issue_closed"),
+		core.ItemDeploysRecords,
 	} {
 		skipped := item(t, applied, id)
 		if skipped.Skipped == "" {
@@ -366,7 +366,7 @@ func TestStaleRefusesAPlanTheWorldMovedPast(t *testing.T) {
 	}
 
 	if _, err := w.tracker.Apply(context.Background(), core.Change{
-		What: engine.ItemTrackerStatusOptions,
+		What: core.ItemTrackerStatusOptions,
 		Op:   core.ChangeCreate,
 		Item: core.Item{Name: "Parked"},
 	}); err != nil {
@@ -377,7 +377,7 @@ func TestStaleRefusesAPlanTheWorldMovedPast(t *testing.T) {
 	if !errors.Is(err, engine.ErrStale) {
 		t.Fatalf("the plan is %v, want it stale", err)
 	}
-	if !strings.Contains(err.Error(), engine.ItemTrackerStatusOptions) {
+	if !strings.Contains(err.Error(), core.ItemTrackerStatusOptions) {
 		t.Errorf("the refusal is %q, want it to name what moved", err)
 	}
 }

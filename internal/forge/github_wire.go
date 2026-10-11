@@ -613,29 +613,18 @@ type ghRepoRequest struct {
 	DeleteBranchOnMerge      bool   `json:"delete_branch_on_merge"`
 }
 
-// The types below are GraphQL's, not REST's. GitHub answers a GraphQL request
-// with 200 whatever happened, and says what went wrong in an "errors" array
-// beside the data, so the envelope is part of the wire format rather than
-// something the HTTP client can be left to notice (spec 10 §2).
+// The rest of this file is GraphQL's, not REST's. The envelope itself is
+// [core.GraphQLResponse], since every adapter that speaks GraphQL unwraps the
+// same one; what stays here is GitHub's own reading of it and the shapes of
+// the few queries flow sends (spec 10 §2).
 
-// ghGraphQLRequest is the body of POST /graphql.
-type ghGraphQLRequest struct {
-	Query     string         `json:"query"`
-	Variables map[string]any `json:"variables,omitempty"`
-}
-
-// ghGraphQLError is one entry of the errors array.
-type ghGraphQLError struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
-
-// sentinel is the core error a GraphQL error type means. GitHub's documented
-// types map onto flow's own; anything else is the provider refusing for a
-// reason flow has no name for, which is unavailable rather than invalid input,
-// because the query is flow's and was not the user's to get wrong.
-func (e ghGraphQLError) sentinel() error {
-	switch e.Type {
+// gitHubGraphQLSentinel is the core error a GraphQL error type means.
+// GitHub's documented types map onto flow's own; anything else is the
+// provider refusing for a reason flow has no name for, which is unavailable
+// rather than invalid input, because the query is flow's and was not the
+// user's to get wrong.
+func gitHubGraphQLSentinel(errType string) error {
+	switch errType {
 	case "NOT_FOUND":
 		return core.ErrNotFound
 	case "FORBIDDEN", "INSUFFICIENT_SCOPES", "UNAUTHORIZED":
@@ -645,12 +634,6 @@ func (e ghGraphQLError) sentinel() error {
 	default:
 		return core.ErrUnavailable
 	}
-}
-
-// ghGraphQLResponse is the envelope every GraphQL answer arrives in.
-type ghGraphQLResponse[T any] struct {
-	Data   T                `json:"data"`
-	Errors []ghGraphQLError `json:"errors"`
 }
 
 // ghClosingIssues is the data of the closingIssuesReferences query: the

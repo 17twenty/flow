@@ -98,13 +98,13 @@ func githubProjectsWorld(t *testing.T) world {
 	lock := config.NewLock("v0.3.0")
 	lock.ConfigHash = planConfigHash
 	lock.Record(config.Creation{
-		Kind: engine.CreationKind(engine.ItemTrackerStatusOptions),
+		Kind: engine.CreationKind(core.ItemTrackerStatusOptions),
 		ID:   "opt-icebox",
 		Name: "Icebox",
 		At:   coretest.ContractNow.Add(-30 * 24 * time.Hour),
 	})
 	lock.Attestations = append(lock.Attestations, config.Attestation{
-		Check:     engine.ItemTrackerExpedite,
+		Check:     core.ItemTrackerExpedite,
 		By:        "@17twenty",
 		Note:      "the Expedite view is saved on the board",
 		At:        coretest.ContractNow.Add(-24 * time.Hour),
@@ -246,20 +246,20 @@ func TestPlanOutcomes(t *testing.T) {
 			name:  "github-projects",
 			world: githubProjectsWorld,
 			want: map[string]engine.Outcome{
-				engine.ItemTrackerProject:              engine.OutcomeNoop,
-				engine.ItemTrackerStatusOptions:        engine.OutcomeNative,
-				engine.ItemTrackerLabels:               engine.OutcomeNative,
-				engine.NativeItem("changes_requested"): engine.OutcomeAttest,
-				engine.NativeItem("pr_merged"):         engine.OutcomeNoop,
-				engine.NativeItem("issue_closed"):      engine.OutcomeAttest,
-				engine.ItemTrackerWIP:                  engine.OutcomeCompensated,
-				engine.ItemTrackerExpedite:             engine.OutcomeNoop,
-				engine.ItemForgeDefaultBranch:          engine.OutcomeNoop,
-				engine.ItemForgeProtection:             engine.OutcomeNative,
-				engine.ItemForgeRequiredStatus:         engine.OutcomeNative,
-				engine.ItemForgeMergeSettings:          engine.OutcomeNative,
-				engine.ItemForgeFiles:                  engine.OutcomeNative,
-				engine.ItemDeploysRecords:              engine.OutcomeNoop,
+				core.ItemTrackerProject:              engine.OutcomeNoop,
+				core.ItemTrackerStatusOptions:        engine.OutcomeNative,
+				core.ItemTrackerLabels:               engine.OutcomeNative,
+				core.NativeItem("changes_requested"): engine.OutcomeAttest,
+				core.NativeItem("pr_merged"):         engine.OutcomeNoop,
+				core.NativeItem("issue_closed"):      engine.OutcomeAttest,
+				core.ItemTrackerWIP:                  engine.OutcomeCompensated,
+				core.ItemTrackerExpedite:             engine.OutcomeNoop,
+				core.ItemForgeDefaultBranch:          engine.OutcomeNoop,
+				core.ItemForgeProtection:             engine.OutcomeNative,
+				core.ItemForgeRequiredStatus:         engine.OutcomeNative,
+				core.ItemForgeMergeSettings:          engine.OutcomeNative,
+				core.ItemForgeFiles:                  engine.OutcomeNative,
+				core.ItemDeploysRecords:              engine.OutcomeNoop,
 			},
 			exit: 2,
 		},
@@ -268,14 +268,14 @@ func TestPlanOutcomes(t *testing.T) {
 			world: jiraWorld,
 			want: map[string]engine.Outcome{
 				// Jira can be told its columns, but not by this credential.
-				engine.ItemTrackerStatusOptions: engine.OutcomeFollowUp,
+				core.ItemTrackerStatusOptions: engine.OutcomeFollowUp,
 				// Labels are free-form, so flow just makes them.
-				engine.ItemTrackerLabels: engine.OutcomeNative,
+				core.ItemTrackerLabels: engine.OutcomeNative,
 				// Jira reports its own limits, and this one disagrees; it
 				// cannot be told otherwise, so flow enforces it at the gate.
-				engine.ItemTrackerWIP: engine.OutcomeCompensated,
+				core.ItemTrackerWIP: engine.OutcomeCompensated,
 				// Nothing can be asked of Jira about an issue closing.
-				engine.NativeItem("issue_closed"): engine.OutcomeUnsupported,
+				core.NativeItem("issue_closed"): engine.OutcomeUnsupported,
 			},
 			exit: 1,
 		},
@@ -304,13 +304,13 @@ func TestPlanOutcomes(t *testing.T) {
 func TestPlanChanges(t *testing.T) {
 	plan := planFor(t, githubProjectsWorld(t))
 
-	columns, ok := plan.Find(engine.ItemTrackerStatusOptions)
+	columns, ok := plan.Find(core.ItemTrackerStatusOptions)
 	if !ok {
 		t.Fatal("the status options are not in the plan")
 	}
 	want := []core.Change{
-		{What: engine.ItemTrackerStatusOptions, Op: core.ChangeCreate, Item: core.Item{Name: "Ready"}},
-		{What: engine.ItemTrackerStatusOptions, Op: core.ChangeDelete, Item: core.Item{ID: "opt-icebox", Name: "Icebox"}},
+		{What: core.ItemTrackerStatusOptions, Op: core.ChangeCreate, Item: core.Item{Name: "Ready"}},
+		{What: core.ItemTrackerStatusOptions, Op: core.ChangeDelete, Item: core.Item{ID: "opt-icebox", Name: "Icebox"}},
 	}
 	if len(columns.Changes) != len(want) {
 		t.Fatalf("changes are %+v, want %+v", columns.Changes, want)
@@ -321,7 +321,7 @@ func TestPlanChanges(t *testing.T) {
 		}
 	}
 
-	protection, ok := plan.Find(engine.ItemForgeProtection)
+	protection, ok := plan.Find(core.ItemForgeProtection)
 	if !ok {
 		t.Fatal("the protection is not in the plan")
 	}
@@ -340,7 +340,7 @@ func TestPlanKeepsWhatFlowDidNotCreate(t *testing.T) {
 	w.lock.Created = nil
 
 	plan := planFor(t, w)
-	columns, _ := plan.Find(engine.ItemTrackerStatusOptions)
+	columns, _ := plan.Find(core.ItemTrackerStatusOptions)
 	for _, change := range columns.Changes {
 		if change.Op == core.ChangeDelete {
 			t.Fatalf("flow proposes to delete %q, which it did not create", change.Item.Name)
@@ -353,12 +353,12 @@ func TestPlanKeepsWhatFlowDidNotCreate(t *testing.T) {
 // about something else (spec 03 §3).
 func TestPlanAttestationLapsesWithTheConfig(t *testing.T) {
 	w := githubProjectsWorld(t)
-	if item, _ := planFor(t, w).Find(engine.ItemTrackerExpedite); item.Outcome != engine.OutcomeNoop {
+	if item, _ := planFor(t, w).Find(core.ItemTrackerExpedite); item.Outcome != engine.OutcomeNoop {
 		t.Fatalf("the attested view plans as %s, want noop", item.Outcome)
 	}
 
 	w.lock.ConfigHash = "sha256:ffff"
-	item, _ := planFor(t, w).Find(engine.ItemTrackerExpedite)
+	item, _ := planFor(t, w).Find(core.ItemTrackerExpedite)
 	if item.Outcome != engine.OutcomeAttest {
 		t.Errorf("after the configuration changed the view plans as %s, want attest", item.Outcome)
 	}
@@ -401,12 +401,12 @@ func TestPlanFilters(t *testing.T) {
 	}
 
 	only := build(engine.PlanInput{Only: []string{core.CapLabels}})
-	if len(only.Items) != 1 || only.Items[0].ID != engine.ItemTrackerLabels {
+	if len(only.Items) != 1 || only.Items[0].ID != core.ItemTrackerLabels {
 		t.Fatalf("--only labels planned %v, want just the labels", only.IDs())
 	}
 
 	full := build(engine.PlanInput{})
-	whole, _ := full.Find(engine.ItemTrackerLabels)
+	whole, _ := full.Find(core.ItemTrackerLabels)
 	if only.Items[0].Outcome != whole.Outcome || only.Items[0].ObservedHash != whole.ObservedHash {
 		t.Error("filtering changed what the plan decided about the labels")
 	}

@@ -114,3 +114,67 @@ reopen, pagination, error mapping.
   It is idempotent: doctor runs daily, and the second run must not move the
   date the work was finished. Added now rather than later because the fake is
   still the only implementation.
+- **§2 a project is its number, everywhere flow records it (item 3.8).**
+  GitHub addresses a board three ways: an opaque node id (`PVT_…`) that every
+  mutation needs, a number in the address bar, and a title. The number is what
+  `tracker.project` holds, what a human can check against the address bar, and
+  what `ParseRef` returns — so it is the id of the observed item and of a
+  discovery candidate too. The node id is a detail of whichever query needs
+  one, resolved from the number; recording it would put a string nobody can
+  recognise in the lock, and a board restored from a backup has a new one.
+- **§2 a candidate's address is built, not quoted (item 3.8).** GitHub sends a
+  project's `url` with the rest of it, and it would have been free to pass on.
+  But spec 07 §3 offers candidates to a human to paste back, and the contract
+  holds an adapter to parsing what it itself offered: an address flow composed
+  is one `ParseRef` accepts by construction, where a provider that changed its
+  address format — or an Enterprise Server behind a proxy — would otherwise
+  make discovery offer references the same adapter then refuses.
+- **§2 the board and its columns are one query (item 3.8).** The columns are
+  the options of the board's own `Status` field, so `projectV2(number)` carries
+  them in the same document. Observing `tracker.project` and
+  `tracker.status_options` separately would be two queries about one board
+  against the 5,000-point budget this section asks to keep queries small for.
+- **§2 a column is its name and its id, and nothing else (item 3.8).** GitHub
+  reports an option's colour and description as well. Spec 06 §1 writes the
+  desired option as a name alone, so neither can ever be a difference the plan
+  resolves — but both would go into the hash of the observation, and spec 07 §7
+  would then report recolouring a column as drift. An observation carries what
+  the desired state is written in.
+- **§2 a closed board is never offered (item 3.8).** Discovery takes the only
+  candidate automatically when there is one (spec 07 §3). A board the team has
+  finished with is the one answer that must never be chosen on their behalf,
+  and a team whose only remaining board is closed is better told that nothing
+  was found.
+- **§2 a hint names a board, it does not search for one (item 3.8).** The hint
+  is matched against the title exactly (case-insensitively) or against the
+  number. GitHub's own project search is fuzzy, and a setup step that silently
+  takes a near miss writes the wrong board into the lock — where the next
+  thing flow does is reorganise its columns.
+- **§2 `owner_type` chooses the query field, and the wrong one finds nothing
+  (item 3.8).** A person's projects are under `user(login:)` and an
+  organisation's under `organization(login:)`; the same login may be neither.
+  GitHub answers the wrong one with a null owner rather than an error, and
+  flow reads that as no projects — an honest answer, since the owner asked
+  about genuinely has none. The addresses differ the same way (`/users/…`
+  against `/orgs/…`), which is why both kinds sit the contract.
+- **§2 a board that is not there is an observation that does not exist (item
+  3.8).** GraphQL answers a missing `projectV2` with a null rather than an
+  error, as it does a board whose `Status` field somebody deleted. Both are
+  the plan's "this has to be created or found first" case and neither is a
+  failure, so `Observe` reports `exists: false` and `Probe` counts a board it
+  cannot read as a finding rather than refusing.
+- **§2 reading the board is proved by reading it; writing to it needs the
+  scope as well (item 3.8).** A role and a scope are two limits and both
+  apply, as in spec 05 §3. The trial read is the only honest answer to "may
+  this credential see this board" — a fine-grained token or an App announces
+  no scopes at all, and a classic token's `project` scope says what the token
+  may be used for rather than which boards the account can reach — so
+  `project_read` comes from the read having worked, and `read:project` plays
+  no part in the probe at all. `project_write` needs the read *and* the
+  `project` scope where the credential announced any.
+- **§2 a per-view setting is observed as absent without asking (item 3.8).**
+  Column limits and the expedite view are view settings the API does not
+  report, which is what the declaration says by refusing to verify them.
+  `Observe` returns an observation that does not exist and sends no query:
+  spending a point to be told nothing is worse than knowing in advance, and
+  spec 05 §4 turns the absence into the compensation or the attestation.

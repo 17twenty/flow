@@ -1043,47 +1043,13 @@ func paginate[T any](ctx context.Context, g *GitHub, req core.Request, visit fun
 	return core.Paginate(ctx, g.client, g.decorate(req), visit)
 }
 
-// graphQL sends one GraphQL query and returns its data. GitHub answers 200
-// whatever happened and says what went wrong beside the data, so the envelope
-// is unwrapped here: an answer carrying errors is a refusal, with the sentinel
-// its type means, whatever came back alongside (spec 10 §2).
+// graphQL sends one GraphQL query and returns its data, through the shared
+// unwrapping in core with GitHub's own reading of what an error type means.
 func graphQL[T any](ctx context.Context, g *GitHub, query string, variables map[string]any) (T, error) {
-	var envelope ghGraphQLResponse[T]
-	_, err := g.do(ctx, core.Request{
-		Method: http.MethodPost,
-		Path:   g.graphQL,
-		Body:   ghGraphQLRequest{Query: query, Variables: variables},
-		Out:    &envelope,
-		// A query is a read however it is sent, so trying it again
-		// cannot do anything twice — which POST's default policy, which
-		// knows only the method, has to assume it could.
-		Retry: core.RetryAlways,
-	})
-	if err != nil {
-		var zero T
-		return zero, err
-	}
-	if len(envelope.Errors) > 0 {
-		var zero T
-		return zero, graphQLError(envelope.Errors)
-	}
-	return envelope.Data, nil
-}
-
-// graphQLError states a GraphQL errors array as one refusal, keeping every
-// message: a query that failed for two reasons has two things to fix.
-func graphQLError(errs []ghGraphQLError) error {
-	messages := make([]string, 0, len(errs))
-	for _, e := range errs {
-		if message := strings.TrimSpace(e.Message); message != "" {
-			messages = append(messages, message)
-		}
-	}
-	if len(messages) == 0 {
-		messages = append(messages, "the provider gave no reason")
-	}
-	return core.Errorf(errs[0].sentinel(), "ask GitHub's GraphQL API").
-		WithWhy("%s", strings.Join(messages, "; "))
+	return core.GraphQL[T](ctx, g.client,
+		g.decorate(core.Request{Path: g.graphQL}),
+		core.GraphQLQuery{Query: query, Variables: variables},
+		gitHubGraphQLSentinel)
 }
 
 // gitHubListState maps a query's state onto the one GitHub's list endpoint
