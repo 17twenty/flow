@@ -181,3 +181,56 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   warning band at all. Where the number is written down in `.flow.yaml` is for
   the item that adds the live checks (5.1); spec 03 does not have it yet, and
   this is recorded as a spec issue rather than invented here.
+- **§3 the lock and `--set` are consulted before discovery (item 2.9).** The
+  written order is discover → choose → create → ask, but discovery auto-takes a
+  single candidate under `--fix`, which would silently overrule a user who had
+  just said which board it was. An identifier flow already verified, and one a
+  human typed on the command line, are both better answers than one flow picked
+  for them, so the ladder is: lock → set → discover → create → ask. Discovery
+  keeps its position relative to the rungs the spec names.
+- **§3 everything is read back from the provider before it is recorded (item
+  2.9).** Including an id the user passed with `--set`: a typo in a pasted
+  value, written to the lock, turns every later run into a mystery about a
+  board that is not there. The reference recorded is the one the provider
+  described, so the name and URL in the lock are the tracker's own rather than
+  whatever was typed.
+- **§3 creation is its own read-back (item 2.9).** The item a provider returns
+  from a create call is that provider describing what it just made, so a second
+  look would only be a second chance to fail. Nothing unverified is recorded by
+  this route either.
+- **§3 a provider that will not answer does not cost flow what it knows (item
+  2.9).** When the lock has an identifier and the read-back fails — rate limit,
+  outage, a token that lost a scope — the locked answer is kept and the reason
+  is carried on the answer. Forgetting it would turn a transient failure into a
+  question for a human and make `flow doctor` destructive when offline. Only a
+  tracker that answers, and does not list the thing, retires an identifier.
+- **§3 `--set` does not require `--fix` (item 2.9).** Naming the board is the
+  human's decision already made; what `--fix` licenses is flow choosing on
+  their behalf — taking the only candidate, asking the picker, creating. So a
+  plain `flow doctor --set tracker.project=…` records the answer, and a plain
+  `flow doctor` with one candidate reports what it would have taken and writes
+  nothing.
+- **§3 a picker that cannot ask is a fall-through, not a failure (item 2.9).**
+  `core.ErrNeedsInput` from the chooser means no TTY, or a user who pressed
+  escape; resolution carries on to the written-down question. Any other error
+  is the picker going wrong, and is reported.
+- **§3 the five placeholder paths are walked by hand (item 2.9).**
+  `tracker.project` and the four `followups.owners.*`. No reflection: the list
+  is short, and walking it explicitly means a sixth has to be thought about
+  rather than appearing by accident. Only `tracker.project` is discoverable —
+  no API says whether a handle is the right person to ask about board
+  administration, so owners are recorded as typed.
+- **§3 a created board is named after the repository (item 2.9).** Flow is not
+  in a position to invent a better name, and the repository's own is the one a
+  human would have typed. Creation is attempted only when the declaration says
+  `set: true` and the probe reports the tokens it requires, so the common case
+  — github-projects, Jira and Linear all declare project creation as an
+  administrator's job — never reaches a request that would be rejected.
+- **§3 answers go in the lock, never back into `.flow.yaml` (item 2.9).** The
+  configuration is the team's intent and an identifier the tracker made up is
+  not part of it; writing it back would change a reviewed file without review.
+  The `${pending:…}` string stays as written.
+- **§3 an unresolved placeholder is `input`, not `fail` (item 2.9).** Nobody
+  has decided yet, which is a question for a human and exit 2. A provider that
+  could not be asked at all is `error`: that is a fault to report, not a
+  decision to make.
