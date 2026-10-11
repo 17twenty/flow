@@ -68,3 +68,41 @@ Compensated outcomes never create follow-ups.
 
 `flow plan --tracker-override <kind>`: same desired state against another
 tracker's declarations, full permissions assumed, no network. Side-by-side table.
+
+## Decisions
+
+- **§1 a declaration must describe every capability of its kind (item 2.1).**
+  `LoadRegistry` refuses a file that omits one. The alternative is a file that
+  is silently incomplete, and an adapter that looks unsupported because nobody
+  got round to the research rather than because the provider cannot do it.
+  Saying `{ set: false, verify: false, remediation: none }` is a finding;
+  saying nothing is not.
+- **§1 an undeclared capability is the zero Capability (item 2.1).**
+  `CapabilitySet.Capability` returns `{set:false, verify:false,
+  remediation:"none"}` for a name it does not hold, which §4 resolves to
+  `unsupported`. Querying an unresearched capability is a bug, and the safe
+  reading of a bug is that flow may not touch the provider.
+- **§1 the file is named after the adapter (item 2.1).** `github-projects.yaml`
+  declares `adapter: github-projects`, and the loader enforces it, so the
+  declaration behind an adapter named in `.flow.yaml` is always findable by
+  name, and two files cannot claim one adapter.
+- **§1 a broken declaration is a broken build (item 2.1).** The loader returns
+  an error rather than skipping the file, and reports every problem in it at
+  once. These files are flow's whole account of what it can do; running with a
+  half-read one would make the plan a guess.
+- **§1 `requires` tokens are free-form (item 2.1).** They are validated as
+  non-empty strings and nothing more. §3 makes permission tokens a matter for
+  each adapter's `Probe` — `admin`, `project_write`, `maintainer` — so a
+  central registry of them would have to be rewritten for every new forge.
+  Item 2.2 is where a token is matched against what `Probe` reported.
+- **§2 the registry lives in `core`, the files are passed in (item 2.1).**
+  `LoadRegistry` takes an `fs.FS`, and the root passes `assets.Capabilities()`.
+  Spec 01 §2 puts `core` on stdlib and YAML only, so `core` importing `assets`
+  would invert the dependency; it also lets tests load a declaration from
+  `fstest.MapFS` instead of the shipped one.
+- **§2 only six events have a `native_transition_*` name (item 2.1).** Spec 04
+  §4's vocabulary has ten. `pr_opened` is defined as two other events and needs
+  no name of its own; `pr_converted_to_draft`, `approved` and
+  `pr_closed_unmerged` are not offered as built-in automation by any tracker
+  researched. `core.NativeTransitionCapability` reports an event as unknown,
+  and §1.1's `owner: native` check then rejects it with "use owner: flow".

@@ -77,7 +77,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 2 — Engine with fakes
 
-- [ ] 2.1 Capability registry and loader — specs: 05 §1–2 — deps: 0.5 (#28)
+- [x] 2.1 Capability registry and loader — specs: 05 §1–2 — deps: 0.5 (#28)
+  - note: core/capability_names.go holds the registry as constants; core/capability.go decodes strictly from an fs.FS the root supplies, so core keeps off assets. A declaration must cover every capability of its kind, is named after its adapter, and reports all its problems at once; an undeclared capability reads as the zero Capability, which 2.2 resolves to unsupported. Permission tokens stay free-form until Probe (3.7).
   - AC: all assets/capabilities load; names ⊆ registry; compensated_by iff compensate
 - [ ] 2.2 Outcome resolution — specs: 05 §4 — deps: 2.1 (#29)
   - AC: exhaustive table over set/verify/remediation/permission/attestation

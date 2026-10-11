@@ -30,6 +30,7 @@ CURRENT MODE: direct
 - kong calls `os.Exit` for `--help`/parse errors; pass `kong.Exit(panic)` and recover in `run()` so it returns a code and stays testable.
 - Test-only commands go in `testcmds_flowtest.go` via `kong.DynamicCommand`; `testcmds.go` (`!flowtest`) returns nil so the shipped surface stays spec 02 exactly.
 - `go:embed schema` fails while `assets/schema/` holds only `.gitkeep` — use `all:schema`.
+- Never use a real credential as a test fixture, even a doomed one: push protection rejects the whole push. Build credential-shaped fixtures from pieces (`"gh" + "p_" + strings.Repeat(…)`) so the file holds no scannable literal.
 - staticcheck U1000 fires on helpers written before their callers. Write each helper with the plan item that uses it, not ahead of it.
 - Signal tests: `signal.Notify` in the test first, so a signal landing before `run()` registers cannot kill the test process.
 - GitHub push protection rejects token-shaped literals even in test fixtures. Assemble fake credentials from concatenated parts at run time.
