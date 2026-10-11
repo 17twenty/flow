@@ -49,7 +49,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.5 Placeholders — specs: 03 §2 — deps: 1.4 (#18)
   - note: config/placeholder.go; Pending type at tracker.project + followups.owners.*, placement enforced in Parse, flow-mapping mistake diagnosed. FuzzParse found a cyclic-alias memory bomb.
   - AC: Pending values only at allowed paths; block-style requirement documented in error
-- [ ] 1.6 Semantic validation and secret heuristics — specs: 03 §1.1 — deps: 1.4, 2.1 (#19)
+- [x] 1.6 Semantic validation and secret heuristics — specs: 03 §1.1 — deps: 1.4, 2.1 (#19)
+  - note: config/semantics.go. Validate(cfg, path, registry) reports every contradiction at once as ParseError problems keyed by config path; the capability registry is what decides whether `owner: native` is honest, and may be nil when a caller cannot supply it. Secret heuristics run at parse time over the document, so a credential is located at its line wherever it was written. Policy rule ids wait for the rule registry (2.13).
   - AC: one test per rule incl. native-owner capability check
 - [x] 1.7 Lockfile reader/writer — specs: 03 §3 — deps: 1.4 (#20)
   - note: config/lock.go; rendered from an explicit node tree so determinism is ours, atomic write via temp+rename, churn rule only moves a timestamp a full TTL forward. assets/examples/flow.lock is now byte-for-byte what flow writes.

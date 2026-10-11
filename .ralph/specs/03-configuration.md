@@ -352,3 +352,52 @@ gate, relaxed policy).
   — `core.Redact` changing the string is the test. Nothing is gained by
   deferring a check that stops flow sending a pasted token to a provider, and
   the error never repeats the value back.
+- **§1.1 semantic problems name a key, not a line (item 1.6).** Decoding
+  problems carry `line:col` because they are about the document; semantic ones
+  are about the decoded configuration — `workflow.transitions.pr_merged.owner`
+  is more useful than a line number, and the same check runs over presets and
+  merged state where there is no single line to point at. They reuse
+  `ParseError`, so tooling reads them the same way and the exit code is still
+  64.
+- **§1.1 the secret heuristic runs at parse time, over the document (item
+  1.6).** Every scalar is checked with `core.Redact`: if redaction changes the
+  value, it is a credential shape, and the file says so at the line it is on.
+  Doing it on the document rather than the decoded struct catches a secret
+  wherever it was written — including keys the struct has no field for — and
+  needs no reflection to walk. `config.semantics` still reports it, because
+  doctor parses the file to check it. The error never repeats the value.
+- **§1.1 a nil capability registry skips only what it is needed for (item
+  1.6).** `config.Validate` takes the registry so it can tell whether a
+  tracker really has the automation an `owner: native` transition assumes.
+  Callers that cannot supply one — a command that only wants the commit
+  convention — pass nil and still get every other check.
+- **§1.1 a key that means nothing for the chosen adapter is an error (item
+  1.6).** `tracker.owner` under Linear, `tracker.url` under Linear,
+  `forge.auth.email_env`, `deploys.contexts` under `forge_deployments`:
+  ignoring them would let someone believe a setting had an effect. The same
+  reading as §1's strict decoding, applied to combinations rather than keys.
+- **§1.1 contradictions are refused as well as unknown values (item 1.6).**
+  A column gated on `definition_of_ready` while `definition_of_ready.rules` is
+  empty, a `wip` block with no limit in it, `expedite.max` with no labels,
+  `blocked.require_comment` with no label, `agents.require_human_review` with
+  no authors or labels, `commits.scopes.required` with an empty allow-list, an
+  `unlinked_type` that is not a type, and any `deploys` key under
+  `source: none` all describe a rule that cannot fire. A policy that silently
+  does nothing is the thing flow exists to stop.
+- **§1 `done_on: merged` still allows a deploys source (item 1.6).** Only
+  `transitions.deployed` is forbidden. Deployment lag is verified under
+  `merged` (spec 04 §6), so flow still needs somewhere to read deployments
+  from; the lean-kanban preset does exactly this.
+- **§1.1 `tracker.owner_type` is required for github-projects (item 1.6).**
+  GitHub addresses `user { projectV2 }` and `organization { projectV2 }`
+  differently, and guessing costs a wasted API round trip and a confusing
+  permission error. flow asks instead.
+- **§1.1 `commits.header_max` must be between 20 and 200 (item 1.6).** Below
+  20 there is no room for a type, a scope and a verb; above 200 it is not a
+  limit. The spec gives no bound, and an unbounded one would accept a value
+  that silently fails every commit.
+- **§1.1 policy rule ids are not checked here (item 1.6).** `policy.rules`
+  keys are validated against the gate's rule registry in spec 09 §2 (item
+  2.13), which is where that registry exists; only the severity vocabulary is
+  checked now. Checking ids against a hard-coded list in two places is how
+  they drift.

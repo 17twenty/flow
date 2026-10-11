@@ -114,6 +114,7 @@ func Parse(src []byte, path string) (*Config, error) {
 
 	index := indexNodes(&doc)
 	problems := checkPlaceholders(&doc, path)
+	problems = append(problems, checkSecrets(&doc, path)...)
 
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(src))

@@ -10,6 +10,20 @@ package config
 // Version is the only `.flow.yaml` schema version this build understands.
 const Version = 1
 
+// Preset names (spec 03 §7).
+const (
+	// PresetLeanKanban is the default: done on merge, native where GitHub
+	// Projects offers it.
+	PresetLeanKanban = "lean-kanban"
+	// PresetDeployDone is lean-kanban with done meaning deployed.
+	PresetDeployDone = "deploy-done"
+	// PresetMinimal is the smallest workflow that still holds together.
+	PresetMinimal = "minimal"
+)
+
+// PresetNames is every shipped preset, in the order they are offered.
+var PresetNames = []string{PresetLeanKanban, PresetDeployDone, PresetMinimal}
+
 // Forge kinds (spec 03 §1).
 const (
 	ForgeGitHub = "github"
@@ -40,6 +54,70 @@ const (
 
 // Gates a column can require before work may enter it.
 const GateDefinitionOfReady = "definition_of_ready"
+
+// Definition of Ready rule ids (spec 04 §7).
+const (
+	// DoRAcceptanceCriteria demands a filled-in acceptance criteria heading.
+	DoRAcceptanceCriteria = "acceptance_criteria"
+	// DoRParentLink demands the ticket hang off something bigger.
+	DoRParentLink = "parent_link"
+	// DoRNotBlocked refuses work that is already stuck.
+	DoRNotBlocked = "not_blocked"
+	// DoRFlagIfUserFacing demands a feature flag on user-facing work.
+	DoRFlagIfUserFacing = "flag_if_user_facing"
+	// DoRDesignIfUI demands a design link on UI work.
+	DoRDesignIfUI = "design_if_ui"
+)
+
+// Commit conventions (spec 08).
+const ConventionConventional = "conventional"
+
+// Merge strategies. Which one the repository uses decides which text becomes
+// the commit header, and so what the gate must check (spec 03 §1).
+const (
+	MergeSquash = "squash"
+	MergeCommit = "merge"
+	MergeRebase = "rebase"
+)
+
+// Event vocabulary (spec 04 §4). These are the keys of workflow.transitions.
+const (
+	// EventPROpenedDraft is a pull request opened as a draft.
+	EventPROpenedDraft = "pr_opened_draft"
+	// EventPROpened is a pull request opened ready for review, which counts
+	// as EventPROpenedDraft followed by EventPRReadyForReview.
+	EventPROpened = "pr_opened"
+	// EventPRReadyForReview is a draft marked ready.
+	EventPRReadyForReview = "pr_ready_for_review"
+	// EventPRConvertedToDraft is a ready pull request put back to draft.
+	EventPRConvertedToDraft = "pr_converted_to_draft"
+	// EventChangesRequested is a review asking for changes.
+	EventChangesRequested = "changes_requested"
+	// EventApproved is the required approvals being met.
+	EventApproved = "approved"
+	// EventPRMerged is a merge.
+	EventPRMerged = "pr_merged"
+	// EventPRClosedUnmerged is a pull request closed without merging.
+	EventPRClosedUnmerged = "pr_closed_unmerged"
+	// EventIssueClosed is the linked ticket being closed.
+	EventIssueClosed = "issue_closed"
+	// EventDeployed is a successful deployment of the merge (spec 13).
+	EventDeployed = "deployed"
+)
+
+// Events is the whole event vocabulary, in the order spec 04 §4 lists it.
+var Events = []string{
+	EventPROpenedDraft,
+	EventPROpened,
+	EventPRReadyForReview,
+	EventPRConvertedToDraft,
+	EventChangesRequested,
+	EventApproved,
+	EventPRMerged,
+	EventPRClosedUnmerged,
+	EventIssueClosed,
+	EventDeployed,
+}
 
 // What makes a ticket done (spec 04 §6).
 const (
