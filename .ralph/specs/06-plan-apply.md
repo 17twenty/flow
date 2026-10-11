@@ -149,3 +149,60 @@ each successful mutation (atomic) and at the end. Summary.
   as flow's own creation — and `--prune` decides at apply time whether it
   happens. A plan that hid unwanted leftovers until somebody passed a flag
   would be answering a different question from the one `flow plan` is asked.
+- **§3 the lock is written after every mutation, and a failure blocks only
+  dependants (item 2.7).** Apply walks the plan in the order the plan put it,
+  which is already dependency order, and saves the lock after each change the
+  provider confirms. An apply that is interrupted — an expired credential, a
+  rate limit, a closed laptop — therefore leaves a lock that describes exactly
+  what landed. A failed item is recorded as failed and so is every item that
+  depends on it, naming the original cause rather than the nearest one, so a
+  human reads one failure and a list of what it stopped instead of a cascade.
+- **§3 nothing is inferred about a change flow did not see succeed (item
+  2.7).** A creation is recorded in `created:` from the provider's own reply,
+  with the id the provider gave it; a deletion removes the record. Flow never
+  writes down an intention.
+- **§4 a forge item is one setting, written whole (item 2.7).** Protection,
+  the required checks and the merge strategies are each a single value at the
+  forge, not a set of mutations, so apply makes one call from the whole of the
+  desired state rather than one call per listed change. `forge.protection` and
+  `forge.required_status` are two desired items but one call: writing the
+  contexts with no flags, or the flags with no contexts, would send the forge
+  a value nobody asked for. The adapter merges it onto what the branch already
+  has, which is where §4's additivity lives. The item's changes consequently
+  stand or fall together, and one refusal refuses the item.
+- **§4 only the files the plan named are proposed (item 2.7).** A proposal
+  carries the content of the files that are missing or wrong and leaves every
+  other file exactly as the team wrote it, because §1's check is that the
+  workflow runs flow's commands and not that the bytes match what flow ships.
+  The proposal's id is `files`, so re-running updates the same branch and the
+  same pull request.
+- **§4 every refusal to remove is in one place (item 2.7).** A removal is the
+  only thing apply does that running it again cannot undo: a wrong creation is
+  a line in the configuration, a deleted column takes every ticket's status
+  with it. So one function answers why flow will not make a delete — `--prune`
+  was not passed, the lock does not record flow as having created it, or
+  somebody is using it — and the answer is a sentence the human reads rather
+  than a silent skip.
+- **§4 "in use" is a question for the tracker, and no answer counts as in use
+  (item 2.7).** Before removing a status option apply asks the tracker for its
+  tickets and counts the ones sitting in that column, because the whole hazard
+  is work in a column flow does not know about. If the query fails the option
+  counts as in use: not being able to look is not permission to delete.
+- **§4 a creation matches an observed thing by identifier only when both have
+  one (item 2.7).** The lock records a name and, when the provider gave one,
+  an id. Matching on id alone made one nameless creation — a required status
+  context, which has no id — match every other nameless thing, and apply left
+  a spurious delete of a check it had never created. Matching is now by
+  identifier when both sides have one and by name otherwise, and the planner
+  and apply share the one function.
+- **§4 the option-set snapshot belongs to the GitHub Projects adapter (item
+  2.7).** §4's snapshot-mutate-restore-verify dance, and its >500-item retreat
+  to a follow-up, is a consequence of how that one tracker stores a single
+  select field. The engine hands the tracker one change at a time and asks it
+  to make that change true; a tracker that can edit an option without
+  disturbing the board does nothing special, and GitHub Projects does the
+  dance behind `Apply` (item 3.9).
+- **§3 a deployment is not applied (item 2.7).** Deploy items are read: flow
+  observes what was deployed and has no business creating one. Apply skips
+  them with that as the reason rather than failing on a target it has no call
+  for.

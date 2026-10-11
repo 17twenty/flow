@@ -272,16 +272,34 @@ func (in PlanInput) deletions(wanted DesiredItem, observation core.Observation) 
 
 // created reports whether the lock records this thing as flow's own doing.
 func (in PlanInput) created(id string, item core.Item) bool {
-	if in.Lock == nil {
+	return created(in.Lock, id, item)
+}
+
+// created reports whether the lock records this thing as flow's own doing. It
+// is what spec 06 §4 turns on: nothing flow did not create is ever deleted,
+// and both the plan and the apply ask the question the same way.
+//
+// A creation is matched by identifier when both sides have one, and by name
+// otherwise. Not everything a provider holds has an id — a required status
+// context is only ever its own name — and matching two empty ids would make
+// one recorded creation stand for every nameless thing in the set.
+func created(lock *config.Lock, id string, item core.Item) bool {
+	if lock == nil {
 		return false
 	}
 	kind := CreationKind(id)
-	return slices.ContainsFunc(in.Lock.Created, func(creation config.Creation) bool {
-		if creation.Kind != kind {
-			return false
-		}
-		return creation.ID == item.ID || (creation.ID == "" && creation.Name == item.Name)
+	return slices.ContainsFunc(lock.Created, func(creation config.Creation) bool {
+		return creation.Kind == kind && sameThing(creation, item)
 	})
+}
+
+// sameThing reports whether a recorded creation and an observed thing are the
+// same thing: by identifier when both have one, by name otherwise.
+func sameThing(creation config.Creation, item core.Item) bool {
+	if creation.ID != "" && item.ID != "" {
+		return creation.ID == item.ID
+	}
+	return creation.Name == item.Name
 }
 
 // CreationKind is the lock's `created:` kind for one of the things a desired

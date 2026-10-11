@@ -97,7 +97,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.6 Comparison mode — specs: 05 §6 — deps: 2.5 (#33)
   - note: engine/compare.go takes two capability declarations rather than adapters, so "no network" is a property of the signature. Both sides are planned as a greenfield with the union of the declaration's own `requires` assumed, which makes the answer about the provider instead of about today's board or today's token. Only tracker items are held: nothing else changes when the tracker does. Rows the two disagree about are marked `≠`. CLI wiring is item 4.2.
   - AC: no network; side-by-side golden
-- [ ] 2.7 Apply executor — specs: 06 §3–4 — deps: 2.5, 1.7 (#34)
+- [x] 2.7 Apply executor — specs: 06 §3–4 — deps: 2.5, 1.7 (#34)
+  - note: engine/apply.go walks the plan in its own order, writing the lock after every mutation that lands, so an apply that stops half way has told the truth about the half that happened. A tracker item is a list of changes made one at a time; a forge item is one setting written whole, because protection, the required checks and the merge strategies are each one value and the missing files are one pull request. A failure stops only the items that depend on it. Removal is the only thing that cannot be undone by running again, so every refusal lives in one place. Found and fixed a real bug: a nameless recorded creation matched every other nameless observed thing, so apply left a spurious delete behind.
   - AC: partial failure leaves lock consistent; prune refuses in-use options
 - [ ] 2.8 Doctor check registry, states, exit aggregation — specs: 07 §1–2, §9 — deps: 2.3 (#35)
   - AC: blocked propagation; exit aggregation table; renders golden
