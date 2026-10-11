@@ -213,3 +213,12 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
   caller, so the limit is a buffered channel inside `Client` and an adapter
   cannot forget it. It needs no dependency; `golang.org/x/sync/errgroup` stays
   for the places that fan out over several providers.
+- **§2 pagination and error restatement belong to `core` (item 3.6).**
+  Adapters may not import each other, so the Link-following walk and the
+  helper that restates a provider's error as the thing flow was trying to do —
+  both written for `internal/forge` — would have had to be copied verbatim
+  into `internal/deploys`. They are properties of `core.Response.Links` and of
+  `core.UserError`, not of any provider, so they became `core.Paginate` and
+  `core.Explain` and the forge adapter now uses them. What is really GitHub's —
+  its media type, its API version, the shape of a repository path — stays with
+  each adapter that speaks GitHub, where a second provider will not inherit it.

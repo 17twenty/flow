@@ -440,8 +440,8 @@ func TestGitHubStopsWhenAProviderLoopsItsOwnLinkHeader(t *testing.T) {
 	if !errors.Is(err, core.ErrUnavailable) {
 		t.Fatalf("PullRequests = %v, want it to give up on a provider that never ends", err)
 	}
-	if got := len(fake.Requests()); got != maxPages {
-		t.Errorf("the walk made %d requests, want it bounded at %d", got, maxPages)
+	if got := len(fake.Requests()); got != core.MaxPages {
+		t.Errorf("the walk made %d requests, want it bounded at %d", got, core.MaxPages)
 	}
 }
 

@@ -184,26 +184,33 @@ func (c *FileCache) Store(key string, entry CachedResponse) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	final := c.path(key)
-	tmp, err := os.CreateTemp(c.dir, ".flow-cache-*")
+	return writeAtomic(c.dir, c.path(key), "a cached response", raw)
+}
+
+// writeAtomic replaces the file at final with raw, through a temporary file in
+// the same directory, so that a concurrent reader sees either the old content
+// or the new one and never half of either. thing names what is being written,
+// so that a failure says what was lost.
+func writeAtomic(dir, final, thing string, raw []byte) error {
+	tmp, err := os.CreateTemp(dir, ".flow-cache-*")
 	if err != nil {
-		return Errorf(ErrUnavailable, "cache a response in %s", c.dir).WithWhy("%s", err)
+		return Errorf(ErrUnavailable, "write %s in %s", thing, dir).WithWhy("%s", err)
 	}
 	name := tmp.Name()
 	defer func() { _ = os.Remove(name) }()
 	if err := tmp.Chmod(cacheFilePerm); err != nil {
 		_ = tmp.Close()
-		return Errorf(ErrUnavailable, "secure a cached response").WithWhy("%s", err)
+		return Errorf(ErrUnavailable, "secure %s", thing).WithWhy("%s", err)
 	}
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
-		return Errorf(ErrUnavailable, "write a cached response").WithWhy("%s", err)
+		return Errorf(ErrUnavailable, "write %s", thing).WithWhy("%s", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return Errorf(ErrUnavailable, "write a cached response").WithWhy("%s", err)
+		return Errorf(ErrUnavailable, "write %s", thing).WithWhy("%s", err)
 	}
 	if err := os.Rename(name, final); err != nil {
-		return Errorf(ErrUnavailable, "replace a cached response").WithWhy("%s", err)
+		return Errorf(ErrUnavailable, "replace %s", thing).WithWhy("%s", err)
 	}
 	return nil
 }

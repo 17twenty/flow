@@ -41,3 +41,42 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
 `deploys.source` (setup), `live.deploys.recent`, `live.deploys.lag`,
 `live.tickets.done_deployed` (spec 07 §6). Missing records → remediation
 `manual` with the pattern for the detected setup, owner `followups.owners.platform`.
+
+## Decisions
+
+- **§3 "inactive" is not a state (item 3.6).** GitHub writes an `inactive`
+  deployment status on a record that a later deployment superseded, so the
+  newest status on a year-old success says `inactive` and nothing else does.
+  Reading it as the state would turn every past success into a non-success and
+  make "what was production running at time T" unanswerable for every T but
+  now. The state is therefore the newest status that is not `inactive`.
+- **§3 a deployment nothing has reported on is pending (item 3.6).** A record
+  with no status at all has not started, which is what `pending` already
+  means, so it needs no fifth state of its own.
+- **§3 a state flow does not understand is a refusal (item 3.6).** Guessing
+  would either hide a deployment or invent one. The adapter refuses with
+  `ErrUnavailable` naming the word it saw, as §2's ancestry already does for a
+  comparison status it cannot read.
+- **§3 the environment and the commit are the provider's filters, the window
+  is the adapter's (item 3.6).** GitHub's deployments endpoint takes
+  `environment` and `sha` but has no `since`, so the walk sends the first two
+  and stops at the first record older than the window — which the provider's
+  newest-first order makes the last one worth reading.
+- **§3 the evidence comes from the status, falling back to the record (item
+  3.6).** The status carries the line the deployer left and the address of the
+  run behind it, so `URL` is its `log_url` (or `target_url`) and `Description`
+  its description; the deployment record's own are used when the status left
+  them empty. `UpdatedAt` is when the status was written, because that is when
+  the state last changed.
+- **§3 the ancestry cache is `core.Ancestry`, and only object names are
+  remembered (item 3.6).** The engine's deployment checks need it and may not
+  import an adapter (spec 01 §2), so it lives in core, in front of a
+  `core.Comparer` — the one method of `Forge` the question needs. A pair of
+  object names is remembered for good, since a commit's parents never change;
+  a branch or a tag names whatever it points at today and is asked every time;
+  and neither a refusal nor an ancestry flow does not understand is written,
+  because neither is an answer.
+- **§1 one capability declaration covers every deployment source (item 3.6).**
+  `assets/capabilities/deploys.yaml` is named `deploys`, not after a provider:
+  a deployment record says the same thing whichever forge holds it, and what
+  flow may do with one — read it, never write it — does not change either.

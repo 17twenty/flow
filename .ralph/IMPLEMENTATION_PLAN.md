@@ -144,7 +144,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 3.5 GitHub: file proposal via PR — specs: 06 §4 — deps: 3.1 (#49)
   - note: refs and contents, as spec 10 §2 says: branch off the trunk once, write each file quoting the blob it replaces, then open the pull request from that branch or patch the one already open. A file the branch already holds is not written again, so a proposal left unmerged does not grow a commit per apply. The trunk is never written, and a proposal flow could not offer — no id, title, files or path — is refused before anything is sent.
   - AC: re-run updates the same PR
-- [ ] 3.6 GitHub: deployments read — specs: 13 §3 — deps: 3.1 (#50)
+- [x] 3.6 GitHub: deployments read — specs: 13 §3 — deps: 3.1 (#50)
+  - note: internal/deploys/{github,github_wire}.go, the first adapter outside the forge. GitHub keeps a deployment's state beside the record rather than on it, so the state is the newest status that is not "inactive" — the word it writes on a record a later deployment superseded, which would otherwise erase every past success. The environment and the commit are the provider's filters; the window is the adapter's, since the endpoint has no "since". Ancestry caching is core.Ancestry, in front of a core.Comparer, because the engine needs it and may not import an adapter: a pair of object names is remembered for good, a branch or a tag never. core.Paginate and core.Explain came out of forge so that deploys did not have to copy them.
   - AC: newest successful per env; ancestry via compare cached
 - [ ] 3.7 GitHub probe — specs: 05 §3 — deps: 3.1 (#51)
   - AC: admin/maintain/push and token scopes mapped; project access trial read

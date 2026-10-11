@@ -111,3 +111,21 @@ func (e *UserError) Error() string {
 
 // Unwrap exposes the wrapped sentinel to errors.Is and [ExitCode].
 func (e *UserError) Unwrap() error { return e.Err }
+
+// Explain restates what an error means for the caller. An adapter's helpers
+// say what they were doing in their own terms — a page of results, a GraphQL
+// query — and the caller knows the question that was really being asked, so it
+// replaces the What and keeps the Why, the Fix and the sentinel. An error that
+// is not a [UserError] is wrapped, because there is nothing to restate.
+func Explain(err error, format string, args ...any) error {
+	if err == nil {
+		return nil
+	}
+	var user *UserError
+	if errors.As(err, &user) {
+		restated := *user
+		restated.What = fmt.Sprintf(format, args...)
+		return &restated
+	}
+	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err)
+}

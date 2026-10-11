@@ -347,18 +347,27 @@ const (
 	CompareDiverged = "diverged"
 )
 
+// compareStatuses are the ancestries a comparison may report.
+var compareStatuses = []string{CompareIdentical, CompareAhead, CompareBehind, CompareDiverged}
+
 // Comparison is the ancestry between two commits, which is how flow proves a
-// merge reached an environment without parsing anything (spec 13 §3).
+// merge reached an environment without parsing anything (spec 13 §3). It is
+// written to disk by [Ancestry], so its fields are tagged: the file outlives
+// the field names.
 type Comparison struct {
 	// Base and Head are the commits compared.
-	Base string
-	Head string
+	Base string `json:"base"`
+	Head string `json:"head"`
 	// Status is one of the comparison statuses above.
-	Status string
+	Status string `json:"status"`
 	// AheadBy and BehindBy are how many commits separate them.
-	AheadBy  int
-	BehindBy int
+	AheadBy  int `json:"ahead_by"`
+	BehindBy int `json:"behind_by"`
 }
+
+// Known reports whether the comparison's status is one flow understands. An
+// unknown one proves nothing, so it is never treated as an answer.
+func (c Comparison) Known() bool { return slices.Contains(compareStatuses, c.Status) }
 
 // Contains reports whether head contains base: the deployed commit is the
 // merged commit, or came after it.

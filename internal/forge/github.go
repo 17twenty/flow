@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -42,9 +41,6 @@ const (
 	// the cursor, because a pull request that closes a twenty-first ticket
 	// is still closing it.
 	gitHubLinkPageSize = 20
-	// maxPages bounds a paginated read, so that a provider looping its own
-	// Link header cannot make flow walk forever.
-	maxPages = 500
 	// gitHubStatusDescription is the longest description GitHub keeps on a
 	// commit status.
 	gitHubStatusDescription = 140
@@ -147,7 +143,7 @@ func (g *GitHub) Slug() string { return g.owner + "/" + g.repo }
 func (g *GitHub) Repo(ctx context.Context) (core.RepoInfo, error) {
 	var payload ghRepo
 	if _, err := g.do(ctx, core.Request{Path: g.path(), Out: &payload}); err != nil {
-		return core.RepoInfo{}, explain(err, "read the repository %s", g.Slug())
+		return core.RepoInfo{}, core.Explain(err, "read the repository %s", g.Slug())
 	}
 	return payload.toRepoInfo(), nil
 }
@@ -158,7 +154,7 @@ func (g *GitHub) PullRequest(ctx context.Context, number int) (core.PullRequest,
 	var payload ghPull
 	path := g.path("pulls", strconv.Itoa(number))
 	if _, err := g.do(ctx, core.Request{Path: path, Out: &payload}); err != nil {
-		return core.PullRequest{}, explain(err, "read pull request #%d of %s", number, g.Slug())
+		return core.PullRequest{}, core.Explain(err, "read pull request #%d of %s", number, g.Slug())
 	}
 	pr := payload.toPullRequest()
 
@@ -210,10 +206,10 @@ func (g *GitHub) closingIssues(ctx context.Context, number int) ([]string, error
 		"first":  gitHubLinkPageSize,
 	}
 	var keys []string
-	for page := 0; page < maxPages; page++ {
+	for page := 0; page < core.MaxPages; page++ {
 		data, err := graphQL[ghClosingIssues](ctx, g, gitHubClosingIssues, variables)
 		if err != nil {
-			return nil, explain(err, "read the tickets pull request #%d of %s closes", number, g.Slug())
+			return nil, core.Explain(err, "read the tickets pull request #%d of %s closes", number, g.Slug())
 		}
 		keys = append(keys, data.keys(g.owner, g.repo)...)
 		pull := data.Repository.PullRequest
@@ -227,7 +223,7 @@ func (g *GitHub) closingIssues(ctx context.Context, number int) ([]string, error
 		variables["after"] = info.EndCursor
 	}
 	return nil, core.Errorf(core.ErrUnavailable, "read the tickets pull request #%d of %s closes", number, g.Slug()).
-		WithWhy("the provider offered more than %d pages of linked tickets", maxPages).
+		WithWhy("the provider offered more than %d pages of linked tickets", core.MaxPages).
 		WithFix("link the pull request to the tickets it really closes")
 }
 
@@ -245,7 +241,7 @@ func (g *GitHub) reviews(ctx context.Context, number int) ([]core.Review, error)
 		return true
 	})
 	if err != nil {
-		return nil, explain(err, "read the reviews on pull request #%d of %s", number, g.Slug())
+		return nil, core.Explain(err, "read the reviews on pull request #%d of %s", number, g.Slug())
 	}
 	return reviews, nil
 }
@@ -261,7 +257,7 @@ func (g *GitHub) changedPaths(ctx context.Context, number int) ([]string, error)
 		Out:   &files,
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return nil, explain(err, "read the files of pull request #%d of %s", number, g.Slug())
+		return nil, core.Explain(err, "read the files of pull request #%d of %s", number, g.Slug())
 	}
 	paths := make([]string, 0, len(files))
 	for _, file := range files {
@@ -302,7 +298,7 @@ func (g *GitHub) PullRequests(ctx context.Context, q core.PRQuery) ([]core.PullR
 		return q.Limit <= 0 || len(prs) < q.Limit
 	})
 	if err != nil {
-		return nil, explain(err, "list the pull requests of %s", g.Slug())
+		return nil, core.Explain(err, "list the pull requests of %s", g.Slug())
 	}
 	return prs, nil
 }
@@ -326,7 +322,7 @@ func (g *GitHub) Commits(ctx context.Context, q core.CommitQuery) ([]core.Commit
 		return q.Limit <= 0 || len(commits) < q.Limit
 	})
 	if err != nil {
-		return nil, explain(err, "list the commits of %s", g.Slug())
+		return nil, core.Explain(err, "list the commits of %s", g.Slug())
 	}
 	return commits, nil
 }
@@ -341,7 +337,7 @@ func (g *GitHub) Compare(ctx context.Context, base, head string) (core.Compariso
 	basehead := base + "..." + head
 	var payload ghCompare
 	if _, err := g.do(ctx, core.Request{Path: g.path("compare", basehead), Out: &payload}); err != nil {
-		return core.Comparison{}, explain(err, "compare %s with %s in %s", base, head, g.Slug())
+		return core.Comparison{}, core.Explain(err, "compare %s with %s in %s", base, head, g.Slug())
 	}
 	if !payload.known() {
 		return core.Comparison{}, core.Errorf(core.ErrUnavailable, "compare %s with %s in %s", base, head, g.Slug()).
@@ -379,7 +375,7 @@ func (g *GitHub) File(ctx context.Context, filePath, ref string) ([]byte, error)
 		Out:    &content,
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return nil, explain(err, "read %s from %s at %s", filePath, g.Slug(), refOrDefault(ref))
+		return nil, core.Explain(err, "read %s from %s at %s", filePath, g.Slug(), refOrDefault(ref))
 	}
 	return content, nil
 }
@@ -428,7 +424,7 @@ func (g *GitHub) classicProtection(ctx context.Context, branch string) (core.Pro
 		if errors.Is(err, core.ErrNotFound) {
 			return core.Protection{Branch: branch}, false, nil
 		}
-		return core.Protection{}, false, explain(err, "read the protection of %s on %s", branch, g.Slug())
+		return core.Protection{}, false, core.Explain(err, "read the protection of %s on %s", branch, g.Slug())
 	}
 	return payload.toProtection(branch), true, nil
 }
@@ -450,7 +446,7 @@ func (g *GitHub) ruleProtection(ctx context.Context, branch string) (core.Protec
 		if errors.Is(err, core.ErrNotFound) {
 			return core.Protection{Branch: branch}, false, nil
 		}
-		return core.Protection{}, false, explain(err, "read the rules in force on %s of %s", branch, g.Slug())
+		return core.Protection{}, false, core.Explain(err, "read the rules in force on %s of %s", branch, g.Slug())
 	}
 	if len(rules) == 0 {
 		return core.Protection{Branch: branch}, false, nil
@@ -497,7 +493,7 @@ func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Pro
 		Retry: core.RetryAlways,
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return explain(err, "protect %s of %s", branch, g.Slug())
+		return core.Explain(err, "protect %s of %s", branch, g.Slug())
 	}
 	return nil
 }
@@ -542,7 +538,7 @@ func (g *GitHub) SetMergeSettings(ctx context.Context, s core.MergeSettings) err
 		Retry:  core.RetryAlways,
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return explain(err, "set the merge settings of %s", g.Slug())
+		return core.Explain(err, "set the merge settings of %s", g.Slug())
 	}
 	if got := payload.toRepoInfo().Merge; got != s {
 		return core.Errorf(core.ErrConflict, "set the merge settings of %s", g.Slug()).
@@ -578,7 +574,7 @@ func (g *GitHub) CommitStatuses(ctx context.Context, sha string) ([]core.CommitS
 		return true
 	})
 	if err != nil {
-		return nil, explain(err, "read the statuses on %s of %s", sha, g.Slug())
+		return nil, core.Explain(err, "read the statuses on %s of %s", sha, g.Slug())
 	}
 	return statuses, nil
 }
@@ -625,7 +621,7 @@ func (g *GitHub) SetCommitStatus(ctx context.Context, sha string, s core.CommitS
 		},
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return explain(err, "publish the %s status on %s of %s", s.Context, sha, g.Slug())
+		return core.Explain(err, "publish the %s status on %s of %s", s.Context, sha, g.Slug())
 	}
 	return nil
 }
@@ -648,7 +644,7 @@ func (g *GitHub) latestStatus(ctx context.Context, sha, want string) (*core.Comm
 		return false
 	})
 	if err != nil {
-		return nil, explain(err, "read the %s status on %s of %s", want, sha, g.Slug())
+		return nil, core.Explain(err, "read the %s status on %s of %s", want, sha, g.Slug())
 	}
 	return found, nil
 }
@@ -683,7 +679,7 @@ func (g *GitHub) UpsertComment(ctx context.Context, number int, m core.Marker, b
 			Body:   ghCommentRequest{Body: marked},
 		}
 		if _, err := g.do(ctx, req); err != nil {
-			return explain(err, "update flow's comment on pull request #%d of %s", number, g.Slug())
+			return core.Explain(err, "update flow's comment on pull request #%d of %s", number, g.Slug())
 		}
 		return nil
 	}
@@ -694,7 +690,7 @@ func (g *GitHub) UpsertComment(ctx context.Context, number int, m core.Marker, b
 		Body:   ghCommentRequest{Body: marked},
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return explain(err, "comment on pull request #%d of %s", number, g.Slug())
+		return core.Explain(err, "comment on pull request #%d of %s", number, g.Slug())
 	}
 	return nil
 }
@@ -722,7 +718,7 @@ func (g *GitHub) DeleteComment(ctx context.Context, number int, m core.Marker) e
 		if errors.Is(err, core.ErrNotFound) {
 			return nil
 		}
-		return explain(err, "delete flow's comment on pull request #%d of %s", number, g.Slug())
+		return core.Explain(err, "delete flow's comment on pull request #%d of %s", number, g.Slug())
 	}
 	return nil
 }
@@ -749,7 +745,7 @@ func (g *GitHub) findComment(ctx context.Context, number int, m core.Marker) (*c
 		return false
 	})
 	if err != nil {
-		return nil, explain(err, "read flow's comment on pull request #%d of %s", number, g.Slug())
+		return nil, core.Explain(err, "read flow's comment on pull request #%d of %s", number, g.Slug())
 	}
 	return found, nil
 }
@@ -820,7 +816,7 @@ func (g *GitHub) ensureBranch(ctx context.Context, branch, base string) error {
 		Body:   ghRefRequest{Ref: "refs/heads/" + branch, SHA: from},
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return explain(err, "branch %s off %s of %s", branch, base, g.Slug())
+		return core.Explain(err, "branch %s off %s of %s", branch, base, g.Slug())
 	}
 	return nil
 }
@@ -830,7 +826,7 @@ func (g *GitHub) ref(ctx context.Context, branch string) (string, error) {
 	var payload ghRef
 	path := g.path("git", "ref", "heads/"+branch)
 	if _, err := g.do(ctx, core.Request{Path: path, Out: &payload}); err != nil {
-		return "", explain(err, "read the branch %s of %s", branch, g.Slug())
+		return "", core.Explain(err, "read the branch %s of %s", branch, g.Slug())
 	}
 	if payload.Object.SHA == "" {
 		return "", core.Errorf(core.ErrUnavailable, "read the branch %s of %s", branch, g.Slug()).
@@ -855,7 +851,7 @@ func (g *GitHub) writeFile(ctx context.Context, branch, message string, file cor
 			return nil
 		}
 	case !errors.Is(err, core.ErrNotFound):
-		return explain(err, "read %s on %s of %s", file.Path, branch, g.Slug())
+		return core.Explain(err, "read %s on %s of %s", file.Path, branch, g.Slug())
 	default:
 		current.SHA = ""
 	}
@@ -871,7 +867,7 @@ func (g *GitHub) writeFile(ctx context.Context, branch, message string, file cor
 		},
 	}
 	if _, err := g.do(ctx, write); err != nil {
-		return explain(err, "write %s on %s of %s", file.Path, branch, g.Slug())
+		return core.Explain(err, "write %s on %s of %s", file.Path, branch, g.Slug())
 	}
 	return nil
 }
@@ -893,7 +889,7 @@ func (g *GitHub) offer(ctx context.Context, p core.FileProposal, branch, base st
 		req.Body = ghPullCreate{Title: p.Title, Body: p.Body, Head: branch, Base: base}
 	}
 	if _, err := g.do(ctx, req); err != nil {
-		return core.PullRequest{}, explain(err, "offer %s to %s of %s", branch, base, g.Slug())
+		return core.PullRequest{}, core.Explain(err, "offer %s to %s of %s", branch, base, g.Slug())
 	}
 	return payload.toPullRequest(), nil
 }
@@ -920,13 +916,19 @@ func (g *GitHub) pullFromBranch(ctx context.Context, branch string) (int, error)
 		return true
 	})
 	if err != nil {
-		return 0, explain(err, "look for the pull request from %s of %s", branch, g.Slug())
+		return 0, core.Explain(err, "look for the pull request from %s of %s", branch, g.Slug())
 	}
 	return found, nil
 }
 
 // do sends one request with GitHub's media type and API version.
 func (g *GitHub) do(ctx context.Context, r core.Request) (*core.Response, error) {
+	return g.client.Do(ctx, g.decorate(r))
+}
+
+// decorate returns the request with GitHub's media type and API version on it,
+// leaving an Accept the caller chose — a raw file, say — alone.
+func (g *GitHub) decorate(r core.Request) core.Request {
 	header := http.Header{}
 	for name, values := range r.Header {
 		header[name] = slices.Clone(values)
@@ -936,7 +938,7 @@ func (g *GitHub) do(ctx context.Context, r core.Request) (*core.Response, error)
 	}
 	header.Set("X-GitHub-Api-Version", gitHubAPIVersion)
 	r.Header = header
-	return g.client.Do(ctx, r)
+	return r
 }
 
 // path builds a path under this repository. A segment may hold slashes of its
@@ -962,35 +964,11 @@ func escapePath(segment string) string {
 	return strings.Join(parts, "/")
 }
 
-// paginate walks a paginated collection, following the Link header's "next"
-// relation rather than counting pages, and stops as soon as visit says so.
+// paginate walks a paginated collection. The request is given GitHub's media
+// type and API version once, up front, because the walk follows the Link
+// header's absolute URLs and carries the same header to each of them.
 func paginate[T any](ctx context.Context, g *GitHub, req core.Request, visit func(T) bool) error {
-	for page := 0; ; page++ {
-		if page >= maxPages {
-			return core.Errorf(core.ErrUnavailable, "read a page of results").
-				WithWhy("the provider offered more than %d pages", maxPages).
-				WithFix("narrow the query's window or limit")
-		}
-		var items []T
-		req.Out = &items
-		res, err := g.do(ctx, req)
-		if err != nil {
-			return err
-		}
-		for _, item := range items {
-			if !visit(item) {
-				return nil
-			}
-		}
-		next := res.Links["next"]
-		if next == "" || len(items) == 0 {
-			return nil
-		}
-		// The next URL is absolute and carries the whole query — the
-		// window, the page size and the cursor — so the walk follows it
-		// as it stands.
-		req = core.Request{Path: next, Header: req.Header}
-	}
+	return core.Paginate(ctx, g.client, g.decorate(req), visit)
 }
 
 // graphQL sends one GraphQL query and returns its data. GitHub answers 200
@@ -1077,19 +1055,4 @@ func notYet(format string, args ...any) error {
 	return core.Errorf(core.ErrUnsupported, format, args...).
 		WithWhy("the github adapter does not do that yet").
 		WithFix("this is a gap in flow, not in your configuration; see the plan")
-}
-
-// explain re-states a provider error as the thing flow was trying to do,
-// keeping the sentinel so that the exit code and the fix do not change.
-func explain(err error, format string, args ...any) error {
-	if err == nil {
-		return nil
-	}
-	var user *core.UserError
-	if errors.As(err, &user) {
-		restated := *user
-		restated.What = fmt.Sprintf(format, args...)
-		return &restated
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err)
 }
