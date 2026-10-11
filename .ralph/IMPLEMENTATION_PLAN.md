@@ -26,7 +26,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 0.5 assets package with go:embed — specs: 01 §1 — deps: 0.1  
   - note: assets/embed.go embeds capabilities, presets, templates, schema
   - AC: embeds capabilities/, presets/, templates/, schema/; test lists files
-- [ ] 0.6 CI green on main — specs: 14, 17 §2 — deps: 0.1
+- [x] 0.6 CI green on main — specs: 14, 17 §2 — deps: 0.1  
+  - note: was red since the first push; `stable` drifted to Go 1.27 and broke staticcheck. Pinned to go.mod + staticcheck v0.8.1. Green on d15bb852.
   - AC: `.github/workflows/ci.yml` passes on main
 
 ## Phase 1 — Offline core
