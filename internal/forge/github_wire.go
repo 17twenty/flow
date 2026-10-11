@@ -698,3 +698,67 @@ func (c ghClosingIssues) keys(owner, repo string) []string {
 	}
 	return keys
 }
+
+// ghProbe is the part of GET /repos/{owner}/{repo} a probe reads: who the
+// credential is to this repository, and what the repository is (spec 05 §3).
+type ghProbe struct {
+	Private     bool              `json:"private"`
+	Visibility  string            `json:"visibility"`
+	Permissions ghRepoPermissions `json:"permissions"`
+}
+
+// public reports whether the repository is one a `public_repo` scope covers.
+// GitHub sends both fields; `visibility` is the newer and more precise, since
+// an internal repository on an enterprise is not private and not public
+// either.
+func (p ghProbe) public() bool {
+	if p.Visibility != "" {
+		return p.Visibility == "public"
+	}
+	return !p.Private
+}
+
+// ghRepoPermissions is the role GitHub reports the credential holds on a
+// repository. GitHub sends the whole implied set — an admin is also a
+// maintainer — but an older GitHub Enterprise Server sends only the three it
+// knew about, so the implication is applied here rather than trusted.
+type ghRepoPermissions struct {
+	Admin    bool `json:"admin"`
+	Maintain bool `json:"maintain"`
+	Push     bool `json:"push"`
+	Triage   bool `json:"triage"`
+	Pull     bool `json:"pull"`
+}
+
+// writes reports whether the role may change the repository.
+func (p ghRepoPermissions) writes() bool { return p.Admin || p.Maintain || p.Push }
+
+// tokens are the role's permission tokens, strongest first.
+func (p ghRepoPermissions) tokens() []string {
+	var tokens []string
+	if p.Admin {
+		tokens = append(tokens, "admin")
+	}
+	if p.Admin || p.Maintain {
+		tokens = append(tokens, "maintain")
+	}
+	if p.writes() {
+		tokens = append(tokens, "push")
+	}
+	if p.writes() || p.Triage {
+		tokens = append(tokens, "triage")
+	}
+	if p.writes() || p.Triage || p.Pull {
+		tokens = append(tokens, "pull")
+	}
+	return tokens
+}
+
+// String renders the role for the evidence line.
+func (p ghRepoPermissions) String() string {
+	tokens := p.tokens()
+	if len(tokens) == 0 {
+		return "none"
+	}
+	return strings.Join(tokens, ", ")
+}

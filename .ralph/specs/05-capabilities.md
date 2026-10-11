@@ -163,3 +163,51 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   signature rather than a rule someone has to remember. It is also what makes
   the mode usable before adopting a tracker at all: flow ships the research,
   and the research is enough.
+- **§3 a forge probes its repository; the project's trial read is the
+  tracker's (item 3.7).** §3 describes GitHub's probe in one sentence, but
+  spec 01 §2 forbids one adapter from knowing another exists, and
+  `github-projects` is a separate adapter with a separate declaration and a
+  separate credential check. `forge.GitHub.Probe` reads the repository;
+  `tracker.GitHubProjects.Probe` (item 3.8) reads the project. Each reports
+  the tokens its own declaration requires, which is the only way a resolution
+  (§4) can compare like with like.
+- **§3 a role and a scope are two limits, and both apply (item 3.7).** A
+  maintainer whose classic token carries no scope permitting writes cannot
+  write. So the probe reports the role's tokens always, and the write tokens
+  only when the role may write *and* the token is permitted to use that. The
+  alternative — reporting the role alone — produces a plan that says `native`
+  and an apply that gets a 403, which is the exact failure §4 exists to
+  prevent.
+- **§3 a credential that reports no scopes is limited by its role alone
+  (item 3.7).** `X-OAuth-Scopes` comes back from a classic token and from
+  nothing else: a fine-grained token, a GitHub App and the Actions token send
+  no such header, and their real grants are not discoverable from any
+  response. An empty header is a classic token with no scopes, which is a
+  different fact from no header, and the probe keeps them apart. Guessing in
+  the second case would be wrong whichever way it guessed; taking the role is
+  at least the limit flow can see.
+- **§3 `public_repo` is read against visibility, not against `private`
+  (item 3.7).** An internal repository on an enterprise is not private and is
+  not public either, and a `public_repo` scope does not reach it. GitHub sends
+  both fields; `visibility` is the one that can say so, so it wins where it is
+  present and `private` answers for a server too old to send it.
+- **§3 the implication inside a role is flow's, not GitHub's (item 3.7).**
+  GitHub.com sends the whole implied set — an admin is also a maintainer, a
+  pusher, a triager and a reader — but an older GitHub Enterprise Server sends
+  only the three keys it knew about. Deriving the set from the strongest flag
+  present costs nothing and means a probe against an old server does not
+  silently report less than the credential holds.
+- **§3 the scopes are reported as tokens in their own right (item 3.7).** §3
+  names `repo`, `project` and `read:project` as permission tokens, so a
+  declaration may require a scope by name. The probe therefore puts every
+  scope it was told about into `Permissions.Tokens` verbatim, as well as using
+  `repo`/`public_repo` to decide the write tokens. A declaration asking for
+  `project` is then answered by the same mechanism as one asking for `admin`.
+- **§3 probe and declaration share one vocabulary, and a test says so
+  (item 3.7).** The tokens a GitHub write grants are exactly the words
+  `assets/capabilities/github.yaml` requires, and
+  `TestGitHubProbeSpeaksTheVocabularyTheDeclarationRequires` resolves every
+  capability in the declaration against an admin's probe. A probe and a
+  declaration that drift apart do not fail loudly — they resolve to
+  `unsupported` (§4) and look like a provider limitation, which is the worst
+  shape a bug can take here.

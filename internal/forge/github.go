@@ -44,7 +44,23 @@ const (
 	// gitHubStatusDescription is the longest description GitHub keeps on a
 	// commit status.
 	gitHubStatusDescription = 140
+	// gitHubScopeHeader is the header a classic token's scopes come back
+	// in. Nothing else sends it, which is how flow tells a classic token
+	// from a fine-grained one, a GitHub App or the Actions token
+	// (spec 05 §3).
+	gitHubScopeHeader = "X-OAuth-Scopes"
+	// gitHubScopeRepo is the classic scope that permits writing to any
+	// repository, and gitHubScopePublicRepo the one that permits writing
+	// only to public ones.
+	gitHubScopeRepo       = "repo"
+	gitHubScopePublicRepo = "public_repo"
 )
+
+// gitHubWriteTokens are the permission tokens a credential that may write to
+// the repository holds. They are the words assets/capabilities/github.yaml
+// requires, because a probe and a declaration that do not share a vocabulary
+// can never agree (spec 05 §1).
+var gitHubWriteTokens = []string{"statuses_write", "contents_write", "pulls_write"}
 
 // gitHubStatusStates are the states GitHub accepts on a commit status, which
 // are core's own (spec 10 §2).
@@ -380,9 +396,65 @@ func (g *GitHub) File(ctx context.Context, filePath, ref string) ([]byte, error)
 	return content, nil
 }
 
-// Probe reports what the credential may do. Plan item 3.7.
+// Probe reports what the credential may do with this repository, in one
+// request: the role the account holds, and — for a classic token, which says
+// so in a response header — the scopes the token may use that role through
+// (spec 05 §3).
+//
+// A role and a scope are two different limits and both apply. A maintainer
+// whose token carries no scope that permits writing cannot write, so the
+// permissions flow reports are the role's, less whatever the token withholds.
+// A credential that reports no scopes at all — a fine-grained token, a GitHub
+// App, the Actions token — is limited by its role alone, because its real
+// limits are not in any header and a guess would only ever be wrong.
 func (g *GitHub) Probe(ctx context.Context) (core.Permissions, error) {
-	return core.Permissions{}, notYet("probe the credential")
+	var payload ghProbe
+	res, err := g.do(ctx, core.Request{Path: g.path(), Out: &payload})
+	if err != nil {
+		return core.Permissions{}, core.Explain(err, "find out what the credential may do in %s", g.Slug())
+	}
+
+	role := payload.Permissions
+	permissions := core.Permissions{
+		Evidence: []string{"repository permissions: " + role.String()},
+	}
+	permissions.Tokens = append(permissions.Tokens, role.tokens()...)
+
+	scopes, classic := gitHubScopes(res.Header)
+	if classic {
+		permissions.Evidence = append(permissions.Evidence,
+			gitHubScopeHeader+": "+strings.Join(scopes, ", "))
+		permissions.Tokens = append(permissions.Tokens, scopes...)
+	}
+	if role.writes() && (!classic || gitHubScopesWrite(scopes, payload.public())) {
+		permissions.Tokens = append(permissions.Tokens, gitHubWriteTokens...)
+	}
+	return permissions, nil
+}
+
+// gitHubScopes returns the scopes a classic token's response reported, and
+// whether the header was there at all. An empty header is a classic token
+// with no scopes, which is not the same thing as no header.
+func gitHubScopes(header http.Header) ([]string, bool) {
+	raw, ok := header[http.CanonicalHeaderKey(gitHubScopeHeader)]
+	if !ok {
+		return nil, false
+	}
+	var scopes []string
+	for _, scope := range strings.Split(strings.Join(raw, ","), ",") {
+		if scope = strings.TrimSpace(scope); scope != "" {
+			scopes = append(scopes, scope)
+		}
+	}
+	return scopes, true
+}
+
+// gitHubScopesWrite reports whether a classic token's scopes let it write to
+// this repository. `repo` covers every repository; `public_repo` covers only
+// the public ones, so what the repository is matters to the answer.
+func gitHubScopesWrite(scopes []string, public bool) bool {
+	return slices.Contains(scopes, gitHubScopeRepo) ||
+		(public && slices.Contains(scopes, gitHubScopePublicRepo))
 }
 
 // Protection returns the effective protection of a branch: what the classic
@@ -1046,13 +1118,4 @@ func refOrDefault(ref string) string {
 		return "the default branch"
 	}
 	return ref
-}
-
-// notYet is the refusal of a method whose plan item has not landed. It is the
-// only stub the plan permits, and it names itself so that a caller reaching it
-// says what it wanted rather than failing blankly.
-func notYet(format string, args ...any) error {
-	return core.Errorf(core.ErrUnsupported, format, args...).
-		WithWhy("the github adapter does not do that yet").
-		WithFix("this is a gap in flow, not in your configuration; see the plan")
 }

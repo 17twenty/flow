@@ -71,23 +71,10 @@ func contractGitHub(t *testing.T, fx coretest.ForgeFixture) core.Forge {
 	return newGitHubAdapter(t, srv, fx, nil)
 }
 
-func TestGitHubMeetsTheReadHalfOfTheContract(t *testing.T) {
-	coretest.ForgeContractSubset(t, contractGitHub,
-		"identity",
-		"repo",
-		"one pull request, with everything the gate reads",
-		"the tickets a pull request closes",
-		"a pull request that is not there",
-		"pull requests in a window, newest first",
-		"commits on the trunk, newest first",
-		"ancestry proves a merge reached an environment",
-		"files on the trunk",
-		"protection is read effectively and written additively",
-		"merge settings",
-		"a commit status replaces the last verdict from the same context",
-		"a comment is edited in place, found by its marker, and deleted once",
-		"files are proposed on their own branch and updated in place",
-	)
+// The whole forge contract now passes against GitHub's own shapes: every
+// method it describes has landed (plan items 3.1 to 3.7).
+func TestGitHubMeetsTheForgeContract(t *testing.T) {
+	coretest.ForgeContract(t, contractGitHub)
 }
 
 func TestNewGitHubRefusesAnIncompleteAdapter(t *testing.T) {
@@ -512,29 +499,6 @@ func TestGitHubIdentifiesItselfOnEveryRequest(t *testing.T) {
 		if agent != core.UserAgent("v1.0.0") {
 			t.Errorf("User-Agent = %q, want %q", agent, core.UserAgent("v1.0.0"))
 		}
-	}
-}
-
-func TestGitHubRefusesWhatItsPlanItemHasNotLanded(t *testing.T) {
-	fx := coretest.ContractForge()
-	_, srv := newGitHubServer(t, fx)
-	adapter := newGitHubAdapter(t, srv, fx, nil)
-	ctx := t.Context()
-
-	calls := map[string]func() error{
-		"Probe": func() error { _, err := adapter.Probe(ctx); return err },
-	}
-	for name, call := range calls {
-		t.Run(name, func(t *testing.T) {
-			err := call()
-			if core.ExitCode(err) != core.ExitFail {
-				t.Fatalf("%s = %v, want a refusal flow can exit on", name, err)
-			}
-			var user *core.UserError
-			if !errors.As(err, &user) || user.What == "" || user.Fix == "" {
-				t.Errorf("%s refused without explaining itself: %v", name, err)
-			}
-		})
 	}
 }
 
@@ -1035,5 +999,190 @@ func TestGitHubChangesOneRepositoryOneCallAtATime(t *testing.T) {
 	}
 	if comments := fake.commentsOn(1); len(comments) != 1 {
 		t.Errorf("six concurrent runs left %d comments, want the one they all meant", len(comments))
+	}
+}
+
+// probeWith stands a fake up with one role, one set of classic scopes — nil
+// for a credential that reports none — and one visibility, and probes it.
+func probeWith(t *testing.T, role ghRepoPermissions, scopes *string, public bool) core.Permissions {
+	t.Helper()
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.role, fake.scopes, fake.public = role, scopes, public
+	permissions, err := newGitHubAdapter(t, srv, fx, nil).Probe(t.Context())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	return permissions
+}
+
+func scopeHeader(scopes string) *string { return &scopes }
+
+// The roles GitHub reports, as it reports them: the whole implied set.
+var (
+	roleAdmin    = ghRepoPermissions{Admin: true, Maintain: true, Push: true, Triage: true, Pull: true}
+	roleWriter   = ghRepoPermissions{Push: true, Triage: true, Pull: true}
+	roleReadOnly = ghRepoPermissions{Pull: true}
+)
+
+func TestGitHubProbeSpeaksTheVocabularyTheDeclarationRequires(t *testing.T) {
+	permissions := probeWith(t, roleAdmin, scopeHeader("repo, project"), false)
+	for name, capability := range gitHubCapabilities(t).Capabilities {
+		if missing := permissions.Missing(capability.Requires); len(missing) > 0 {
+			t.Errorf("an admin's probe is missing %v, which %s requires; a probe and a declaration that do not share a vocabulary can never agree", missing, name)
+		}
+	}
+}
+
+func TestGitHubProbeCostsOneRequest(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	if _, err := newGitHubAdapter(t, srv, fx, nil).Probe(t.Context()); err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if got := len(fake.Requests()); got > 5 {
+		t.Errorf("Probe made %d requests (%v), want at most the five spec 05 §3 allows", got, fake.Requests())
+	}
+}
+
+func TestGitHubProbeReportsTheRoleItWasGiven(t *testing.T) {
+	cases := []struct {
+		name  string
+		role  ghRepoPermissions
+		want  []string
+		wont  []string
+		scope *string
+	}{
+		{
+			name:  "an admin",
+			role:  roleAdmin,
+			want:  []string{"admin", "maintain", "push", "statuses_write", "contents_write", "pulls_write"},
+			scope: scopeHeader("repo"),
+		},
+		{
+			name:  "a writer",
+			role:  roleWriter,
+			want:  []string{"push", "triage", "pull", "statuses_write", "pulls_write"},
+			wont:  []string{"admin", "maintain"},
+			scope: scopeHeader("repo"),
+		},
+		{
+			// An older GitHub Enterprise Server sends only the
+			// roles it knew about, so the implication an admin
+			// carries has to be flow's as well as GitHub's.
+			name:  "an admin on a server that reports nothing else",
+			role:  ghRepoPermissions{Admin: true},
+			want:  []string{"admin", "maintain", "push", "triage", "pull", "statuses_write"},
+			scope: scopeHeader("repo"),
+		},
+		{
+			name:  "a reader",
+			role:  roleReadOnly,
+			want:  []string{"pull"},
+			wont:  []string{"admin", "maintain", "push", "statuses_write", "contents_write", "pulls_write"},
+			scope: scopeHeader("repo"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			permissions := probeWith(t, tc.role, tc.scope, false)
+			if missing := permissions.Missing(tc.want); len(missing) > 0 {
+				t.Errorf("%s was not granted %v; probe reported %s", tc.name, missing, permissions)
+			}
+			for _, token := range tc.wont {
+				if permissions.Has(token) {
+					t.Errorf("%s was granted %q", tc.name, token)
+				}
+			}
+		})
+	}
+}
+
+func TestGitHubProbeTakesTheScopeAndTheRoleTogether(t *testing.T) {
+	cases := []struct {
+		name   string
+		scopes *string
+		public bool
+		writes bool
+	}{
+		{name: "a classic token scoped for every repository", scopes: scopeHeader("repo, project"), writes: true},
+		{name: "a classic token scoped for public repositories only", scopes: scopeHeader("public_repo"), public: true, writes: true},
+		{name: "that same token against a private repository", scopes: scopeHeader("public_repo"), writes: false},
+		{name: "a classic token that may only read", scopes: scopeHeader("read:org, read:project"), writes: false},
+		{name: "a classic token with no scopes at all", scopes: scopeHeader(""), writes: false},
+		{name: "a credential that reports no scopes", scopes: nil, writes: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			permissions := probeWith(t, roleAdmin, tc.scopes, tc.public)
+			if !permissions.Has("admin") {
+				t.Error("the role was lost; a scope limits what the role may be used for, it does not replace it")
+			}
+			if got := permissions.Has("statuses_write"); got != tc.writes {
+				t.Errorf("%s may write: %v, want %v (reported: %s)", tc.name, got, tc.writes, permissions)
+			}
+		})
+	}
+}
+
+func TestGitHubProbeSaysWhatItRead(t *testing.T) {
+	permissions := probeWith(t, roleAdmin, scopeHeader("repo, project"), false)
+	joined := strings.Join(permissions.Evidence, "\n")
+	for _, want := range []string{"repository permissions: admin", "X-OAuth-Scopes: repo, project"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the evidence is %q, want it to carry %q so a refusal can say what flow saw", joined, want)
+		}
+	}
+
+	quiet := probeWith(t, roleAdmin, nil, false)
+	if slices.ContainsFunc(quiet.Evidence, func(line string) bool { return strings.Contains(line, "X-OAuth-Scopes") }) {
+		t.Errorf("a credential that sent no scope header was given one as evidence: %v", quiet.Evidence)
+	}
+}
+
+func TestGitHubProbeReportsTheScopesThemselves(t *testing.T) {
+	permissions := probeWith(t, roleAdmin, scopeHeader("repo, read:project"), false)
+	for _, scope := range []string{"repo", "read:project"} {
+		if !permissions.Has(scope) {
+			t.Errorf("the probe did not report the %q scope, which a declaration may require by name (spec 05 §3)", scope)
+		}
+	}
+}
+
+func TestGitHubProbeExplainsARepositoryItCannotRead(t *testing.T) {
+	fx := coretest.ContractForge()
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	adapter.repo = "missing"
+	_, err := adapter.Probe(t.Context())
+	if !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("Probe of a repository that is not there = %v, want ErrNotFound", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.What, "acme/missing") {
+		t.Errorf("the refusal is %q, want it to name the repository it could not read", err)
+	}
+}
+
+// An internal repository on an enterprise is neither private nor public, and
+// GitHub says so in `visibility` while `private` can only say false. A
+// `public_repo` scope does not cover it, so the newer field has to win.
+func TestGitHubProbeReadsVisibilityRatherThanPrivacy(t *testing.T) {
+	cases := []struct {
+		name  string
+		probe ghProbe
+		want  bool
+	}{
+		{name: "a public repository", probe: ghProbe{Visibility: "public"}, want: true},
+		{name: "a private repository", probe: ghProbe{Private: true, Visibility: "private"}},
+		{name: "an internal repository", probe: ghProbe{Visibility: "internal"}},
+		{name: "a server too old to report visibility", probe: ghProbe{}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.probe.public(); got != tc.want {
+				t.Errorf("%s counts as public: %v, want %v", tc.name, got, tc.want)
+			}
+		})
 	}
 }

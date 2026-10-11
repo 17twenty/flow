@@ -58,6 +58,13 @@ type gitHubFake struct {
 	// fixedMerge makes the repository ignore a change to its merge
 	// settings, as an organisation policy that pins them does.
 	fixedMerge bool
+	// role is what the credential is to this repository, scopes the
+	// classic token scopes every response reports — nil for a credential
+	// that is not a classic token and sends no such header — and public
+	// what the repository is, which is what a public_repo scope turns on.
+	role   ghRepoPermissions
+	scopes *string
+	public bool
 	// branches holds each branch's files, keyed by branch then path, and
 	// refs the commit each branch points at. A file is read and written on
 	// a branch, which is how a proposal keeps off the trunk.
@@ -88,6 +95,9 @@ func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *http
 		branches:    map[string]map[string][]byte{},
 		refs:        map[string]string{},
 	}
+	fake.role = ghRoleOf(fx.Permissions)
+	fake.scopes = ghScopesOf(fx.Permissions)
+	fake.public = true
 	fake.branches[fx.Repo.DefaultBranch] = maps.Clone(fx.Files)
 	if fake.branches[fx.Repo.DefaultBranch] == nil {
 		fake.branches[fx.Repo.DefaultBranch] = map[string][]byte{}
@@ -230,7 +240,7 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case len(segments) == 0 && r.Method == http.MethodPatch:
 		f.patchRepo(w, r)
 	case len(segments) == 0:
-		f.writeJSON(w, r, ghRepoJSON(f.fx.Repo))
+		f.writeJSON(w, r, f.repoJSON(f.fx.Repo))
 	case segments[0] == "pulls" && len(segments) == 1 && r.Method == http.MethodPost:
 		f.openPull(w, r)
 	case segments[0] == "pulls" && len(segments) == 1:
@@ -630,7 +640,7 @@ func (f *gitHubFake) patchRepo(w http.ResponseWriter, r *http.Request) {
 	if f.fixedMerge {
 		repo := f.fx.Repo
 		f.mu.Unlock()
-		f.writeJSON(w, r, ghRepoJSON(repo))
+		f.writeJSON(w, r, f.repoJSON(repo))
 		return
 	}
 	f.fx.Repo.Merge = core.MergeSettings{
@@ -643,7 +653,7 @@ func (f *gitHubFake) patchRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	repo := f.fx.Repo
 	f.mu.Unlock()
-	f.writeJSON(w, r, ghRepoJSON(repo))
+	f.writeJSON(w, r, f.repoJSON(repo))
 }
 
 // ghProtectionJSON renders branch protection as GitHub does, with both the
@@ -1064,6 +1074,9 @@ func (f *gitHubFake) write(w http.ResponseWriter, r *http.Request, status int, b
 	etag := `W/"` + hex.EncodeToString(sum[:8]) + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Content-Type", contentType)
+	if f.scopes != nil {
+		w.Header().Set("X-OAuth-Scopes", *f.scopes)
+	}
 	w.Header().Set("X-RateLimit-Limit", "5000")
 	w.Header().Set("X-RateLimit-Remaining", "4999")
 	if r.Header.Get("If-None-Match") == etag {
@@ -1082,6 +1095,53 @@ func (f *gitHubFake) fail(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = fmt.Fprintf(w, `{"message":%q}`, message)
+}
+
+// repoJSON renders a repository as this fake's GitHub does: with the role the
+// credential holds on it and what the repository is, which only the live API
+// puts on the same document.
+func (f *gitHubFake) repoJSON(repo core.RepoInfo) map[string]any {
+	doc := ghRepoJSON(repo)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	doc["permissions"] = map[string]any{
+		"admin":    f.role.Admin,
+		"maintain": f.role.Maintain,
+		"push":     f.role.Push,
+		"triage":   f.role.Triage,
+		"pull":     f.role.Pull,
+	}
+	doc["private"] = !f.public
+	doc["visibility"] = map[bool]string{true: "public", false: "private"}[f.public]
+	return doc
+}
+
+// ghRoleOf is the repository role a fixture's permissions describe, with
+// GitHub's own implication applied: an admin is also a maintainer.
+func ghRoleOf(p core.Permissions) ghRepoPermissions {
+	role := ghRepoPermissions{
+		Admin:    p.Has("admin"),
+		Maintain: p.Has("maintain"),
+		Push:     p.Has("push"),
+		Triage:   p.Has("triage"),
+		Pull:     p.Has("pull"),
+	}
+	role.Maintain = role.Maintain || role.Admin
+	role.Push = role.Push || role.Maintain
+	role.Triage = role.Triage || role.Push
+	role.Pull = role.Pull || role.Triage
+	return role
+}
+
+// ghScopesOf is the classic token scopes a fixture's evidence reports, or nil
+// when it names none.
+func ghScopesOf(p core.Permissions) *string {
+	for _, line := range p.Evidence {
+		if rest, ok := strings.CutPrefix(line, "X-OAuth-Scopes: "); ok {
+			return &rest
+		}
+	}
+	return nil
 }
 
 // ghRepoJSON renders a repository as GitHub does.
