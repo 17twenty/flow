@@ -123,6 +123,12 @@ type Attestation struct {
 	At time.Time `yaml:"at"`
 	// ExpiresAt is when flow will ask again.
 	ExpiresAt time.Time `yaml:"expires_at"`
+	// Inputs is the canonical hash of the part of the configuration the
+	// attestation was made against, so that editing an unrelated part of
+	// `.flow.yaml` does not throw away every promise in the file (spec 07 §8).
+	// Empty means the attestation predates the field and lapses with the whole
+	// lock's ConfigHash instead.
+	Inputs string `yaml:"inputs,omitempty"`
 }
 
 // NewLock returns an empty lock for the given flow version.
@@ -413,6 +419,7 @@ func (l *Lock) node() *yaml.Node {
 				"note", scalar("!!str", a.Note),
 				"at", timestamp(a.At),
 				"expires_at", timestamp(a.ExpiresAt),
+				"inputs", scalar("!!str", a.Inputs),
 			))
 		}
 		put("attestations", attestations)

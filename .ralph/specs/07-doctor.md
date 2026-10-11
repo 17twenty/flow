@@ -287,3 +287,48 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
 - **§4 a lock record for a follow-up nobody wants and nothing holds is dropped
   (item 2.10).** The lock is a statement of what is true, not a changelog of
   every ticket flow ever filed.
+- **§7 drift needs a remembered good state, and keeps it (item 2.11).** The
+  lock's `observed[check]` is written when a check holds, and that is the only
+  "before" flow has. Two consequences. A failure with nothing recorded is not
+  drift — it is a thing that was never set up, and calling it drift would be
+  flow inventing a history it does not have. And a drifted check does *not*
+  update the remembered hash: if it did, tomorrow's run would see "unchanged"
+  and the drift would be reported once and then forgotten, which is the
+  opposite of what a daily check is for. The memory is updated when the thing
+  is right again.
+- **§7 "cosmetic" means "still satisfies" (item 2.11).** A changed hash whose
+  check still holds is absorbed silently and the new hash recorded, so the next
+  real change is measured from what is there now. A tracker that renamed an
+  internal field id or a forge that reordered a list is not news, and reporting
+  the churn would train people to ignore the findings that matter.
+- **§7 the "after" is the plan's own changes (item 2.11).** Spec §7 asks for
+  before→after evidence "from cache when available"; flow has no observation
+  cache and spec 01's cache is the HTTP ETag one. What flow does have is the
+  plan item for the same check, whose changes are what would have to happen to
+  put the thing back — which is the after a human can act on, rather than a
+  second hash they cannot. The hashes are shown too, truncated to 12
+  characters: enough to tell two states apart by eye, short enough for prose.
+- **§8 an attestation records what it covered (item 2.11).**
+  `attestations[].inputs` is the canonical hash of the desired item the check
+  is about, taken when the attestation is made. "Invalidated when inputs'
+  config hash changes" is read as *those* inputs: changing `commits.scopes`
+  must not throw away somebody's word about a saved view on the board. An
+  attestation with no `inputs` — written by an older build — has nothing finer
+  to compare and lapses with the whole lock's ConfigHash, which is the old rule
+  and the safe one.
+- **§8 only a check that asks to be attested can be (item 2.11).** `Attest`
+  applies a promise only when the finding's remedy is `attest`; if the API
+  answers, the answer is better evidence than anybody's word. Without this
+  gate, `flow attest forge.protection` would be a way to swear away a real
+  failure, and the whole mechanism would be a silencer rather than a record.
+- **§8 one check has one attestation (item 2.11).** A second person vouching
+  replaces the first rather than stacking up: two promises with different
+  expiry dates is a question about which one counts, and the answer would have
+  to be invented.
+- **§8 a promise with no expiry is not a promise (item 2.11).** When the
+  configuration gives no `attestation.default_ttl`, flow uses ninety days —
+  long enough not to be a chore, short enough that nobody is relying on
+  something a departed colleague checked two years ago. The notice window is
+  seven days, which is enough to renew deliberately rather than in a hurry on
+  the morning a check turns red; an attestation inside it still passes and
+  carries the renewal command.
