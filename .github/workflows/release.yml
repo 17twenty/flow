@@ -1,0 +1,46 @@
+# Release on every merge to main; ALWAYS record a production deployment for the SHA.
+# flow does not release itself — it verifies (live.deploys.lag).
+name: release
+on:
+  push: { branches: [main] }
+permissions:
+  contents: write       # tags + releases
+  deployments: write    # production deployment record
+concurrency: { group: release, cancel-in-progress: false }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go test ./... -count=1
+      - id: ver
+        name: Next version (conventional commits → semver; external tool)
+        run: |
+          next=$(go run github.com/caarlos0/svu@latest next)   # verify module path/major at build time
+          cur=$(git describe --tags --abbrev=0 2>/dev/null || echo none)
+          if [ "$next" != "$cur" ]; then echo "tag=$next" >> "$GITHUB_OUTPUT"; else echo "tag=" >> "$GITHUB_OUTPUT"; fi
+      - name: Build + release
+        if: steps.ver.outputs.tag != ''
+        env: { TAG: '${{ steps.ver.outputs.tag }}', GH_TOKEN: '${{ github.token }}' }
+        run: |
+          mkdir dist
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os=${p%/*}; arch=${p#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$TAG" \
+              -o "dist/flow_${TAG}_${os}_${arch}${ext}" .
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+          git tag "$TAG" && git push origin "$TAG"
+          gh release create "$TAG" dist/* --generate-notes
+      - name: Record production deployment
+        env: { GH_TOKEN: '${{ github.token }}', TAG: '${{ steps.ver.outputs.tag }}' }
+        run: |
+          id=$(gh api repos/${{ github.repository }}/deployments \
+            -f ref="${{ github.sha }}" -f environment=production -F auto_merge=false \
+            -f "required_contexts[]" -f description="${TAG:-untagged}" \
+            -f payload="{\"version\":\"${TAG:-untagged}\"}" --jq .id)
+          gh api repos/${{ github.repository }}/deployments/$id/statuses -f state=success \
+            -f description="installable via go install (@main${TAG:+, @$TAG})"

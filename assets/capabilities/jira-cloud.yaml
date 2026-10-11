@@ -1,0 +1,23 @@
+adapter: jira-cloud
+kind: tracker
+version: 1
+researched_at: 2026-10-09
+sources:
+  - https://developer.atlassian.com/cloud/jira/platform/rate-limiting
+  - https://jira.atlassian.com/browse/JRACLOUD-74565
+limits: { rate: "API tokens: burst limits; apps: points-based hourly quotas since 2026-03-02" }
+capabilities:
+  project:            { set: false, verify: true, remediation: follow_up }
+  status_options:     { set: true,  verify: true, requires: [project_admin], remediation: follow_up, notes: "Bulk workflow API; board columns themselves are NOT writable (verify via board configuration)." }
+  status_categories:  { set: true,  verify: true, requires: [project_admin], remediation: follow_up }
+  wip_limits:         { set: false, verify: true, remediation: compensate, compensated_by: policy.wip }
+  expedite_view:      { set: false, verify: false, remediation: attest }
+  labels:             { set: true,  verify: true, remediation: none, notes: "Free-form." }
+  follow_up_tickets:  { set: true,  verify: true, requires: [create_issues], remediation: none }
+  ticket_move:        { set: true,  verify: true, requires: [transition_issues], remediation: follow_up }
+  native_transition_pr_opened_draft:     { set: false, verify: true, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }
+  native_transition_pr_ready_for_review: { set: false, verify: true, remediation: attest }
+  native_transition_changes_requested:   { set: false, verify: true, remediation: attest }
+  native_transition_pr_merged:           { set: false, verify: true, remediation: attest }
+  native_transition_issue_closed:        { set: false, verify: false, remediation: none }
+  native_transition_deployed:            { set: false, verify: true, remediation: attest, notes: "Automation 'Deployment successful' via GitHub integration deployments — verify on day one." }

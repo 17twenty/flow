@@ -1,0 +1,7 @@
+adapter: deploys
+kind: deploys
+version: 1
+researched_at: 2026-10-09
+sources: []
+capabilities:
+  deploy_records: { set: false, verify: true, remediation: follow_up, notes: "Written by the deployer against the app SHA (spec 13)." }

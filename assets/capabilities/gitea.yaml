@@ -1,0 +1,16 @@
+adapter: gitea
+kind: forge
+version: 1
+researched_at: 2026-10-09
+sources:
+  - https://docs.rs/gitea-client/latest/src/gitea_client/models/branch_protection.rs.html
+limits: { rate: "Instance-configured" }
+capabilities:
+  commit_status_write:    { set: true,  verify: true, requires: [write], remediation: follow_up }
+  branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up }
+  required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "enable_status_check + status_check_contexts" }
+  merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
+  file_proposal:          { set: true,  verify: true, requires: [write], remediation: follow_up }
+  pr_comments:            { set: true,  verify: true, requires: [write], remediation: follow_up }
+  deployments_read:       { set: false, verify: false, remediation: none, notes: "Use deploys.source: commit_status." }
+  linked_issues_read:     { set: false, verify: false, remediation: none, notes: "Verify at build time; else tracker fallback." }

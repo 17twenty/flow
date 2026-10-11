@@ -1,0 +1,36 @@
+# Separate GitOps repo pattern (specs/13-deploys.md §2): the bump step writes the
+# APP repo and APP sha as structured fields on the Argo CD Application, and the
+# notification reports a GitHub deployment against the app commit — no message
+# or image-tag parsing.
+#
+# Tested-with: <fill in Argo CD version when verified>. Notification service
+# fields vary between versions; check the github service docs for your version.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello-api-prod
+  annotations:
+    flow.dev/app-repo: https://github.com/nexgen/hello-api
+    flow.dev/app-revision: 9f2c1e4b7d0a3c5e8f1a2b3c4d5e6f7a8b9c0d1e   # written by the bump step
+    notifications.argoproj.io/subscribe.on-deployed.github: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+data:
+  template.flow-deployed: |
+    github:
+      repoURLPath: '{{index .app.metadata.annotations "flow.dev/app-repo"}}'
+      revisionPath: '{{index .app.metadata.annotations "flow.dev/app-revision"}}'
+      deployment:
+        state: success
+        environment: production
+        environmentURL: https://hello.example.com
+        logURL: '{{.context.argocdUrl}}/applications/{{.app.metadata.name}}'
+        requiredContexts: []
+        autoMerge: false
+  trigger.on-deployed: |
+    - when: app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+      oncePer: app.metadata.annotations["flow.dev/app-revision"]
+      send: [flow-deployed]

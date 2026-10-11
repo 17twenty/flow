@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/17twenty/flow/main/assets/schema/flow.v1.json
+# Preset: deploy-done. Done = running in deploys.environment (flow check deploy owns it).
+version: 1
+preset: deploy-done
+
+forge:
+  type: github                    # github | gitea | gitlab
+  repo: owner/name                # from git remote
+  url: https://github.com         # GHES/self-managed: base web URL
+  auth: { token_env: GITHUB_TOKEN }
+
+tracker:
+  type: github-projects           # github-projects | jira-cloud | linear
+  owner: owner                    # github-projects: user or org login
+  owner_type: user                # user | org
+  project: ${pending:project}     # github-projects: project number; jira: project key; linear: team key
+  auth: { token_env: FLOW_PROJECT_TOKEN }
+  # jira-cloud: url, auth.email_env ; linear: (none)
+
+workflow:
+  done_on: deployed               # merged | deployed   (spec 04 §6)
+  columns:                        # ordered; ids stable; names = tracker display names
+    - { id: backlog,     name: Backlog,     category: todo }
+    - { id: ready,       name: Ready,       category: todo, gate: definition_of_ready }
+    - { id: in_progress, name: In progress, category: in_progress, wip: { per_person: 2 } }
+    - { id: in_review,   name: In review,   category: in_progress, wip: { limit: 3 } }
+    - { id: done,        name: Done,        category: done }
+  transitions:                    # who moves tickets for each event (spec 04 §5)
+    pr_opened_draft:       { to: in_progress, owner: flow }
+    pr_ready_for_review:   { to: in_review,   owner: flow }
+    changes_requested:     { to: in_progress, owner: native }
+    issue_closed:          { to: in_review,   owner: native }  # closing keyword closes on merge; Done waits for deploy
+    deployed:              { to: done,        owner: flow }
+  expedite:
+    labels: [incident]            # any-of; expedite items ignore WIP
+    max: 1
+  blocked:
+    label: blocked
+    require_comment: true
+
+definition_of_ready:
+  rules: [acceptance_criteria, parent_link, not_blocked]
+  # optional: flag_if_user_facing, design_if_ui, max_size: 2d
+
+commits:
+  convention: conventional
+  types: [feat, fix, perf, refactor, test, docs, build, ci, chore, revert, style]
+  header_max: 72
+  merge_strategy: squash          # gate checks the PR title as the future commit header
+  scopes: { required: false, allowed: [] }
+  unlinked_types: [ci, build, chore, docs]   # PR title types that may merge without a ticket
+
+deploys:
+  source: forge_deployments       # forge_deployments | commit_status | none
+  environment: production         # name as recorded by the deployer
+  # commit_status only: contexts: ['argocd/app-prod']   (exact names or prefix*)
+  max_lag: 2h                     # doctor: merged → deployed SLO
+  max_age: 7d                     # doctor: warn if no deployment seen in this window
+
+policy:
+  status_context: flow/policy
+  strictness: standard            # relaxed | standard | strict
+  comment: on_failure             # always | on_failure | never
+  rules: {}                       # per-rule severity overrides: off | warn | error
+
+agents:
+  authors: []                    # logins treated as agents
+  labels: [agent]
+  require_human_review: true
+
+followups:
+  labels: [flow-followup]
+  owners:
+    default: ${pending:owners.default}
+    tracker_admin: ${pending:owners.tracker_admin}
+    forge_admin: ${pending:owners.forge_admin}
+    platform: ${pending:owners.platform}
+
+attestation:
+  default_ttl: 30d

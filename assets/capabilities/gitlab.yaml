@@ -1,0 +1,17 @@
+adapter: gitlab
+kind: forge
+version: 1
+researched_at: 2026-10-09
+sources:
+  - https://docs.gitlab.com/user/project/merge_requests/status_checks/
+  - https://docs.gitlab.com/ci/ci_cd_for_external_repos/external_commit_statuses
+limits: { rate: "GitLab.com 2,000 req/min per user (plan limits may be lower)" }
+capabilities:
+  commit_status_write:    { set: true,  verify: true, requires: [developer], remediation: follow_up, hazards: ["Pass pipeline_id of the MR pipeline; duplicate pipelines can hide statuses."] }
+  branch_protection:      { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
+  required_status_checks: { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "Ultimate: external status check; else pipelines must succeed." }
+  merge_settings:         { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
+  file_proposal:          { set: true,  verify: true, requires: [developer], remediation: follow_up }
+  pr_comments:            { set: true,  verify: true, requires: [developer], remediation: follow_up }
+  deployments_read:       { set: false, verify: true, remediation: none }
+  linked_issues_read:     { set: false, verify: true, remediation: none, notes: "merge_requests/:iid/closes_issues" }

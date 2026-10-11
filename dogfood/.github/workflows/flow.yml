@@ -1,0 +1,64 @@
+# flow's own gate + health. Added in bootstrap Stage B (needs a working flow binary).
+name: flow
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, dismissed]
+  schedule:
+    - cron: '17 6 * * *'          # daily doctor
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write            # policy explanation comment
+  statuses: write                 # flow/policy
+  issues: write                   # follow-ups + pinned health issue
+
+concurrency:
+  group: flow-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT, 'project' scope
+  FLOW_LOG_FORMAT: json
+
+jobs:
+  gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      # Dogfood: the gate runs the flow built from main (not from the PR — untrusted).
+      - run: go install github.com/17twenty/flow@main
+      - run: flow check pr
+
+  config:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with: { filters: "flow: ['.flow.yaml', '.flow.lock']" }
+      - uses: actions/setup-go@v5
+        if: steps.f.outputs.flow == 'true'
+        with: { go-version: stable }
+      - if: steps.f.outputs.flow == 'true'
+        run: go install github.com/17twenty/flow@main && flow doctor --ci --check 'config.*' --check 'lock.*'
+
+  health:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go install github.com/17twenty/flow@main
+      - run: flow doctor --ci --fix --report doctor.md || [ $? -eq 2 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: doctor-report, path: doctor.md }

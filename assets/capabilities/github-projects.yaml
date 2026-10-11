@@ -1,0 +1,25 @@
+adapter: github-projects
+kind: tracker
+version: 1
+researched_at: 2026-10-09
+sources:
+  - https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-built-in-automations
+  - https://docs.github.com/en/issues/planning-and-tracking-with-projects/customizing-views-in-your-project/customizing-the-board-layout
+  - https://github.com/orgs/community/discussions/198803
+limits: { rate: "Shares GitHub GraphQL budget (5,000 points/h)" }
+capabilities:
+  project:            { set: false, verify: true, requires: [project_read], remediation: follow_up, notes: "Resolve only; humans create projects." }
+  status_options:     { set: true,  verify: true, requires: [project_write], remediation: follow_up,
+                        hazards: ["updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up."] }
+  status_categories:  { set: false, verify: false, remediation: none }
+  wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip, notes: "Column limits are per-view, advisory, UI-only." }
+  expedite_view:      { set: false, verify: false, remediation: attest, notes: "Saved view filtered by label." }
+  labels:             { set: true,  verify: true, requires: [issues_write], remediation: follow_up }
+  follow_up_tickets:  { set: true,  verify: true, requires: [issues_write, project_write], remediation: none }
+  ticket_move:        { set: true,  verify: true, requires: [project_write], remediation: follow_up }
+  native_transition_pr_opened_draft:     { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
+  native_transition_pr_ready_for_review: { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
+  native_transition_changes_requested:   { set: false, verify: true, remediation: attest, notes: "Built-in 'Code changes requested'; verified live." }
+  native_transition_pr_merged:           { set: false, verify: true, remediation: attest, notes: "Built-in 'Pull request merged' (on by default); verified live." }
+  native_transition_issue_closed:        { set: false, verify: true, remediation: attest, notes: "Built-in 'Item closed' (on by default); verified live." }
+  native_transition_deployed:            { set: false, verify: false, remediation: none, notes: "No built-in; use owner: flow." }

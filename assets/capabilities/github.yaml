@@ -1,0 +1,17 @@
+adapter: github
+kind: forge
+version: 1
+researched_at: 2026-10-09
+sources:
+  - https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+  - https://github.com/github/docs/issues/34689
+limits: { rate: "PAT 5,000/h; GITHUB_TOKEN 1,000/h/repo; 304s free; ETags token-scoped" }
+capabilities:
+  commit_status_write:    { set: true,  verify: true, requires: [statuses_write], remediation: follow_up }
+  branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Prefer rulesets; read effective rules." }
+  required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Additive." }
+  merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
+  file_proposal:          { set: true,  verify: true, requires: [contents_write, pulls_write], remediation: follow_up }
+  pr_comments:            { set: true,  verify: true, requires: [pulls_write], remediation: follow_up }
+  deployments_read:       { set: false, verify: true, remediation: none }
+  linked_issues_read:     { set: false, verify: true, remediation: none, notes: "closingIssuesReferences (GraphQL)." }

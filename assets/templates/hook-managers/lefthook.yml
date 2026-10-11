@@ -1,0 +1,9 @@
+# Add to lefthook.yml
+commit-msg:
+  commands:
+    flow:
+      run: flow hook run commit-msg {1}
+prepare-commit-msg:
+  commands:
+    flow:
+      run: flow hook run prepare-commit-msg {1} {2}

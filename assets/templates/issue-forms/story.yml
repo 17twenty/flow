@@ -1,0 +1,31 @@
+name: Story
+description: A small, shippable change (1–2 days). Becomes Ready when it has acceptance criteria and a parent.
+labels: []
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The problem or outcome, in one or two sentences.
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable, testable statements. One per line. flow's Definition of Ready requires this section.
+      placeholder: |
+        - `flow check pr` posts flow/policy on the PR head SHA
+        - Re-running with identical inputs posts nothing new
+    validations: { required: true }
+  - type: textarea
+    id: specs
+    attributes:
+      label: Spec references
+      description: e.g. specs/09-policy-gate.md §2
+    validations: { required: false }
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options: ["≤ 1 day", "≤ 2 days", "too big — split me"]
+    validations: { required: true }

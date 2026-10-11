@@ -1,0 +1,9 @@
+# Add to .pre-commit-config.yaml, then: pre-commit install --hook-type commit-msg
+repos:
+  - repo: local
+    hooks:
+      - id: flow-commit-msg
+        name: flow commit-msg lint
+        entry: flow hook run commit-msg
+        language: system
+        stages: [commit-msg]

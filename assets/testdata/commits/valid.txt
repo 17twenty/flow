@@ -1,0 +1,66 @@
+feat(billing): add CSV export for invoices
+
+Refs: HPB-123
+---
+fix: handle empty VM list in dashboard
+
+The dashboard crashed when an organisation had no VMs because the
+aggregation assumed at least one row.
+
+Refs: HPB-200
+---
+feat(api)!: drop v1 volume endpoints
+
+BREAKING CHANGE: /v1/volumes is removed. Use /v2/volumes, which returns
+paginated results.
+
+Refs: HPB-310
+---
+docs: clarify GPU quota limits in README
+---
+ci: cache go modules between runs
+---
+perf(scheduler): reuse node scores across placement attempts
+
+Refs: HPB-411, HPB-412
+---
+refactor(core,api): extract retry policy
+
+Refs: HPB-500
+Co-authored-by: Agent Smith <agent@example.com>
+Agent: claude
+---
+feat(billing): gate new invoice layout behind flag
+
+Refs: HPB-601
+Flag-Added: invoice-layout-v2
+---
+chore(billing): remove invoice-layout-v2 flag
+
+Refs: HPB-655
+Flag-Removed: invoice-layout-v2
+---
+feat(db): add nullable region column to vms
+
+Refs: HPB-700
+Migration: expand
+---
+revert: feat(billing): add CSV export for invoices
+
+This reverts commit 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b.
+
+Refs: HPB-123
+---
+fix(ui): correct `useQuota` hook dependency array
+
+Refs: HPB-801
+---
+feat(GPU): support H200 flavours
+
+Refs: HPB-900
+---
+fix: avoid double charge on retry
+
+Long body line that includes a URL which must not trigger wrapping rules https://example.com/a/very/long/path/that/goes/on/and/on/and/on/forever
+
+Refs: HPB-901

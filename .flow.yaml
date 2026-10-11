@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/17twenty/flow/main/assets/schema/flow.v1.json
+# flow's own workflow — see .ralph/specs/17-dogfood.md
+version: 1
+preset: lean-kanban
+forge:   { type: github, repo: 17twenty/flow, auth: { token_env: GITHUB_TOKEN } }
+tracker:
+  type: github-projects
+  owner: 17twenty
+  owner_type: user
+  project: ${pending:project}     # resolved by flow doctor --fix (placeholders are never valid inside {…})
+  auth: { token_env: FLOW_PROJECT_TOKEN }
+workflow:
+  done_on: merged
+  columns:
+    - { id: backlog,     name: Backlog,     category: todo }
+    - { id: ready,       name: Ready,       category: todo, gate: definition_of_ready }
+    - { id: in_progress, name: In progress, category: in_progress, wip: { per_person: 2 } }
+    - { id: in_review,   name: In review,   category: in_progress, wip: { limit: 3 } }
+    - { id: done,        name: Done,        category: done }
+  transitions:
+    pr_opened_draft:     { to: in_progress, owner: flow }
+    pr_ready_for_review: { to: in_review,   owner: flow }
+    changes_requested:   { to: in_progress, owner: native }
+    pr_merged:           { to: done,        owner: native }
+    issue_closed:        { to: done,        owner: native }
+  expedite: { labels: [incident], max: 1 }
+  blocked:  { label: blocked, require_comment: true }
+definition_of_ready: { rules: [acceptance_criteria, parent_link, not_blocked] }
+commits:
+  convention: conventional
+  types: [feat, fix, perf, refactor, test, docs, build, ci, chore, revert, style]
+  header_max: 72
+  merge_strategy: squash
+  scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, ralph, deps] }
+  unlinked_types: [ci, build, docs]
+deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
+policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
+agents:  { authors: ['17twenty-flow-agent[bot]'], labels: [agent], require_human_review: true }
+followups:
+  labels: [flow-followup]
+  owners: { default: '@17twenty', tracker_admin: '@17twenty', forge_admin: '@17twenty', platform: '@17twenty' }

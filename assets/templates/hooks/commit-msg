@@ -1,0 +1,6 @@
+#!/bin/sh
+# installed by flow — https://github.com/17twenty/flow
+# Lints the commit message against .flow.yaml conventions (Conventional Commits).
+# If flow is not installed, the commit proceeds; the PR policy gate is the backstop.
+command -v flow >/dev/null 2>&1 || { echo "flow: not found on PATH; skipping commit-msg lint" >&2; exit 0; }
+exec flow hook run commit-msg "$1"

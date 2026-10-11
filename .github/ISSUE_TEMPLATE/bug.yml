@@ -1,0 +1,18 @@
+name: Bug
+description: Something flow does wrong. Add label `incident` only if it breaks gating or doctor on a live repo.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: "Command, output (redact tokens), exit code." }
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What correct behaviour looks like — becomes the regression test.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes: { label: flow version, description: "flow version --json" }
+    validations: { required: true }

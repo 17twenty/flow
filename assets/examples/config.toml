@@ -1,0 +1,14 @@
+# $XDG_CONFIG_HOME/flow/config.toml
+[user]
+handle = "@17twenty"
+
+[ui]
+theme = "auto"   # auto | dark | light
+ascii = false
+
+[auth.github]
+token_cmd = ["gh", "auth", "token"]        # argv, no shell
+hosts = ["api.github.com"]                 # approved hosts for this credential
+
+[auth.github_projects]
+token_cmd = ["gh", "auth", "token"]        # needs 'project' scope: gh auth refresh -s project

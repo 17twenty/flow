@@ -1,0 +1,2 @@
+# .husky/commit-msg
+flow hook run commit-msg "$1"
