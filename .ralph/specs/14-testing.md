@@ -61,3 +61,20 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   `FailOnce` is what makes "retried once, then succeeded" expressible. Every
   fake also refuses a cancelled context with `ErrUnavailable`, so the root's
   signal handling is testable offline.
+- **The transport guard is automatic, not opt-in (item 2.16).** A guard a test
+  has to install is a guard the one forgotten test does not have, and that test
+  is exactly the one that reaches a real provider. `core.Client` therefore
+  refuses any non-loopback host whenever `testing.Testing()` reports a test
+  binary, with no flag to set and nothing to remember. `FLOW_LIVE=1` lifts it,
+  which is the same switch the live suite is already gated on, and
+  `ClientOptions.AllowHost` overrides it entirely — it is the hook that
+  credential host binding (spec 15 §1, item 7.6) will use. The refusal is
+  `ErrPermission` and
+  is never retried: the answer would be the same three more times.
+- **A new stdlib area moves the Go floor (item 2.16).** `govulncheck` had
+  nothing to say while flow was offline; the first `net/http` import made ten
+  advisories reachable in one commit, all fixed in go1.26.9. `go.mod`'s `go`
+  directive moved from 1.26.4 to 1.26.9, which is the whole change: CI reads
+  `go-version-file: go.mod`, so the runner and every developer follow. This is
+  what "latest stable" in AGENTS.md means in practice — a deliberate edit to
+  `go.mod` when a gate says so, never an ambient drift.

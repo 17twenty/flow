@@ -123,7 +123,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: owner routing; forward-only; back moves; multi-PR; never out of done
 - [x] 2.15 Markers — specs: 11 §1 — deps: 0.2 (#42)
   - AC: both styles round-trip; FuzzMarkerParse
-- [ ] 2.16 core.Client — specs: 01 §5 — deps: 0.3 (#43)
+- [x] 2.16 core.Client — specs: 01 §5 — deps: 0.3 (#43)
+  - note: core/client.go, httpmeta.go, httpcache.go. One `Do` over a `Request`, because every adapter wants the same four things and a method per verb only multiplies them. Retries are for methods HTTP calls idempotent, plus anything the provider refused to perform — a 5xx on a POST may mean the write landed and the answer was lost, a 429 means it did not happen at all. The ETag cache is keyed by a fingerprint of the token, never the token: an ETag is only valid for the credential that obtained it, so one token must never be handed another's body. A 403 is read as throttling rather than refusal when the budget is spent, a Retry-After was sent, or the message says so. The transport guard is automatic — `testing.Testing()` and nothing to remember — so the one test that forgot its fake fails instead of reaching a real provider.
   - AC: retries, ETag cache keyed by token fingerprint, rate-limit headers, transport guard
 
 ## Phase 3 — GitHub forge and GitHub Projects tracker

@@ -172,3 +172,44 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
   the policy gate is the first caller that needs it. The defaults are filled in
   there too, so that an incomplete configuration lints by the same convention
   spec 03 §1 ships.
+- **§5 `core.Client` is one `Do` over a `Request`, not a method per verb (item
+  2.16).** Every adapter needs the same four things — the URL resolved against
+  a base, a JSON body in, a JSON body out, and the provider's metadata — and
+  anything shaped `Get/Post/Patch` either multiplies by the number of verbs or
+  hides the headers the adapters actually need. `Response` therefore carries
+  the parsed `Link` relations and the rate-limit numbers alongside the body, so
+  pagination and throttling are the client's job once rather than each
+  adapter's job again.
+- **§5 retries are for idempotent methods, and for anything the provider
+  refused to perform (item 2.16).** A 5xx on a POST may mean the write landed
+  and the answer was lost, so it is never replayed; a 429 or a secondary rate
+  limit means the provider did not act at all, so it is replayed whatever the
+  method. `Request.Retry` lets an adapter say `RetryAlways` for a write it
+  knows to be idempotent at the provider, or `RetryNever` for one it does not.
+  The backoff is injectable so that a test asserts the wait instead of
+  enduring it.
+- **§5 the ETag cache is keyed by a fingerprint of the credential (item
+  2.16).** An ETag is only valid for the token that obtained it — a token that
+  may see less of a resource must never be handed another token's body — so
+  the key is `sha256("flow-token-v1\x00"+token)[:8]`, the method and the full
+  URL. The fingerprint is safe to log and appears in the client's debug
+  records; the token itself never reaches the key, the file name or the disk.
+  Only GET is cached, and only when the response carried an ETag.
+- **§5 the status mapping has three additions (item 2.16).** Spec 01 §5 names
+  401/403, 404, 409/412, 429 and 5xx. `410 Gone` joins 404, because a resource
+  that was deleted is one that is not there; `405` and `501` map to
+  `ErrUnsupported`, because the provider is saying this adapter asked for
+  something it does not do; every other 4xx maps to `ErrValidation`, which is
+  what a 400 or GitHub's 422 is. A 403 is read as rate limiting rather than
+  refusal when the budget is spent, a `Retry-After` was sent, or the message
+  says so — otherwise the two are indistinguishable from the status alone.
+- **§5 a cancelled context is returned as itself (item 2.16).** Everything else
+  is wrapped in a `UserError` carrying a sentinel, but `context.Canceled` is
+  how the root tells an interrupt (exit 130) from an outage (exit 69), so
+  wrapping it as `ErrUnavailable` would turn Ctrl-C into a reported failure.
+  A deadline, by contrast, is an outage and says which timeout elapsed.
+- **§5 bounded concurrency belongs to the client (item 2.16).** "Default 4 per
+  provider" is a property of the connection to a provider, not of any one
+  caller, so the limit is a buffered channel inside `Client` and an adapter
+  cannot forget it. It needs no dependency; `golang.org/x/sync/errgroup` stays
+  for the places that fan out over several providers.

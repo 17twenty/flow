@@ -69,7 +69,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [ ] Phase 1 — Bootstrap Stage A: repo layout, first push, Project, labels, seeded issues, loop runs
 - [x] Phase 2 — Skeleton (plan Phase 0): module, kong root, sentinels, slog, embed, CI green
 - [ ] Phase 3 — Offline core (plan Phase 1): commit parser/linter, config, lock, schema, git, UI, hooks
-- [ ] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
+- [x] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
 - [ ] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [ ] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
@@ -81,68 +81,66 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 ### Status notes
 
 **Done.** The repo is real: target layout per spec 01 §1 on `origin/main`, Go
-module `github.com/17twenty/flow`. Plan items 0.1–0.5 and 1.1 are complete and
-ticked in `.ralph/IMPLEMENTATION_PLAN.md`.
+module `github.com/17twenty/flow`, every commit so far CI-green. Plan Phase 0
+(0.1–0.6), Phase 1 (1.1–1.14 except 1.12) and **all of Phase 2 (2.1–2.16)** are
+complete, ticked in `.ralph/IMPLEMENTATION_PLAN.md`, and their issues closed
+with the board item in Done.
 
-- *Skeleton (plan Phase 0).* The binary parses the whole spec 02 command tree;
-  unimplemented commands fail as `ErrUnsupported` (exit 1), the only stub the
-  plan permits. Core has sentinels with exit-code mapping, `UserError`
-  what/why/fix rendering, and the spec 15 §2 redacting slog handler.
-  `flow version` is fully implemented in human and `--json` form. SIGINT (130)
-  and `--timeout` (69) are tested against the real signal plumbing via a
-  `flowtest`-tagged blocking command.
-- *Parser (plan 1.1).* `internal/commits` implements the spec 08 §1 grammar and
-  never errors. It handles CRLF, `core.commentChar`, scissors, merge/revert/
-  autosquash forms and the `BREAKING CHANGE` footer, and reports rune-accurate
-  columns for linter diagnostics. `FuzzParse` is seeded from
-  `assets/testdata/commits`; runs total ~38M execs with no panics.
-- *Linter (plan 1.2).* All nine spec 08 §2 rules, each with severity, a column
-  pointing at the offending text, and fix text. `commits.Settings` mirrors
-  `.flow.yaml` rather than importing `config`, keeping the package stdlib-only.
-  The corpus is rewritten to v2 rule ids with decisions recorded in spec 08;
-  `# expect:` sets are matched **exactly**, so an unexpected violation fails the
-  build, and `TestCorpusCoversEveryRule` fails if a rule has no sample.
-
+- *Skeleton (plan Phase 0).* kong root parsing the whole spec 02 command tree,
+  sentinels with exit-code mapping, `UserError` what/why/fix, the spec 15 §2
+  redacting slog handler, `flow version`, embedded assets, CI.
+- *Offline core (plan Phase 1).* `internal/commits` parser, linter and safe
+  autofix with `flow check commit` and the git hooks; `internal/config` with
+  strict YAML, placeholders, semantic validation, lock reader/writer, TOML
+  precedence, `token_cmd` trust rules, credential resolution, JSON Schema and
+  `flow schema`, embedded presets; `internal/git` read-only over exec.
+- *Engine (plan Phase 2).* Capability registry and outcome resolution,
+  `coretest` fakes and the three contract suites, desired state and canonical
+  hashing, planner and plan JSON, comparison mode, apply executor, doctor check
+  registry with placeholder resolution, follow-up lifecycle, drift and
+  attestations, Definition of Ready, the policy gate with its status and
+  comment renders, the transition engine, markers, and now `core.Client`.
+- *`core.Client` (item 2.16, this run).* One `Do` over a `Request`: base-URL
+  resolution, JSON in and out, per-attempt timeout, bounded concurrency,
+  `Link` pagination, rate-limit headers, retries for idempotent methods and for
+  anything the provider refused to perform, an ETag cache (memory and 0700 disk)
+  keyed by a fingerprint of the credential, and the spec 14 transport guard that
+  refuses any non-loopback host inside a test binary with nothing to remember.
 
 **What currently verifies.** The spec's Verify command cannot pass until
-`doctor` exists. Today's equivalent, all green:
+`doctor` exists (plan item 4.5). Today's equivalent, all green:
 
 ```sh
 test -z "$(gofmt -l .)" && go vet ./... && go build -o bin/flow . && \
   go test ./... -race -count=1 && go test -tags flowtest ./... -race -count=1 && \
-  go run honnef.co/go/tools/cmd/staticcheck@latest ./... && \
+  go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./... && \
   go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```
 
-**Phase 2 is ticked with one caveat**: plan item 0.6 ("CI green on main") now has
-a workflow and pushed commits, so GitHub Actions should be running it — nobody
-has confirmed the run is green. Every step of `ci.yml` passes locally.
+**Still open, and why.**
 
-**Phase 1 stays unticked.** Its local half is done (layout, module, first push);
-its GitHub-side half (Project, labels, App, `FLOW_PROJECT_TOKEN`, running
-`seed-issues.sh`, one `loop.sh` iteration) is blocked on the Human prerequisites
-above, and its three unticked acceptance criteria track exactly that.
+1. *Plan item 1.12 — `internal/ui` styles and plain/markdown/JSON renderers.*
+   The one gap in Phase 1. Nothing depends on it until the commands of Phase 4
+   need somewhere to print to, so it was left behind the engine work; it must
+   land before 4.2.
+2. *Phases 3–8.* Adapters, commands, live health, TUI, extra adapters, proof.
+3. *Blocked on the human* (the Phase 1 GitHub-side half, unchanged): create the
+   GitHub App `17twenty-flow-agent` and expose an installation token as
+   `GH_TOKEN`; store the classic PAT as `FLOW_PROJECT_TOKEN`; enable the spec
+   17 §3 built-in Project workflows; run `bootstrap/seed-issues.sh`. The
+   identity blocker recorded in spec 17 still stands: objects created with
+   @17twenty's PAT are authored by @17twenty, who cannot approve them, so
+   `agent.human_review` is unsatisfiable until the App exists.
 
-**Blocked on the human** — nothing else can satisfy these:
-1. Create the GitHub App `17twenty-flow-agent`, install it, expose an
-   installation token as `GH_TOKEN` on the loop host.
-2. Create the classic PAT with `project` scope as repo secret `FLOW_PROJECT_TOKEN`.
-3. Create the user Project "flow" and the five labels; set repo merge settings.
-4. Approve installing `gh` (Homebrew) so the agent can seed issues and drive the
-   Project. Until then `bootstrap/seed-issues.sh` cannot run.
-
-**Single best next step:** plan item 1.3 — safe autofixes plus the `flow check
-commit` command (spec 08 §3, spec 02 §2). The fixes are exactly four and nothing
-else is ever rewritten: lowercase the type, trim header whitespace, insert the
-missing blank line after the header, strip a trailing full stop. They must be
-idempotent, which is worth a test that applies them twice. The command reads a
-message file or `-`, exits 1 on errors, supports `--fix` in place and `--json`.
-It needs a `commits.Settings` from somewhere: `internal/config` is plan item 1.4
-and does not exist yet, so either do 1.4 first or have `check commit` fall back
-to built-in defaults and wire config in at 1.4 — prefer doing 1.4 first, since
-1.3's AC mentions CLI exit codes and the command will want real config. Either
-way this yields flow's first genuinely implemented command, replacing an
-`ErrUnsupported` stub.
-
-
-
+**Single best next step:** plan item 3.1 — the GitHub forge adapter's read half
+(`Repo`, `PullRequest`, `PullRequests`, `Commits`, `Compare`, `File`), specs 10
+§2 and 01 §3, now unblocked by `core.Client`. Build it on `core.Client`
+directly: paginate with `Response.Links["next"]` by passing that absolute URL
+straight back as `Request.Path`, send the `Accept: application/vnd.github+json`
+and `X-GitHub-Api-Version: 2022-11-28` headers as `ClientOptions.Header`, and
+let the ETag cache do the conditional requests. Test it with an `httptest`
+server seeded from `coretest.ContractForge` — the same world the in-memory fake
+is built from — and run `coretest.ForgeContract` against the subset implemented
+so far, so the real adapter and the fake answer the same questions identically.
+Linked issues (3.3) need GraphQL and are a separate item; leave
+`PullRequest.LinkedIssues` empty until then.

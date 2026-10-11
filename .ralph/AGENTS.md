@@ -48,3 +48,6 @@ CURRENT MODE: direct
 - Walking a `yaml.Node` tree must guard against cycles: `&a [*a]` parses into a self-referential node and ate all the memory. Keep a set of nodes currently open.
 - Generated YAML: build a `yaml.Node` tree instead of marshalling a struct. Key order, list order and quoting then belong to flow, not to the encoder's internal sort.
 - Spec filenames are `05-capabilities.md` and `06-plan-apply.md`. Appending a Decision with `cat >> .ralph/specs/06-*.md` creates a new file when the glob misses, instead of failing. `ls .ralph/specs/` first.
+- `govulncheck` was clean only because nothing imported `net/http`. The first real HTTP client turned ten stdlib advisories reachable at once. Expect a `go.mod` bump with the first use of a new stdlib area, and run govulncheck before claiming the item is done.
+- `http.Header` literals in tests do not work: `Get`/`Values` canonicalise, so `http.Header{"X-RateLimit-Limit": …}` is never found (canonical is `X-Ratelimit-Limit`). Build test headers with `Set`.
+- A transport guard must refuse without retrying. The retry loop happily asked the guard four times before the test noticed.
