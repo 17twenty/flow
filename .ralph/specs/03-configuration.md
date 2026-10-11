@@ -294,3 +294,23 @@ gate, relaxed policy).
   defines where credential *sources* are configured and who may configure
   them. Reading the named variable, falling back to `FLOW_<PROVIDER>_TOKEN`
   and running `token_cmd` is plan item 1.14.
+- **§6 the generator is a test, not a second main package (item 1.9).** `go
+  generate ./internal/config` runs `go test . -run TestSchemaFileIsCurrent
+  -update`, so the same code both writes `assets/schema/flow.v1.json` and
+  fails when it is stale. A `cmd/schema-gen` would be a package outside the
+  layout spec 01 §1 fixes, and a second renderer to keep in step.
+- **§6 the schema is built in Go, not stored as a literal (item 1.9).** `flow
+  schema` prints what `ConfigSchema` renders rather than the embedded file, and
+  a test asserts the two are identical. The binary can then never print a
+  schema it does not itself implement, and the committed file can never drift
+  unnoticed.
+- **§6 parity is by key, not by constraint (item 1.9).** The test insists every
+  struct field is described and every described key exists, and that the JSON
+  type matches the Go type. It does not try to derive patterns, enums or
+  required lists from the structs: those are the things a schema says that Go
+  cannot, and deriving them would delete the reason the schema is hand-written.
+- **§6 `--kind` other than `config` is still `ErrUnsupported` (item 1.9).**
+  Spec 02 §2 lists five kinds; §6 defines only the configuration schema. The
+  plan, doctor and policy documents do not exist yet and the lock schema has no
+  consumer, so flow says so and names the kind that works rather than printing
+  a schema nobody wrote.

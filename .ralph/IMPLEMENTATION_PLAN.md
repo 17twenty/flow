@@ -57,7 +57,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.8 TOML config, precedence, token_cmd trust rules — specs: 03 §4–5, 15 §1 — deps: 1.4 (#21)
   - note: config/personal.go; strict TOML limited to user/ui/log/auth, token_cmd refused outside the user's own config, tracked override refused via an injected Tracked func (config must not import git). Preset layering of .flow.yaml waits for 1.10; credential resolution split out as 1.14.
   - AC: precedence table test; tracked .flow.local.toml refused
-- [ ] 1.9 JSON Schema and `flow schema` — specs: 03 §6 — deps: 1.4 (#22)
+- [x] 1.9 JSON Schema and `flow schema` — specs: 03 §6 — deps: 1.4 (#22)
+  - note: config/schema.go built in Go; `flow schema` prints it and a test proves it equals the committed assets/schema/flow.v1.json. Parity walks Config and the schema in both directions (reflection in the test only). Kinds other than config stay ErrUnsupported until those documents exist.
   - AC: struct↔schema parity test; go generate writes assets/schema/flow.v1.json; staleness test
 - [ ] 1.10 Presets embedded and valid — specs: 03 §7 — deps: 1.6 (#23)
   - AC: lean-kanban, deploy-done, minimal decode + validate; golden

@@ -1,0 +1,625 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/17twenty/flow/main/assets/schema/flow.v1.json",
+  "title": "flow configuration (.flow.yaml) v1",
+  "description": "flow workflow configuration: the board a team agreed to, and how flow keeps it true.",
+  "type": "object",
+  "properties": {
+    "agents": {
+      "description": "Which contributors are machines, so the gate can insist a human stays accountable.",
+      "type": "object",
+      "properties": {
+        "authors": {
+          "description": "Logins treated as agents.",
+          "type": "array",
+          "items": {
+            "description": "A login.",
+            "type": "string",
+            "examples": [
+              "17twenty-flow-agent[bot]"
+            ]
+          }
+        },
+        "labels": {
+          "description": "Labels that mark a pull request as agent work.",
+          "type": "array",
+          "items": {
+            "description": "A label.",
+            "type": "string",
+            "examples": [
+              "agent"
+            ]
+          }
+        },
+        "require_human_review": {
+          "description": "Demand a human approval on agent pull requests.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "attestation": {
+      "description": "How long a human's word stands (spec 07 §8).",
+      "type": "object",
+      "properties": {
+        "default_ttl": {
+          "description": "How long an attestation stands before it must be renewed. Go duration syntax plus d (24h) and w (7d).",
+          "type": "string",
+          "pattern": "^0$|^[+-]?(\\d+(\\.\\d+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$",
+          "examples": [
+            "90m",
+            "2h",
+            "7d",
+            "30d"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "commits": {
+      "description": "The commit convention, which under a squash merge is also the pull request title convention (spec 08).",
+      "type": "object",
+      "properties": {
+        "convention": {
+          "description": "The grammar. Only Conventional Commits exists in v1.",
+          "type": "string",
+          "enum": [
+            "conventional"
+          ]
+        },
+        "header_max": {
+          "description": "Longest header allowed, in characters.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "merge_strategy": {
+          "description": "Which text becomes the commit header.",
+          "type": "string",
+          "enum": [
+            "squash",
+            "merge",
+            "rebase"
+          ]
+        },
+        "scopes": {
+          "description": "Constraints on the scope part of the header.",
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "description": "Permitted scopes. An empty list allows any.",
+              "type": "array",
+              "items": {
+                "description": "A scope.",
+                "type": "string",
+                "examples": [
+                  "cli"
+                ]
+              }
+            },
+            "required": {
+              "description": "Demand a scope on every header.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "types": {
+          "description": "The permitted commit types.",
+          "type": "array",
+          "items": {
+            "description": "A commit type.",
+            "type": "string",
+            "pattern": "^[a-z]+$",
+            "examples": [
+              "feat"
+            ]
+          }
+        },
+        "unlinked_types": {
+          "description": "Types allowed to merge without a ticket.",
+          "type": "array",
+          "items": {
+            "description": "A commit type.",
+            "type": "string",
+            "examples": [
+              "docs"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "definition_of_ready": {
+      "description": "What must be true of a ticket before anyone starts it (spec 04 §7).",
+      "type": "object",
+      "properties": {
+        "max_size": {
+          "description": "Largest estimate a ready ticket may carry, for trackers that record one. Go duration syntax plus d (24h) and w (7d).",
+          "type": "string",
+          "pattern": "^0$|^[+-]?(\\d+(\\.\\d+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$",
+          "examples": [
+            "90m",
+            "2h",
+            "7d",
+            "30d"
+          ]
+        },
+        "rules": {
+          "description": "The rules to enforce.",
+          "type": "array",
+          "items": {
+            "description": "A readiness rule.",
+            "type": "string",
+            "enum": [
+              "acceptance_criteria",
+              "parent_link",
+              "not_blocked",
+              "flag_if_user_facing",
+              "design_if_ui"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "deploys": {
+      "description": "Where flow looks to find out whether a merge is actually running (spec 13).",
+      "type": "object",
+      "properties": {
+        "contexts": {
+          "description": "Commit status contexts to read, for the commit_status source. A trailing * matches by prefix.",
+          "type": "array",
+          "items": {
+            "description": "A status context.",
+            "type": "string",
+            "examples": [
+              "argocd/app-prod"
+            ]
+          }
+        },
+        "environment": {
+          "description": "The environment name the deployer records.",
+          "type": "string",
+          "examples": [
+            "production"
+          ]
+        },
+        "max_age": {
+          "description": "How long flow tolerates seeing no deployment at all. Go duration syntax plus d (24h) and w (7d).",
+          "type": "string",
+          "pattern": "^0$|^[+-]?(\\d+(\\.\\d+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$",
+          "examples": [
+            "90m",
+            "2h",
+            "7d",
+            "30d"
+          ]
+        },
+        "max_lag": {
+          "description": "The merged-to-deployed objective doctor holds the team to. Go duration syntax plus d (24h) and w (7d).",
+          "type": "string",
+          "pattern": "^0$|^[+-]?(\\d+(\\.\\d+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$",
+          "examples": [
+            "90m",
+            "2h",
+            "7d",
+            "30d"
+          ]
+        },
+        "source": {
+          "description": "Where deployment facts come from.",
+          "type": "string",
+          "enum": [
+            "forge_deployments",
+            "commit_status",
+            "none"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "followups": {
+      "description": "How flow files the work it cannot do itself (spec 07 §4).",
+      "type": "object",
+      "properties": {
+        "labels": {
+          "description": "Labels applied to every follow-up flow opens.",
+          "type": "array",
+          "items": {
+            "description": "A label.",
+            "type": "string",
+            "examples": [
+              "flow-followup"
+            ]
+          }
+        },
+        "owners": {
+          "description": "Who to route a follow-up to, by the access it needs.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "Anyone the other roles do not claim. May be ${pending:name} until flow doctor resolves it.",
+              "type": "string",
+              "examples": [
+                "@17twenty",
+                "${pending:project}"
+              ]
+            },
+            "forge_admin": {
+              "description": "Work needing repository administration. May be ${pending:name} until flow doctor resolves it.",
+              "type": "string",
+              "examples": [
+                "@17twenty",
+                "${pending:project}"
+              ]
+            },
+            "platform": {
+              "description": "Work needing deployment or infrastructure access. May be ${pending:name} until flow doctor resolves it.",
+              "type": "string",
+              "examples": [
+                "@17twenty",
+                "${pending:project}"
+              ]
+            },
+            "tracker_admin": {
+              "description": "Work needing tracker administration. May be ${pending:name} until flow doctor resolves it.",
+              "type": "string",
+              "examples": [
+                "@17twenty",
+                "${pending:project}"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "forge": {
+      "description": "The Git host: pull requests, reviews, branch protection, commit statuses.",
+      "type": "object",
+      "properties": {
+        "auth": {
+          "description": "Where the credential comes from. Names of environment variables only, never a secret.",
+          "type": "object",
+          "properties": {
+            "email_env": {
+              "description": "Name of the environment variable holding the account email, for providers that pair one with a token.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "examples": [
+                "JIRA_EMAIL"
+              ]
+            },
+            "token_env": {
+              "description": "Name of the environment variable holding the API token.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "examples": [
+                "GITHUB_TOKEN"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "repo": {
+          "description": "The repository, as owner/name.",
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$",
+          "examples": [
+            "17twenty/flow"
+          ]
+        },
+        "type": {
+          "description": "Which forge adapter to use.",
+          "type": "string",
+          "enum": [
+            "github",
+            "gitea",
+            "gitlab"
+          ]
+        },
+        "url": {
+          "description": "Base web URL, for self-managed installations.",
+          "type": "string",
+          "examples": [
+            "https://github.example.com"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "repo"
+      ],
+      "additionalProperties": false
+    },
+    "policy": {
+      "description": "How the pull request gate presents itself (spec 09).",
+      "type": "object",
+      "properties": {
+        "comment": {
+          "description": "When the gate leaves a pull request comment.",
+          "type": "string",
+          "enum": [
+            "always",
+            "on_failure",
+            "never"
+          ]
+        },
+        "rules": {
+          "description": "Per-rule severity overrides, keyed by rule id.",
+          "type": "object",
+          "additionalProperties": {
+            "description": "A severity.",
+            "type": "string",
+            "enum": [
+              "off",
+              "warn",
+              "error"
+            ]
+          }
+        },
+        "status_context": {
+          "description": "The commit status name the gate publishes under.",
+          "type": "string",
+          "examples": [
+            "flow/policy"
+          ]
+        },
+        "strictness": {
+          "description": "The baseline severity set.",
+          "type": "string",
+          "enum": [
+            "relaxed",
+            "standard",
+            "strict"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "preset": {
+      "description": "The shipped starting point this file was derived from.",
+      "type": "string",
+      "enum": [
+        "lean-kanban",
+        "deploy-done",
+        "minimal"
+      ]
+    },
+    "tracker": {
+      "description": "The ticket system: the board, its columns and its items.",
+      "type": "object",
+      "properties": {
+        "auth": {
+          "description": "Where the credential comes from. Names of environment variables only, never a secret.",
+          "type": "object",
+          "properties": {
+            "email_env": {
+              "description": "Name of the environment variable holding the account email, for providers that pair one with a token.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "examples": [
+                "JIRA_EMAIL"
+              ]
+            },
+            "token_env": {
+              "description": "Name of the environment variable holding the API token.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "examples": [
+                "GITHUB_TOKEN"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "owner": {
+          "description": "The account the board belongs to.",
+          "type": "string",
+          "examples": [
+            "17twenty"
+          ]
+        },
+        "owner_type": {
+          "description": "Whether the owner is a person or an organisation.",
+          "type": "string",
+          "enum": [
+            "user",
+            "org"
+          ]
+        },
+        "project": {
+          "description": "The board: a GitHub project number, a Jira project key or a Linear team key. May be ${pending:name} until flow doctor resolves it.",
+          "type": "string",
+          "examples": [
+            "3",
+            "${pending:project}"
+          ]
+        },
+        "type": {
+          "description": "Which tracker adapter to use.",
+          "type": "string",
+          "enum": [
+            "github-projects",
+            "jira-cloud",
+            "linear"
+          ]
+        },
+        "url": {
+          "description": "Base URL, for trackers whose host is per-tenant.",
+          "type": "string",
+          "examples": [
+            "https://17twenty.atlassian.net"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "version": {
+      "description": "Schema version. Only 1 exists.",
+      "type": "integer"
+    },
+    "workflow": {
+      "description": "The board flow keeps true.",
+      "type": "object",
+      "properties": {
+        "blocked": {
+          "description": "How the team records work that cannot move.",
+          "type": "object",
+          "properties": {
+            "label": {
+              "description": "The label that marks a blocked ticket.",
+              "type": "string",
+              "examples": [
+                "blocked"
+              ]
+            },
+            "require_comment": {
+              "description": "Demand an explanation alongside the label.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "columns": {
+          "description": "The board columns, in left-to-right order.",
+          "type": "array",
+          "items": {
+            "description": "One board column.",
+            "type": "object",
+            "properties": {
+              "category": {
+                "description": "Which of the three states this column counts as.",
+                "type": "string",
+                "enum": [
+                  "todo",
+                  "in_progress",
+                  "done"
+                ]
+              },
+              "gate": {
+                "description": "A condition tickets must satisfy to enter.",
+                "type": "string",
+                "enum": [
+                  "definition_of_ready"
+                ]
+              },
+              "id": {
+                "description": "Stable identifier, used everywhere else in this file.",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "examples": [
+                  "in_progress"
+                ]
+              },
+              "name": {
+                "description": "The tracker's display name for this column.",
+                "type": "string",
+                "examples": [
+                  "In progress"
+                ]
+              },
+              "wip": {
+                "description": "Work-in-progress limits for this column.",
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "description": "Most items allowed in the column at once.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "per_person": {
+                    "description": "Most items allowed per person at once.",
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "category"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "done_on": {
+          "description": "Whether work is done when it merges, or when it is running.",
+          "type": "string",
+          "enum": [
+            "merged",
+            "deployed"
+          ]
+        },
+        "expedite": {
+          "description": "The agreed way to jump the queue, bounded so it stays the exception.",
+          "type": "object",
+          "properties": {
+            "labels": {
+              "description": "Labels that mark expedited work; any one is enough.",
+              "type": "array",
+              "items": {
+                "description": "A label.",
+                "type": "string",
+                "examples": [
+                  "incident"
+                ]
+              }
+            },
+            "max": {
+              "description": "Most expedited items allowed in flight at once.",
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "transitions": {
+          "description": "Who moves a ticket for each event, keyed by event name (spec 04 §4).",
+          "type": "object",
+          "additionalProperties": {
+            "description": "Where an event takes a ticket, and who takes it there.",
+            "type": "object",
+            "properties": {
+              "owner": {
+                "description": "flow performs the move; native means the tracker's own automation does and flow verifies it.",
+                "type": "string",
+                "enum": [
+                  "flow",
+                  "native"
+                ]
+              },
+              "to": {
+                "description": "The id of the column the ticket moves to.",
+                "type": "string",
+                "examples": [
+                  "in_review"
+                ]
+              }
+            },
+            "required": [
+              "to",
+              "owner"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "done_on",
+        "columns"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "additionalProperties": false
+}

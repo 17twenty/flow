@@ -12,7 +12,7 @@ import (
 // FS holds every embedded asset. Paths are rooted at the assets directory, so a
 // capability file is read as "capabilities/github.yaml".
 //
-//go:embed capabilities presets templates all:schema
+//go:embed capabilities presets templates schema
 var FS embed.FS
 
 // Capabilities returns the provider capability declarations (spec 05).
