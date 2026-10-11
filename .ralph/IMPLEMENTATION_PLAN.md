@@ -31,7 +31,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 1 — Offline core
 
-- [ ] 1.1 Conventional commit header parser — specs: 08 §1 — deps: 0.2
+- [x] 1.1 Conventional commit header parser — specs: 08 §1 — deps: 0.2  
+  - note: internal/commits/parse.go; never errors, 26M fuzz execs clean
   - AC: table tests (scopes, `!`, comment char, scissors, merge/revert/fixup)
   - AC: FuzzParse seeded from assets/testdata/commits; no panics
 - [ ] 1.2 Linter rules and v2 seed data — specs: 08 §2, §4 — deps: 1.1
