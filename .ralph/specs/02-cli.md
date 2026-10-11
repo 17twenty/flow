@@ -112,3 +112,22 @@ Secrets never printed.
   missing, conflicting nor unsupported, and `ErrValidation` would map to 64. The
   command returns a `core.UserError` with no wrapped sentinel, which
   `core.ExitCode` maps to `ExitFail` by default.
+- **§2 the shipped hook templates called a command that does not exist (item
+  1.13).** `assets/templates/hooks/*` and `hook-managers/*` invoked `flow hook
+  run commit-msg`, which no spec defines and the CLI has never had. §2 fixes
+  the hook as `flow check commit --fix "$1"`, so the templates now say that,
+  and `assets/templates/hooks/prepare-commit-msg` is deleted: it invented a
+  second hook and a ticket-prefill feature no spec asks for. A test walks every
+  template and runs each `flow …` it finds with `--help`, so a snippet can
+  never again promise a command flow does not have.
+- **§2 a hook manager means action required, not failure (item 1.13).** When
+  lefthook, husky or pre-commit owns the repository's hooks, `flow hook install`
+  prints the snippet on stdout and exits 2: flow did its half, a person must
+  paste the other half. §4's ACTION REQUIRED is exactly that state. `--force`
+  is the way past, and writes `.git/hooks` regardless.
+- **§2 flow only ever touches a hook it wrote (item 1.13).** Its own hook
+  carries an "installed by flow" marker. Installing over a marked hook upgrades
+  it, installing over an unmarked one is refused unless `--force`, and
+  uninstall refuses an unmarked hook outright with no override: deleting
+  somebody's hook is not a thing flow should be able to do by accident.
+  Installing an identical hook reports "unchanged" and rewrites nothing.

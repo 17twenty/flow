@@ -4,6 +4,6 @@ repos:
     hooks:
       - id: flow-commit-msg
         name: flow commit-msg lint
-        entry: flow hook run commit-msg
+        entry: flow check commit --fix
         language: system
         stages: [commit-msg]

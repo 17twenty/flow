@@ -67,7 +67,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: root, remote parsing (SSH/HTTPS/subgroups), log range, hooks path, ls-files tracked, interpret-trailers parsing
 - [ ] 1.12 UI styles and plain/markdown/JSON renderers — specs: 12 — deps: 0.3 (#25)
   - AC: golden renders for sample plan and doctor results; ASCII + NO_COLOR
-- [ ] 1.13 flow hook install/uninstall — specs: 02 §2, 08 — deps: 1.3, 1.11 (#26)
+- [x] 1.13 flow hook install/uninstall — specs: 02 §2, 08 — deps: 1.3, 1.11 (#26)
+  - note: cmd_hook.go; writes through a temp file, recognises its own work by a marker, defers to lefthook/husky/pre-commit with exit 2. The shipped templates called `flow hook run`, a command that never existed — rewritten to spec 02's `flow check commit --fix`, prepare-commit-msg deleted, and a test now runs every template's invocation with --help.
   - AC: respects core.hooksPath; refuses foreign hooks; prints lefthook/husky/pre-commit snippets
 - [ ] 1.14 Credential resolution: env name, FLOW_<PROVIDER>_TOKEN, token_cmd — specs: 03 §5, 15 §1 — deps: 1.8 (#88)
   - AC: resolution order per provider with a table test; token_cmd run as argv with no shell, with a timeout, and only from the user's own config

@@ -1,2 +1,2 @@
 # .husky/commit-msg
-flow hook run commit-msg "$1"
+flow check commit --fix "$1"

@@ -1,5 +1,0 @@
-#!/bin/sh
-# installed by flow — https://github.com/17twenty/flow
-# Pre-fills the ticket reference (Refs: KEY) from the branch name for plain `git commit`.
-command -v flow >/dev/null 2>&1 || exit 0
-exec flow hook run prepare-commit-msg "$1" "$2"
