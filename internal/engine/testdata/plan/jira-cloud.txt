@@ -1,0 +1,68 @@
+flow.plan/v1
+forge    github
+tracker  jira-cloud
+deploys  forge_deployments
+
+· up to date  tracker.project (project)
+    the provider already matches what was asked for
+
+⚠ follow-up → ${pending:owners.tracker_admin}  tracker.status_options (status_options)
+    the credential is missing project_admin, so a person with those permissions has to do it
+    create "Backlog"
+    create "In progress"
+    create "In review"
+    create "Ready"
+
+✓ native  tracker.labels (labels)
+    flow can set it through the provider's API
+    create "agent"
+    create "blocked"
+    create "flow-followup"
+    create "incident"
+    create "ui"
+    create "user-facing"
+
+✎ attest → flow attest tracker.native.changes_requested  tracker.native.changes_requested (native_transition_changes_requested)
+    flow cannot see this through the API, so a person has to confirm it
+    create "changes_requested" to="In progress"
+
+✎ attest → flow attest tracker.native.pr_merged  tracker.native.pr_merged (native_transition_pr_merged)
+    flow cannot see this through the API, so a person has to confirm it
+    create "pr_merged" to="Done"
+
+✗ unsupported  tracker.native.issue_closed (native_transition_issue_closed)
+    the provider offers no way to do this and nothing else makes up for it
+    create "issue_closed" to="Done"
+
+↻ compensated → policy.wip  tracker.wip (wip_limits)
+    the provider cannot be made to do this, so flow enforces the same intent through policy.wip
+    update "In review" limit="3"
+
+✎ attest → flow attest tracker.expedite  tracker.expedite (expedite_view)
+    flow cannot see this through the API, so a person has to confirm it
+    create "Expedite" labels="incident"
+
+· up to date  forge.default_branch
+    the provider already matches what was asked for
+
+✓ native  forge.protection (branch_protection)
+    flow can set it through the provider's API
+    update "protection" allow_deletions="false" allow_force_push="false" enabled="true" require_linear_history="true"
+
+✓ native  forge.required_status (required_status_checks)
+    flow can set it through the provider's API
+    create "flow/policy"
+
+✓ native  forge.merge_settings (merge_settings)
+    flow can set it through the provider's API
+    update "merge" allow_merge="false" allow_rebase="false" allow_squash="true" squash_message="pr_body" squash_title="pr_title"
+
+✓ native  forge.files (file_proposal)
+    flow can set it through the provider's API
+    create ".github/ISSUE_TEMPLATE/story.yml"
+    create ".github/pull_request_template.md"
+
+· up to date  deploys.records (deploy_records)
+    the provider already matches what was asked for
+
+14 items · 3 up to date · 5 native · 1 compensated · 1 follow-up · 3 attest · 1 unsupported

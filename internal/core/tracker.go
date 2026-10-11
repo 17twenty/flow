@@ -134,11 +134,11 @@ type Ref struct {
 type Item struct {
 	// ID is the provider's identifier, empty for something that does not
 	// exist yet.
-	ID string
+	ID string `json:"id,omitempty"`
 	// Name is what a human sees, and what two items are matched on.
-	Name string
+	Name string `json:"name"`
 	// Fields carry everything else, as strings.
-	Fields map[string]string
+	Fields map[string]string `json:"fields,omitempty"`
 }
 
 // Field returns a field's value, or the empty string.
@@ -168,18 +168,40 @@ func (i Item) Equal(other Item) bool {
 	return maps.Equal(i.Fields, other.Fields)
 }
 
+// Matches reports whether i is at least what want asks for: the same name, a
+// compatible id, and every field want names, with the same value.
+//
+// It is how an observation is compared against a desired item. A provider
+// knows things about an item flow never asked about — a label's colour, an
+// option's description — and holding it to [Item.Equal] would call every one
+// of them a difference flow could never resolve (spec 06 §2).
+func (i Item) Matches(want Item) bool {
+	if i.Name != want.Name {
+		return false
+	}
+	if i.ID != "" && want.ID != "" && i.ID != want.ID {
+		return false
+	}
+	for field, value := range want.Fields {
+		if i.Fields[field] != value {
+			return false
+		}
+	}
+	return true
+}
+
 // Observation is what an adapter found when it looked, in a canonical form:
 // the same board observed twice gives the same observation, whatever order the
 // provider returned things in, so that a hash of it means something (spec 06
 // §2).
 type Observation struct {
 	// What names what was observed, e.g. tracker.status_options.
-	What string
+	What string `json:"what"`
 	// Exists reports whether the thing itself is there at all. An observation
 	// of a project that does not exist has no items and is not an error.
-	Exists bool
+	Exists bool `json:"exists"`
 	// Items are what it holds, in canonical order.
-	Items []Item
+	Items []Item `json:"items,omitempty"`
 }
 
 // Canonical returns the observation with its items in a fixed order: by name,
@@ -217,12 +239,12 @@ const (
 // Change is one mutation an adapter is asked to make.
 type Change struct {
 	// What names what is being changed, e.g. tracker.status_options.
-	What string
+	What string `json:"what"`
 	// Op is one of the change operations above.
-	Op string
+	Op string `json:"op"`
 	// Item is the thing to create, the new value to update to, or the thing
 	// to delete. Its ID is set for an update or a delete.
-	Item Item
+	Item Item `json:"item"`
 }
 
 // ApplyResult is what became of a [Change].

@@ -60,8 +60,6 @@ func NativeItem(event string) string { return NativeItemPrefix + event }
 // Fields a desired item's contents carry. A field is only ever something the
 // provider can report back, so that a comparison means something.
 const (
-	// FieldPosition is a column's place in board order.
-	FieldPosition = "position"
 	// FieldTo is the column a transition lands in.
 	FieldTo = "to"
 	// FieldLimit and FieldPerPerson are a column's work-in-progress limits.
@@ -245,17 +243,16 @@ func trackerProject() DesiredItem {
 
 // trackerStatusOptions is one option per configured column.
 //
-// The option carries its place in board order and nothing else: a column's
-// category is flow's own mapping onto todo/in_progress/done (spec 04 §2) and
-// no tracker researched can report it, and a column's configured id is what
-// the lock maps onto the tracker's id rather than something to compare.
+// The option is its display name and nothing else. A column's category is
+// flow's own mapping onto todo/in_progress/done (spec 04 §2) and no tracker
+// researched can report it; a column's configured id is what the lock maps
+// onto the tracker's id rather than something to compare; and the order the
+// columns appear in on the board is cosmetic, where replacing an option set
+// to reorder it can clear every item's status (spec 06 §4).
 func trackerStatusOptions(cfg *config.Config) DesiredItem {
 	items := make([]core.Item, 0, len(cfg.Workflow.Columns))
-	for i, column := range cfg.Workflow.Columns {
-		items = append(items, core.Item{
-			Name:   column.Name,
-			Fields: map[string]string{FieldPosition: strconv.Itoa(i)},
-		})
+	for _, column := range cfg.Workflow.Columns {
+		items = append(items, core.Item{Name: column.Name})
 	}
 	return DesiredItem{
 		ID:         ItemTrackerStatusOptions,

@@ -91,7 +91,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.4 Desired state and canonical observation hashing — specs: 06 §1–2 — deps: 1.10, 2.2 (#31)
   - note: engine/desired.go derives spec 06 §1's table from the configuration rather than carrying it; engine/canonical.go is a legible quoted encoding whose hash is what the lock records. A desired field is only ever something the provider can report back. Resolve items have no contents; Additive items allow the provider more than was asked for. Goldens per preset under internal/engine/testdata/desired.
   - AC: pure, golden; hash stable under reordering
-- [ ] 2.5 Planner and plan JSON — specs: 06 §2, 05 §5 — deps: 2.4, 2.3 (#32)
+- [x] 2.5 Planner and plan JSON — specs: 06 §2, 05 §5 — deps: 2.4, 2.3 (#32)
+  - note: engine/observe.go asks each adapter what it holds for every desired item; engine/plan.go is the pure diff, taking providers as {kind, capabilities, permissions} rather than adapters so the same configuration can be planned against another tracker with no network. Contents compare by name and a provider may know more than flow asked. Every item lists its changes whatever the outcome, since those are the content of a follow-up or an attestation. engine/render.go holds spec 05 §5's words; noop renders as `· up to date`. A status option's board position left the desired state: reordering a GitHub Projects option set can clear every item's status.
   - AC: golden plain/JSON for lean-kanban vs GitHub-Projects-like and Jira-like fakes
 - [ ] 2.6 Comparison mode — specs: 05 §6 — deps: 2.5 (#33)
   - AC: no network; side-by-side golden

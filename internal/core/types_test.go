@@ -211,6 +211,41 @@ func TestItem(t *testing.T) {
 	}
 }
 
+// An observed item is compared against a desired one by what the desired one
+// asks for, not by everything the provider knows about it (spec 06 §2).
+func TestItemMatches(t *testing.T) {
+	observed := core.Item{
+		ID:     "lbl-1",
+		Name:   "blocked",
+		Fields: map[string]string{"colour": "b60205", "description": "cannot move"},
+	}
+	tests := []struct {
+		name  string
+		want  core.Item
+		match bool
+	}{
+		{name: "the name alone", want: core.Item{Name: "blocked"}, match: true},
+		{name: "a field it has", want: core.Item{Name: "blocked", Fields: map[string]string{"colour": "b60205"}}, match: true},
+		{name: "the id it has", want: core.Item{ID: "lbl-1", Name: "blocked"}, match: true},
+		{name: "another name", want: core.Item{Name: "incident"}},
+		{name: "another id", want: core.Item{ID: "lbl-2", Name: "blocked"}},
+		{name: "a field it does not have", want: core.Item{Name: "blocked", Fields: map[string]string{"limit": "3"}}},
+		{name: "a field with another value", want: core.Item{Name: "blocked", Fields: map[string]string{"colour": "ffffff"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := observed.Matches(test.want); got != test.match {
+				t.Errorf("Matches = %v, want %v", got, test.match)
+			}
+		})
+	}
+
+	// Matching is not equality: the provider may know more than flow asked.
+	if observed.Equal(core.Item{Name: "blocked"}) {
+		t.Error("an item the provider knows more about is equal to the bare one")
+	}
+}
+
 // Two observations of the same board must be the same observation, or a hash
 // of one would mean nothing (spec 06 §2).
 func TestObservationCanonical(t *testing.T) {

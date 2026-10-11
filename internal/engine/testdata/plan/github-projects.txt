@@ -1,0 +1,65 @@
+flow.plan/v1
+forge    github
+tracker  github-projects
+deploys  forge_deployments
+
+· up to date  tracker.project (project)
+    the provider already matches what was asked for
+
+✓ native  tracker.status_options (status_options)
+    flow can set it through the provider's API
+    create "Ready"
+    delete "Icebox"
+    hazard: updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up.
+
+✓ native  tracker.labels (labels)
+    flow can set it through the provider's API
+    create "agent"
+    create "incident"
+    create "ui"
+    create "user-facing"
+
+✎ attest → flow attest tracker.native.changes_requested  tracker.native.changes_requested (native_transition_changes_requested)
+    flow cannot see this through the API, so a person has to confirm it
+    create "changes_requested" to="In progress"
+
+· up to date  tracker.native.pr_merged (native_transition_pr_merged)
+    the provider already matches what was asked for
+
+✎ attest → flow attest tracker.native.issue_closed  tracker.native.issue_closed (native_transition_issue_closed)
+    flow cannot see this through the API, so a person has to confirm it
+    create "issue_closed" to="Done"
+
+↻ compensated → policy.wip  tracker.wip (wip_limits)
+    the provider cannot be made to do this, so flow enforces the same intent through policy.wip
+    create "In progress" per_person="2"
+    create "In review" limit="3"
+
+· up to date  tracker.expedite (expedite_view)
+    flow cannot verify this, and a human has attested that it is true
+    create "Expedite" labels="incident"
+
+· up to date  forge.default_branch
+    the provider already matches what was asked for
+
+✓ native  forge.protection (branch_protection)
+    flow can set it through the provider's API
+    update "protection" allow_deletions="false" allow_force_push="false" enabled="true" require_linear_history="true"
+
+✓ native  forge.required_status (required_status_checks)
+    flow can set it through the provider's API
+    create "flow/policy"
+
+✓ native  forge.merge_settings (merge_settings)
+    flow can set it through the provider's API
+    update "merge" allow_merge="false" allow_rebase="false" allow_squash="true" squash_message="pr_body" squash_title="pr_title"
+
+✓ native  forge.files (file_proposal)
+    flow can set it through the provider's API
+    create ".github/ISSUE_TEMPLATE/story.yml"
+    create ".github/pull_request_template.md"
+
+· up to date  deploys.records (deploy_records)
+    the provider already matches what was asked for
+
+14 items · 5 up to date · 6 native · 1 compensated · 2 attest

@@ -1,0 +1,378 @@
+{
+  "version": "flow.plan/v1",
+  "flow_version": "v0.3.0",
+  "generated_at": "2026-03-01T12:00:00Z",
+  "providers": {
+    "deploys": "forge_deployments",
+    "forge": "github",
+    "tracker": "jira-cloud"
+  },
+  "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "desired_hash": "sha256:ef7ca845f44a009cd7146e584df1ab7944a313b9cbfb722e37a258de4ccc1b83",
+  "items": [
+    {
+      "id": "tracker.project",
+      "target": "tracker",
+      "capability": "project",
+      "outcome": "noop",
+      "why": "the provider already matches what was asked for",
+      "exists": true,
+      "desired_hash": "sha256:4661c3e76c7784e4fe21fc1d21af55cfc3a9d18644f982fd7c848c2a65c21894",
+      "observed_hash": "sha256:04bb22d7a2059a6b57a0296c13a2e5ab0dc4a6dda764fc48d3890a4d4a87f3fb"
+    },
+    {
+      "id": "tracker.status_options",
+      "target": "tracker",
+      "capability": "status_options",
+      "depends_on": [
+        "tracker.project"
+      ],
+      "outcome": "follow_up",
+      "owner": "${pending:owners.tracker_admin}",
+      "missing": [
+        "project_admin"
+      ],
+      "why": "the credential is missing project_admin, so a person with those permissions has to do it",
+      "exists": true,
+      "desired_hash": "sha256:00472242fef65d15a608959283a4ad9c110ebc7f43bf67346a9cfb2c8085085c",
+      "observed_hash": "sha256:57311442b4209aea202992618052a4e477af30fd009068be596934d155bb4ec5",
+      "changes": [
+        {
+          "what": "tracker.status_options",
+          "op": "create",
+          "item": {
+            "name": "Backlog"
+          }
+        },
+        {
+          "what": "tracker.status_options",
+          "op": "create",
+          "item": {
+            "name": "In progress"
+          }
+        },
+        {
+          "what": "tracker.status_options",
+          "op": "create",
+          "item": {
+            "name": "In review"
+          }
+        },
+        {
+          "what": "tracker.status_options",
+          "op": "create",
+          "item": {
+            "name": "Ready"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.labels",
+      "target": "tracker",
+      "capability": "labels",
+      "depends_on": [
+        "tracker.project"
+      ],
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:f5595b7c4e7d497174161026c5f274aa027fa8baa2506da2df929ae44bc9b53f",
+      "observed_hash": "sha256:37a29ce98ecdf625267e2af6ccb9c4f43e8b1d313fc82bf4ca42f258056dcf1b",
+      "changes": [
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "agent"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "blocked"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "flow-followup"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "incident"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "ui"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "user-facing"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.native.changes_requested",
+      "target": "tracker",
+      "capability": "native_transition_changes_requested",
+      "depends_on": [
+        "tracker.status_options"
+      ],
+      "outcome": "attest",
+      "why": "flow cannot see this through the API, so a person has to confirm it",
+      "exists": false,
+      "desired_hash": "sha256:eeb8e7eb9e56eeacf8ce7df64b539b26f66a5d4a7f040071843ac91463f58027",
+      "observed_hash": "sha256:53e060536abc3d084b873888ee935f4d77b5c29dadc734df0564e014e98f2ff9",
+      "changes": [
+        {
+          "what": "tracker.native.changes_requested",
+          "op": "create",
+          "item": {
+            "name": "changes_requested",
+            "fields": {
+              "to": "In progress"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.native.pr_merged",
+      "target": "tracker",
+      "capability": "native_transition_pr_merged",
+      "depends_on": [
+        "tracker.status_options"
+      ],
+      "outcome": "attest",
+      "why": "flow cannot see this through the API, so a person has to confirm it",
+      "exists": false,
+      "desired_hash": "sha256:9d852996510565fd17bb56be6211a4b5c50bdf73fec43f0afecb3e4898995fcf",
+      "observed_hash": "sha256:1a94aaffc11714aac617db2377fe2b926e0d4b0c23dbb0963805ba3a7ef7b3f8",
+      "changes": [
+        {
+          "what": "tracker.native.pr_merged",
+          "op": "create",
+          "item": {
+            "name": "pr_merged",
+            "fields": {
+              "to": "Done"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.native.issue_closed",
+      "target": "tracker",
+      "capability": "native_transition_issue_closed",
+      "depends_on": [
+        "tracker.status_options"
+      ],
+      "outcome": "unsupported",
+      "why": "the provider offers no way to do this and nothing else makes up for it",
+      "exists": false,
+      "desired_hash": "sha256:70fe74302f12604db03e4dfc1e95dd91afe6a9987e0f704fa1b75a2e0ae3ec98",
+      "observed_hash": "sha256:e5f9d99cb3a0294315daf3d2db07d90271dbe2ef3826ff9083c129d5597d4c16",
+      "changes": [
+        {
+          "what": "tracker.native.issue_closed",
+          "op": "create",
+          "item": {
+            "name": "issue_closed",
+            "fields": {
+              "to": "Done"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.wip",
+      "target": "tracker",
+      "capability": "wip_limits",
+      "depends_on": [
+        "tracker.status_options"
+      ],
+      "outcome": "compensated",
+      "mechanism": "policy.wip",
+      "why": "the provider cannot be made to do this, so flow enforces the same intent through policy.wip",
+      "exists": true,
+      "desired_hash": "sha256:d02371f9b2a716dd89a0aa5bbc53d15a39cb3ffe88d4536af7e31fb4d57e38eb",
+      "observed_hash": "sha256:420530db898272b11254f73bacf005b2a643ed79e8e45cc55befb114c0c3a99f",
+      "changes": [
+        {
+          "what": "tracker.wip",
+          "op": "update",
+          "item": {
+            "name": "In review",
+            "fields": {
+              "limit": "3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tracker.expedite",
+      "target": "tracker",
+      "capability": "expedite_view",
+      "depends_on": [
+        "tracker.project"
+      ],
+      "outcome": "attest",
+      "why": "flow cannot see this through the API, so a person has to confirm it",
+      "exists": false,
+      "desired_hash": "sha256:9759eaf7b7d4d3e0415c6b970dac3a9201a42ed04a85c4515c155198281dd23c",
+      "observed_hash": "sha256:9e3701f050c719a5c0074fdbe48fb7cf4c318e2a32d66155226ca70d7944ba86",
+      "changes": [
+        {
+          "what": "tracker.expedite",
+          "op": "create",
+          "item": {
+            "name": "Expedite",
+            "fields": {
+              "labels": "incident"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "forge.default_branch",
+      "target": "forge",
+      "outcome": "noop",
+      "why": "the provider already matches what was asked for",
+      "exists": true,
+      "desired_hash": "sha256:1714273f2bf737d7cb68cf2b559ee7974a569fe84116a24f9dab927b3dd93bd3",
+      "observed_hash": "sha256:130df5095e47e6e2c56f9c91ad73a8b737f6ff9c8e8324706428f39b931452a8"
+    },
+    {
+      "id": "forge.protection",
+      "target": "forge",
+      "capability": "branch_protection",
+      "depends_on": [
+        "forge.default_branch"
+      ],
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:0a3b7685abf3e28caa665108500b22e9009af3ab06caa36ffceeacd49aa7ef83",
+      "observed_hash": "sha256:fa5ec13929d1ea038a507c133ab66a1c4f92c7e62a620b42cb3df427934c6a50",
+      "changes": [
+        {
+          "what": "forge.protection",
+          "op": "update",
+          "item": {
+            "name": "protection",
+            "fields": {
+              "allow_deletions": "false",
+              "allow_force_push": "false",
+              "enabled": "true",
+              "require_linear_history": "true"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "forge.required_status",
+      "target": "forge",
+      "capability": "required_status_checks",
+      "depends_on": [
+        "forge.protection"
+      ],
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:0f4f17cd9906d2ff82ca855b8219e8960dc435e594ff5fb843aea523e9e72243",
+      "observed_hash": "sha256:773c13ce8079bfb369ee9e1aea3dbde8eb91144c95065c0c92a1c53530124ed8",
+      "changes": [
+        {
+          "what": "forge.required_status",
+          "op": "create",
+          "item": {
+            "name": "flow/policy"
+          }
+        }
+      ]
+    },
+    {
+      "id": "forge.merge_settings",
+      "target": "forge",
+      "capability": "merge_settings",
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:5185c2b3b25b0d7468ae1ea08f3036dde46ea5e4f919e97174920d54e1fa2a55",
+      "observed_hash": "sha256:afe03255bb343296e7c00342048fc48b6b4aa3f9c756a05a9ec603d420695590",
+      "changes": [
+        {
+          "what": "forge.merge_settings",
+          "op": "update",
+          "item": {
+            "name": "merge",
+            "fields": {
+              "allow_merge": "false",
+              "allow_rebase": "false",
+              "allow_squash": "true",
+              "squash_message": "pr_body",
+              "squash_title": "pr_title"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "forge.files",
+      "target": "forge",
+      "capability": "file_proposal",
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:a58de6e4f8fdbee931575dee9eac1c2aac15e942ff6be9bdf4bfc0a7b5bee2e2",
+      "observed_hash": "sha256:c0aa4dce547733f8d460a1f80b58cad2d2edd843345605d9ad04c194304bbba6",
+      "changes": [
+        {
+          "what": "forge.files",
+          "op": "create",
+          "item": {
+            "name": ".github/ISSUE_TEMPLATE/story.yml"
+          }
+        },
+        {
+          "what": "forge.files",
+          "op": "create",
+          "item": {
+            "name": ".github/pull_request_template.md"
+          }
+        }
+      ]
+    },
+    {
+      "id": "deploys.records",
+      "target": "deploys",
+      "capability": "deploy_records",
+      "depends_on": [
+        "forge.default_branch"
+      ],
+      "outcome": "noop",
+      "why": "the provider already matches what was asked for",
+      "exists": true,
+      "desired_hash": "sha256:7f9aa3d0018834ec97da94dcf77cb843151fbc0e468159f72cfa308c86db787f",
+      "observed_hash": "sha256:b3446c1db6a22c3f0ccc58bb38317c56b67ea83c7090b7b1ee830d586e9bf02a"
+    }
+  ]
+}
