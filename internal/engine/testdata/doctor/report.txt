@@ -1,0 +1,48 @@
+config
+  ✓ config.syntax  .flow.yaml parses
+  ✗ config.secrets  a credential is written into .flow.yaml
+      fix: move it to the environment and rotate it
+      1. rotate the token at the provider
+      2. set GITHUB_TOKEN
+      3. delete the line
+
+local
+  · local.hook  hooks are off in this configuration
+
+auth
+  ! auth.tracker  the project board: rate limited
+
+forge
+  ≠ forge.protection  main no longer requires a linear history
+      fix: put it back
+      run: flow apply
+  ✎ forge.merge_settings  flow cannot read the merge settings with this token
+      fix: say it is so
+      run: flow attest forge.merge_settings
+
+tracker
+  ? tracker.project  flow does not know which board this is
+      fix: choose a project
+      run: flow doctor --fix
+  ⏸ tracker.status_options  not asked: tracker.project did not hold
+  ⏳ tracker.wip  a work-in-progress limit needs a board admin
+      - FLOW-12 flow: set the WIP limits (17twenty/flow)  https://example.test/FLOW-12
+      fix: waiting on the follow-up (@board-admin)
+
+live
+  ⚠ live.prs.linked 8/10  merged pull requests linking a ticket
+      - #101 fix: stop the retry storm  https://example.test/pr/101
+      - #104 chore: tidy the Makefile  https://example.test/pr/104
+  ✗ live.prs.gated 2/9  merged pull requests carrying a flow/policy status
+      - #110 merged with no status  https://example.test/pr/110
+      - #111 merged with no status  https://example.test/pr/111
+      - #112 merged with no status  https://example.test/pr/112
+      - #113 merged with no status  https://example.test/pr/113
+      - #114 merged with no status  https://example.test/pr/114
+      … and 2 more
+      fix: the gate is not running on every pull request
+
+followups
+  ✓ followups.health  no follow-up has been open longer than a week
+
+6 actions for you · 1 waiting on others · 1 attestation due · exit 1

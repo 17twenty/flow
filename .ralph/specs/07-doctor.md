@@ -120,3 +120,64 @@ Locally on demand; on PRs touching `.flow.yaml`/`.flow.lock` (`--ci`, setup
 checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
 (`--ci --fix --report`), posting the report to a pinned "flow health" issue
 (marker `flow:health`) — updated in place.
+
+## Decisions
+
+- **§2 only a pass and a skip let the checks behind one run (item 2.8).** A
+  check is blocked when something it depends on ran and did not hold. A skip
+  does not block: a check that does not apply to this configuration has
+  nothing to say about anything downstream of it, and treating it as a failure
+  would hide every forge check behind a workflow the team switched off. Because
+  a blocked check is itself recorded as blocked, and blocked does not satisfy,
+  this carries down a chain of any length with no second rule.
+- **§2 a dependency that was not run does not block (item 2.8).**
+  `--check 'forge.*'` is the user narrowing the question, so a check is asked
+  even though `auth.forge` was not in the selection. Refusing to look because
+  of a check nobody asked for would answer a different question and report it
+  as if flow had found something.
+- **§2 a failure is actionable when it carries a remediation (item 2.8).** The
+  table gives `fail` two exit codes and does not say what tells them apart.
+  What tells them apart is whether flow has anything to suggest: a failure
+  with a remedy is somebody's afternoon and exits 2, and a failure with
+  `none` or no remedy at all is flow saying something is wrong that it cannot
+  help with, which is a hard failure and exits 1.
+- **§2 errors are only weather when nothing else is wrong, and only when they
+  agree (item 2.8).** A run whose sole failing kind is `error` exits 69 or 77
+  when every error maps to the same one of those codes, and 1 otherwise. A
+  real failure standing behind an unreachable provider must not be reported as
+  a rate limit, and "unavailable here, forbidden there" is not one condition.
+  Working this out needs the error itself, so `Result` carries an `Err`
+  alongside the state the table lists.
+- **§1 the zero state is not a state, and a check that panics is an error
+  (item 2.8).** A half-written check that returns nothing would otherwise read
+  as a pass, and a doctor that dies on one unexpected nil says nothing about
+  the twenty things that were fine. Both become `error` on that check alone
+  and the run carries on, because the point of doctor is to say everything
+  that is true about the repository in one pass.
+- **§1 the registry refuses at startup what it could not run (item 2.8).** A
+  check with no id, no title, nothing to run, a category nothing renders, a
+  duplicate id, a dependency that is not a check, or a cycle is refused when
+  the registry is built. A doctor that falls over half way through has told a
+  worse story than one that would not start. Order is a topological sort of
+  registration order, so a dependency added later cannot quietly put a check
+  in front of what it depends on.
+- **§9 `--check` refuses a pattern that matches nothing (item 2.8).** Running
+  no checks and exiting 0 is indistinguishable from health, which is the one
+  answer doctor must never give by accident. A typo in `--check` is a usage
+  error (64).
+- **§9 "N actions for you" counts errors (item 2.8).** The summary line has
+  three counts and an exit code, and `error` fits none of them. It is counted
+  as an action: not knowing whether the trunk is protected is something for
+  the person running doctor to look into, and leaving it out would print "0
+  actions for you · exit 69".
+- **§9 the report groups by the category order of §1 (item 2.8).** config,
+  local, auth, forge, tracker, deploys, live, followups, meta — which is
+  roughly the order things have to be true in, so a reader meets the cause
+  before the consequences. Within a category, checks are in the order they ran.
+- **§6 `fail_below` has no key in the configuration yet (item 2.8).** The
+  threshold is a field on the doctor environment, defaulted by the caller, and
+  grading is one function: everything passing is a pass, below the threshold is
+  a failure, in between is a warning, and a check marked critical has no
+  warning band at all. Where the number is written down in `.flow.yaml` is for
+  the item that adds the live checks (5.1); spec 03 does not have it yet, and
+  this is recorded as a spec issue rather than invented here.

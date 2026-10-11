@@ -1,0 +1,209 @@
+{
+  "version": "flow.doctor/v1",
+  "flow_version": "v0.1.0-test",
+  "generated_at": "2025-03-04T09:00:00Z",
+  "window": "14d",
+  "checks": [
+    {
+      "id": "config.syntax",
+      "title": "whether config.syntax",
+      "category": "config",
+      "result": {
+        "state": "pass",
+        "message": ".flow.yaml parses"
+      }
+    },
+    {
+      "id": "config.secrets",
+      "title": "whether config.secrets",
+      "category": "config",
+      "result": {
+        "state": "fail",
+        "message": "a credential is written into .flow.yaml",
+        "remediation": {
+          "kind": "manual",
+          "summary": "move it to the environment and rotate it",
+          "steps": [
+            "rotate the token at the provider",
+            "set GITHUB_TOKEN",
+            "delete the line"
+          ]
+        }
+      }
+    },
+    {
+      "id": "local.hook",
+      "title": "whether local.hook",
+      "category": "local",
+      "result": {
+        "state": "skip",
+        "message": "hooks are off in this configuration"
+      }
+    },
+    {
+      "id": "auth.tracker",
+      "title": "whether auth.tracker",
+      "category": "auth",
+      "result": {
+        "state": "error",
+        "message": "the project board: rate limited",
+        "error": "the project board: rate limited"
+      }
+    },
+    {
+      "id": "tracker.project",
+      "title": "whether tracker.project",
+      "category": "tracker",
+      "result": {
+        "state": "input",
+        "message": "flow does not know which board this is",
+        "remediation": {
+          "kind": "input",
+          "summary": "choose a project",
+          "command": "flow doctor --fix"
+        }
+      }
+    },
+    {
+      "id": "tracker.status_options",
+      "title": "whether tracker.status_options",
+      "category": "tracker",
+      "depends_on": [
+        "tracker.project"
+      ],
+      "blocked_by": "tracker.project",
+      "result": {
+        "state": "blocked",
+        "message": "not asked: tracker.project did not hold"
+      }
+    },
+    {
+      "id": "tracker.wip",
+      "title": "whether tracker.wip",
+      "category": "tracker",
+      "result": {
+        "state": "external",
+        "message": "a work-in-progress limit needs a board admin",
+        "evidence": [
+          {
+            "text": "FLOW-12 flow: set the WIP limits (17twenty/flow)",
+            "url": "https://example.test/FLOW-12"
+          }
+        ],
+        "remediation": {
+          "kind": "followup",
+          "summary": "waiting on the follow-up",
+          "owner": "@board-admin"
+        }
+      }
+    },
+    {
+      "id": "forge.protection",
+      "title": "whether forge.protection",
+      "category": "forge",
+      "result": {
+        "state": "drift",
+        "message": "main no longer requires a linear history",
+        "remediation": {
+          "kind": "auto",
+          "summary": "put it back",
+          "command": "flow apply"
+        },
+        "observed_hash": "sha256:9f2c"
+      }
+    },
+    {
+      "id": "forge.merge_settings",
+      "title": "whether forge.merge_settings",
+      "category": "forge",
+      "result": {
+        "state": "attest",
+        "message": "flow cannot read the merge settings with this token",
+        "remediation": {
+          "kind": "attest",
+          "summary": "say it is so",
+          "command": "flow attest forge.merge_settings"
+        }
+      }
+    },
+    {
+      "id": "live.prs.linked",
+      "title": "whether live.prs.linked",
+      "category": "live",
+      "result": {
+        "state": "warn",
+        "message": "merged pull requests linking a ticket",
+        "evidence": [
+          {
+            "text": "#101 fix: stop the retry storm",
+            "url": "https://example.test/pr/101"
+          },
+          {
+            "text": "#104 chore: tidy the Makefile",
+            "url": "https://example.test/pr/104"
+          }
+        ],
+        "counts": {
+          "pass": 8,
+          "total": 10
+        }
+      }
+    },
+    {
+      "id": "live.prs.gated",
+      "title": "whether live.prs.gated",
+      "category": "live",
+      "result": {
+        "state": "fail",
+        "message": "merged pull requests carrying a flow/policy status",
+        "evidence": [
+          {
+            "text": "#110 merged with no status",
+            "url": "https://example.test/pr/110"
+          },
+          {
+            "text": "#111 merged with no status",
+            "url": "https://example.test/pr/111"
+          },
+          {
+            "text": "#112 merged with no status",
+            "url": "https://example.test/pr/112"
+          },
+          {
+            "text": "#113 merged with no status",
+            "url": "https://example.test/pr/113"
+          },
+          {
+            "text": "#114 merged with no status",
+            "url": "https://example.test/pr/114"
+          },
+          {
+            "text": "#115 merged with no status",
+            "url": "https://example.test/pr/115"
+          },
+          {
+            "text": "#116 merged with no status",
+            "url": "https://example.test/pr/116"
+          }
+        ],
+        "remediation": {
+          "kind": "manual",
+          "summary": "the gate is not running on every pull request"
+        },
+        "counts": {
+          "pass": 2,
+          "total": 9
+        }
+      }
+    },
+    {
+      "id": "followups.health",
+      "title": "whether followups.health",
+      "category": "followups",
+      "result": {
+        "state": "pass",
+        "message": "no follow-up has been open longer than a week"
+      }
+    }
+  ]
+}

@@ -100,7 +100,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.7 Apply executor — specs: 06 §3–4 — deps: 2.5, 1.7 (#34)
   - note: engine/apply.go walks the plan in its own order, writing the lock after every mutation that lands, so an apply that stops half way has told the truth about the half that happened. A tracker item is a list of changes made one at a time; a forge item is one setting written whole, because protection, the required checks and the merge strategies are each one value and the missing files are one pull request. A failure stops only the items that depend on it. Removal is the only thing that cannot be undone by running again, so every refusal lives in one place. Found and fixed a real bug: a nameless recorded creation matched every other nameless observed thing, so apply left a spurious delete behind.
   - AC: partial failure leaves lock consistent; prune refuses in-use options
-- [ ] 2.8 Doctor check registry, states, exit aggregation — specs: 07 §1–2, §9 — deps: 2.3 (#35)
+- [x] 2.8 Doctor check registry, states, exit aggregation — specs: 07 §1–2, §9 — deps: 2.3 (#35)
+  - note: engine/doctor.go and engine/doctor_render.go are the frame the §5 and §6 checks hang in. A check is blocked when something it depends on ran and did not hold, which carries down a chain of any length because blocked does not satisfy either; a dependency nobody selected does not block. The exit code is a property of the states: a failure is actionable when it carries a remedy and hard when it does not, and a run of nothing but errors is 69 or 77 only when the errors agree and nothing else is wrong. A check that panics or answers nothing is an error on that check alone, and the run carries on. `fail_below` is a field on the environment: spec 03 has no key for it yet (see Spec issues).
   - AC: blocked propagation; exit aggregation table; renders golden
 - [ ] 2.9 Placeholder resolution — specs: 07 §3 — deps: 2.8, 1.5 (#36)
   - AC: discover/choose/create/ask paths; --set; verified before lock write
@@ -222,5 +223,13 @@ Human-only steps use ids `H.<n>` (never seeded).
 ## Proposals
 
 ## Spec issues
+
+- **`fail_below` is named in spec 07 §6 but has no key in spec 03** (found by
+  item 2.8). The live-health threshold is the one number in §6 a team would
+  want to set, and `.flow.yaml` has nowhere to write it. Item 5.1 must either
+  add it to spec 03 §1 — `health: { fail_below: 0.9, window: 14d }` would be
+  the obvious shape, next to the `--window` flag that already exists — or
+  record that it is a flag only. Until then the engine takes it as a parameter
+  and the caller defaults it to 0.9.
 
 ## Notes
