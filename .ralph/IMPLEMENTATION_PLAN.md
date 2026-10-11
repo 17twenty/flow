@@ -135,7 +135,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 3.2 GitHub: commit statuses and marker comments — specs: 10 §2, 09 §2 — deps: 3.1, 2.15 (#46)
   - note: GitHub's statuses endpoint is a history and its comments are everybody's, so the adapter turns both into the state flow means: the latest verdict per context, and the one comment carrying flow's marker. Neither is written when the provider already says exactly that, so a gate that runs every minute leaves one status and one comment rather than a thousand. Mutations of one repository are serialised, which is what spec 10 §2's note about secondary limits asks for.
   - AC: status idempotency; comment upsert/delete by marker
-- [ ] 3.3 GitHub: linked issues via closingIssuesReferences — specs: 04 §3, 10 §2 — deps: 3.1 (#47)
+- [x] 3.3 GitHub: linked issues via closingIssuesReferences — specs: 04 §3, 10 §2 — deps: 3.1 (#47)
+  - note: the first GraphQL query flow makes, sent to the endpoint beside the REST root rather than under it. A ticket in another repository comes back qualified, one in this repository does not, and the walk follows the cursor because the table's `first: 20` is a page size and not a ceiling. GraphQL answers 200 when it fails, so the errors array is read as the refusal it is, with the sentinel its type means. The adapter asks only when its declaration says it can verify the link.
   - AC: cross-repo references returned repo-qualified
 - [ ] 3.4 GitHub: rulesets/protection read, additive required check, merge settings — specs: 10 §2, 06 §4 — deps: 3.1 (#48)
   - AC: existing required contexts preserved

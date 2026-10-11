@@ -209,3 +209,19 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   2.14).** Rule 4 holds Done until all linked pull requests are merged. An
   abandoned one never will be, and counting it would leave the ticket short of
   Done for ever. Done waits for the work that is still open.
+- **§3 a linked ticket names its repository only when it is in another one
+  (item 3.3).** `closingIssuesReferences` returns every reference with the
+  repository it belongs to. A ticket in the repository being spoken for comes
+  back as `#7`, which is how everybody writes it and what the tracker's own
+  keys look like; a ticket anywhere else comes back as `owner/repo#7`, which is
+  how GitHub itself writes a reference it has to qualify. Without the
+  qualification `#7` there and `#7` here are the same string and different
+  tickets. Repository names are compared case-insensitively, because GitHub's
+  are.
+- **§3 an adapter that cannot verify the link reports no tickets rather than
+  none (item 3.3).** Linkage is a declared capability (`linked_issues_read`).
+  When the declaration says flow cannot read it back — Gitea, at the time of
+  writing — the adapter leaves the list empty and never asks, which is the
+  state this section already has a fallback for. The alternative, asking
+  anyway and reporting an empty answer, would be indistinguishable from a pull
+  request that really closes nothing.

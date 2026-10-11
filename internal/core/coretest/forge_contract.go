@@ -147,7 +147,10 @@ func forgeOnePullRequest(t *testing.T, newForge NewForge) {
 }
 
 // forgeClosingIssues: a pull request carries the tickets the forge itself says
-// it closes, which is the only linkage flow trusts (P12, spec 04 §3).
+// it closes, which is the only linkage flow trusts (P12, spec 04 §3). A ticket
+// in the repository being spoken for is written as everybody writes it; one
+// anywhere else is qualified by its repository, because "#7" there and "#7"
+// here are different tickets and the tracker has to be able to tell.
 func forgeClosingIssues(t *testing.T, newForge NewForge) {
 	forge := newForge(t, ContractForge())
 	pr, err := forge.PullRequest(t.Context(), 2)
@@ -156,6 +159,9 @@ func forgeClosingIssues(t *testing.T, newForge NewForge) {
 	}
 	if !slices.Contains(pr.ClosingIssues, "#11") {
 		t.Errorf("ClosingIssues = %v, want it to carry #11: flow trusts the forge's own link and no pattern of its own", pr.ClosingIssues)
+	}
+	if !slices.Contains(pr.ClosingIssues, "acme/other#7") {
+		t.Errorf("ClosingIssues = %v, want the ticket in another repository qualified as acme/other#7", pr.ClosingIssues)
 	}
 }
 

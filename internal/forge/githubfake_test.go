@@ -40,6 +40,10 @@ type gitHubFake struct {
 	// loop makes every page point at another one, which is what a provider
 	// with a bug in its own Link header does to a client that trusts it.
 	loop bool
+	// refusalKind and refusalMessage, when set, make every GraphQL query
+	// fail the way GraphQL fails: 200, no data, and a reason.
+	refusalKind    string
+	refusalMessage string
 
 	mu          sync.Mutex
 	requests    []string
@@ -156,6 +160,14 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.methods = append(f.methods, r.Method)
 	f.userAgents[r.Header.Get("User-Agent")]++
 	f.mu.Unlock()
+
+	// GraphQL is answered before anything else: it is one endpoint off the
+	// root rather than under the repository, and a query is a read however
+	// GitHub makes you send it, so it is not counted as a mutation.
+	if r.URL.EscapedPath() == "/graphql" {
+		f.graphQL(w, r)
+		return
+	}
 
 	if r.Method != http.MethodGet {
 		f.enterWriting()
@@ -476,6 +488,114 @@ func (f *gitHubFake) compare(w http.ResponseWriter, r *http.Request, basehead st
 		"status":    comparison.Status,
 		"ahead_by":  comparison.AheadBy,
 		"behind_by": comparison.BehindBy,
+	})
+}
+
+// graphQL answers the one GraphQL endpoint. GitHub returns 200 whatever
+// happened and puts the failure in an errors array, which is the shape the
+// adapter has to be held to — an HTTP status would have been noticed for it.
+func (f *gitHubFake) graphQL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		f.fail(w, http.StatusMethodNotAllowed, "a GraphQL query is sent with POST")
+		return
+	}
+	var query ghGraphQLRequest
+	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+		f.fail(w, http.StatusBadRequest, "the query did not decode: "+err.Error())
+		return
+	}
+	f.mu.Lock()
+	kind, message := f.refusalKind, f.refusalMessage
+	f.mu.Unlock()
+	if kind != "" {
+		f.graphQLError(w, r, kind, message)
+		return
+	}
+	if !strings.Contains(query.Query, "closingIssuesReferences") {
+		f.graphQLError(w, r, "NOT_IMPLEMENTED", "the fake knows no such query")
+		return
+	}
+	if query.Variables["owner"] != f.fx.Repo.Owner || query.Variables["repo"] != f.fx.Repo.Name {
+		f.graphQLError(w, r, "NOT_FOUND", "Could not resolve to a Repository.")
+		return
+	}
+	number, ok := query.Variables["number"].(float64)
+	if !ok {
+		f.graphQLError(w, r, "INVALID", "number is not an Int")
+		return
+	}
+	pr, ok := f.findPull(strconv.Itoa(int(number)))
+	if !ok {
+		f.graphQLError(w, r, "NOT_FOUND", fmt.Sprintf("Could not resolve to a PullRequest with the number of %d.", int(number)))
+		return
+	}
+	f.writeJSON(w, r, map[string]any{"data": f.closingIssuesPage(pr, query.Variables)})
+}
+
+// graphQLRefusal makes every GraphQL query from now on fail with kind.
+func (f *gitHubFake) graphQLRefusal(kind, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refusalKind, f.refusalMessage = kind, message
+}
+
+// closingIssuesPage renders one page of a closingIssuesReferences connection.
+// A connection may hand back fewer nodes than were asked for, so the fake
+// pages at its own small size: an adapter that reads the first page and stops
+// would pass against a fake that always answered in one.
+func (f *gitHubFake) closingIssuesPage(pr core.PullRequest, variables map[string]any) map[string]any {
+	size := f.pageSize
+	if first, ok := variables["first"].(float64); ok && int(first) < size {
+		size = int(first)
+	}
+	from := 0
+	if after, ok := variables["after"].(string); ok {
+		if n, err := strconv.Atoi(after); err == nil {
+			from = n
+		}
+	}
+	keys := pr.ClosingIssues[min(from, len(pr.ClosingIssues)):]
+	more := len(keys) > size
+	if more {
+		keys = keys[:size]
+	}
+	nodes := make([]any, 0, len(keys))
+	for _, key := range keys {
+		slug, raw, _ := strings.Cut(key, "#")
+		number, err := strconv.Atoi(raw)
+		if err != nil {
+			continue
+		}
+		if slug == "" {
+			slug = f.fx.Repo.Owner + "/" + f.fx.Repo.Name
+		}
+		nodes = append(nodes, map[string]any{
+			"number":     number,
+			"repository": map[string]any{"nameWithOwner": slug},
+		})
+	}
+	cursor := ""
+	if more {
+		cursor = strconv.Itoa(from + len(keys))
+	}
+	return map[string]any{
+		"repository": map[string]any{
+			"pullRequest": map[string]any{
+				"closingIssuesReferences": map[string]any{
+					"nodes":    nodes,
+					"pageInfo": map[string]any{"hasNextPage": more, "endCursor": cursor},
+				},
+			},
+		},
+	}
+}
+
+// graphQLError answers as GitHub does when a query fails: 200, no data, and
+// the reason in the errors array.
+func (f *gitHubFake) graphQLError(w http.ResponseWriter, r *http.Request, kind, message string) {
+	f.writeJSON(w, r, map[string]any{
+		"data":   map[string]any{"repository": map[string]any{"pullRequest": nil}},
+		"errors": []any{map[string]any{"type": kind, "message": message}},
 	})
 }
 

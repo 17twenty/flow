@@ -2,6 +2,7 @@ package forge
 
 import (
 	"errors"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -72,6 +73,7 @@ func TestGitHubMeetsTheReadHalfOfTheContract(t *testing.T) {
 		"identity",
 		"repo",
 		"one pull request, with everything the gate reads",
+		"the tickets a pull request closes",
 		"a pull request that is not there",
 		"pull requests in a window, newest first",
 		"commits on the trunk, newest first",
@@ -247,6 +249,122 @@ func TestGitHubReadsOnePullRequestWholeAndDropsAReviewNobodySubmitted(t *testing
 	}
 	if !pr.MergedAt.Equal(want.MergedAt) || !pr.ClosedAt.Equal(want.ClosedAt) {
 		t.Errorf("timeline = %v/%v, want %v/%v", pr.MergedAt, pr.ClosedAt, want.MergedAt, want.ClosedAt)
+	}
+}
+
+func TestGitHubQualifiesALinkedTicketOnlyWhenItIsSomewhereElse(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[1].ClosingIssues = []string{"#11", "acme/other#7", "ACME/WIDGET#12"}
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	want := []string{"#11", "acme/other#7", "#12"}
+	if !slices.Equal(pr.ClosingIssues, want) {
+		t.Errorf("ClosingIssues = %v, want %v: the repository being spoken for is not named, and its name is not case-sensitive", pr.ClosingIssues, want)
+	}
+}
+
+func TestGitHubFollowsTheCursorPastTheFirstPageOfLinkedTickets(t *testing.T) {
+	fx := coretest.ContractForge()
+	want := []string{"#11", "#12", "#13", "acme/other#7", "#15"}
+	fx.PullRequests[1].ClosingIssues = want
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if !slices.Equal(pr.ClosingIssues, want) {
+		t.Errorf("ClosingIssues = %v, want %v: a page size is not a ceiling", pr.ClosingIssues, want)
+	}
+	queries := 0
+	for _, path := range fake.Requests() {
+		if path == "/graphql" {
+			queries++
+		}
+	}
+	if queries < 2 {
+		t.Errorf("%d GraphQL queries, want the walk to follow the cursor", queries)
+	}
+}
+
+func TestGitHubReadsAGraphQLRefusalOutOfASuccessfulResponse(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	cases := map[string]struct {
+		kind string
+		want error
+	}{
+		"a pull request nobody can see": {kind: "NOT_FOUND", want: core.ErrNotFound},
+		"a token without the scope":     {kind: "FORBIDDEN", want: core.ErrPermission},
+		"a reason flow has no name for": {kind: "SOMETHING_NEW", want: core.ErrUnavailable},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			fake.graphQLRefusal(tc.kind, "the provider said no")
+			_, err := adapter.PullRequest(t.Context(), 2)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("PullRequest = %v, want it to wrap %v", err, tc.want)
+			}
+			var user *core.UserError
+			if !errors.As(err, &user) || !strings.Contains(user.What, "tickets") {
+				t.Errorf("the refusal does not say what flow was reading: %v", err)
+			}
+			if !strings.Contains(user.Why, "the provider said no") {
+				t.Errorf("Why = %q, want the provider's own message", user.Why)
+			}
+		})
+	}
+}
+
+func TestGitHubDoesNotAskForLinksItsDeclarationCannotVerify(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	caps := gitHubCapabilities(t)
+	caps.Capabilities = maps.Clone(caps.Capabilities)
+	blind := caps.Capability(core.CapLinkedIssuesRead)
+	blind.Verify = false
+	caps.Capabilities[core.CapLinkedIssuesRead] = blind
+
+	client, err := core.NewClient(core.ClientOptions{BaseURL: srv.URL, Token: "test-token"})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	adapter, err := NewGitHub(GitHubOptions{Client: client, Owner: fx.Repo.Owner, Repo: fx.Repo.Name, Capabilities: caps})
+	if err != nil {
+		t.Fatalf("NewGitHub: %v", err)
+	}
+
+	pr, err := adapter.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if len(pr.ClosingIssues) != 0 {
+		t.Errorf("ClosingIssues = %v, want none: an adapter that cannot read the link says so instead of guessing", pr.ClosingIssues)
+	}
+	if slices.Contains(fake.Requests(), "/graphql") {
+		t.Error("the adapter asked GraphQL for a link its declaration says it cannot read")
+	}
+}
+
+func TestGitHubFindsTheGraphQLEndpointBesideTheRESTOne(t *testing.T) {
+	cases := map[string]string{
+		GitHubAPI:                         GitHubAPI + "/graphql",
+		GitHubAPI + "/":                   GitHubAPI + "/graphql",
+		"https://ghe.example.com/api/v3":  "https://ghe.example.com/api/graphql",
+		"https://ghe.example.com/api/v3/": "https://ghe.example.com/api/graphql",
+	}
+	for base, want := range cases {
+		if got := gitHubGraphQL(base); got != want {
+			t.Errorf("gitHubGraphQL(%q) = %q, want %q", base, got, want)
+		}
 	}
 }
 

@@ -310,3 +310,89 @@ func (c ghComment) toComment(want core.Marker) (core.Comment, bool) {
 type ghCommentRequest struct {
 	Body string `json:"body"`
 }
+
+// The types below are GraphQL's, not REST's. GitHub answers a GraphQL request
+// with 200 whatever happened, and says what went wrong in an "errors" array
+// beside the data, so the envelope is part of the wire format rather than
+// something the HTTP client can be left to notice (spec 10 §2).
+
+// ghGraphQLRequest is the body of POST /graphql.
+type ghGraphQLRequest struct {
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables,omitempty"`
+}
+
+// ghGraphQLError is one entry of the errors array.
+type ghGraphQLError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+// sentinel is the core error a GraphQL error type means. GitHub's documented
+// types map onto flow's own; anything else is the provider refusing for a
+// reason flow has no name for, which is unavailable rather than invalid input,
+// because the query is flow's and was not the user's to get wrong.
+func (e ghGraphQLError) sentinel() error {
+	switch e.Type {
+	case "NOT_FOUND":
+		return core.ErrNotFound
+	case "FORBIDDEN", "INSUFFICIENT_SCOPES", "UNAUTHORIZED":
+		return core.ErrPermission
+	case "RATE_LIMITED":
+		return core.ErrRateLimited
+	default:
+		return core.ErrUnavailable
+	}
+}
+
+// ghGraphQLResponse is the envelope every GraphQL answer arrives in.
+type ghGraphQLResponse[T any] struct {
+	Data   T                `json:"data"`
+	Errors []ghGraphQLError `json:"errors"`
+}
+
+// ghClosingIssues is the data of the closingIssuesReferences query: the
+// tickets GitHub itself says a pull request closes, one page at a time.
+type ghClosingIssues struct {
+	Repository struct {
+		PullRequest *struct {
+			ClosingIssuesReferences struct {
+				Nodes []struct {
+					Number     int `json:"number"`
+					Repository struct {
+						NameWithOwner string `json:"nameWithOwner"`
+					} `json:"repository"`
+				} `json:"nodes"`
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+			} `json:"closingIssuesReferences"`
+		} `json:"pullRequest"`
+	} `json:"repository"`
+}
+
+// keys returns the page's tickets as flow writes them. An issue in the
+// repository being spoken for is "#7", as everybody writes it; an issue
+// anywhere else is "owner/repo#7", which is how GitHub itself writes a
+// reference it has to qualify — and the only form the tracker can resolve
+// later without having to guess which repository was meant (spec 04 §3).
+func (c ghClosingIssues) keys(owner, repo string) []string {
+	if c.Repository.PullRequest == nil {
+		return nil
+	}
+	nodes := c.Repository.PullRequest.ClosingIssuesReferences.Nodes
+	here := owner + "/" + repo
+	keys := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Number <= 0 {
+			continue
+		}
+		key := "#" + strconv.Itoa(node.Number)
+		if slug := node.Repository.NameWithOwner; slug != "" && !strings.EqualFold(slug, here) {
+			key = slug + key
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}

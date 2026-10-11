@@ -27,8 +27,8 @@ const (
 
 // ContractForge is the world every forge contract runs against: one
 // repository, one open draft pull request, one merged pull request that was
-// gated and reviewed, and one closed long enough ago to fall outside a
-// fortnight's window.
+// gated, reviewed and closes a ticket in another repository, and one closed
+// long enough ago to fall outside a fortnight's window.
 func ContractForge() ForgeFixture {
 	return ForgeFixture{
 		Kind:         "fake-forge",
@@ -78,7 +78,7 @@ func ContractForge() ForgeFixture {
 				BaseRef:       "main",
 				MergeSHA:      SHAMerged,
 				Labels:        []string{"agent"},
-				ClosingIssues: []string{"#11"},
+				ClosingIssues: []string{"#11", "acme/other#7"},
 				Reviews: []core.Review{
 					{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: ContractNow.Add(-50 * time.Hour)},
 					{Author: "dev", State: core.ReviewApproved, SubmittedAt: ContractNow.Add(-49 * time.Hour)},

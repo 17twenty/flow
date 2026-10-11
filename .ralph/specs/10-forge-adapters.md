@@ -163,3 +163,30 @@ duplicate-pipeline hazards). MR closing issues: `GET
   burst with a refusal that costs more than the concurrency bought. The adapter
   holds one lock across each mutation, read-before-write included, so two
   concurrent runs of the gate cannot both find no comment and both write one.
+- **§2 the GraphQL endpoint is derived from the REST root, not resolved
+  against it (item 3.3).** github.com answers REST at the root and GraphQL at
+  `/graphql` beside it; GitHub Enterprise Server puts REST under `/api/v3` and
+  GraphQL at `/api/graphql` — a sibling, not a child. Resolving `graphql`
+  against the client's base URL, which is how every other path is addressed,
+  would send an Enterprise query to `/api/v3/graphql` and get a 404. The
+  endpoint is worked out once when the adapter is built.
+- **§2 a GraphQL answer carrying errors is a refusal, whatever data came with
+  it (item 3.3).** GitHub answers 200 whether the query worked or not and puts
+  the reason in an `errors` array, so the HTTP status cannot be trusted to
+  decide. The adapter refuses on any error rather than using the partial data
+  beside it: a linkage read that quietly returned half the tickets would make
+  the gate pass a pull request whose other ticket was never checked. The error
+  type chooses the sentinel — `NOT_FOUND`, `FORBIDDEN`/`INSUFFICIENT_SCOPES`/
+  `UNAUTHORIZED`, `RATE_LIMITED` — and a type flow has no name for is
+  unavailable, because the query is flow's own and was not the user's to get
+  wrong.
+- **§2 a GraphQL query is retried like a read (item 3.3).** GraphQL is sent
+  with POST, which the default policy must assume could have happened twice.
+  A query changes nothing, so the adapter asks for it to be retried anyway;
+  mutations, when flow grows any, will not.
+- **§2 `first: 20` in the linked-issues query is a page size, not a ceiling
+  (item 3.3).** The table fixes how many references one page carries; the
+  adapter follows `pageInfo.endCursor` until there are none left, bounded by
+  the same page limit as the REST walks. A pull request that closes a
+  twenty-first ticket is still closing it, and silently dropping it would make
+  the gate judge work it could not see.

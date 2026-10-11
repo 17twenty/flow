@@ -35,6 +35,11 @@ const (
 	gitHubAPIVersion = "2022-11-28"
 	// gitHubPageSize is the largest page GitHub serves.
 	gitHubPageSize = 100
+	// gitHubLinkPageSize is how many linked issues one GraphQL page carries
+	// (spec 10 §2). It is a page size and not a ceiling: the walk follows
+	// the cursor, because a pull request that closes a twenty-first ticket
+	// is still closing it.
+	gitHubLinkPageSize = 20
 	// maxPages bounds a paginated read, so that a provider looping its own
 	// Link header cannot make flow walk forever.
 	maxPages = 500
@@ -80,6 +85,9 @@ type GitHub struct {
 	owner  string
 	repo   string
 	caps   core.CapabilitySet
+	// graphQL is the endpoint the few GraphQL queries go to, worked out
+	// once from the REST root the client was built with.
+	graphQL string
 	// writing serialises the calls that change the repository. GitHub's
 	// secondary rate limit counts concurrent mutations of one repository,
 	// and answers a burst of them with a refusal that costs more than the
@@ -102,7 +110,26 @@ func NewGitHub(o GitHubOptions) (*GitHub, error) {
 			WithWhy("no capability declaration was given").
 			WithFix("load assets/capabilities/github.yaml and pass the declaration")
 	}
-	return &GitHub{client: o.Client, owner: o.Owner, repo: o.Repo, caps: o.Capabilities}, nil
+	return &GitHub{
+		client:  o.Client,
+		owner:   o.Owner,
+		repo:    o.Repo,
+		caps:    o.Capabilities,
+		graphQL: gitHubGraphQL(o.Client.BaseURL()),
+	}, nil
+}
+
+// gitHubGraphQL returns the GraphQL endpoint belonging to a REST root.
+// github.com answers REST at the root and GraphQL at /graphql beside it;
+// GitHub Enterprise Server puts REST under /api/v3 and GraphQL at /api/graphql
+// — a sibling, not a child, so the endpoint is derived rather than resolved
+// against the base like every other path (spec 10 §2).
+func gitHubGraphQL(base string) string {
+	trimmed := strings.TrimSuffix(base, "/")
+	if host, ok := strings.CutSuffix(trimmed, "/api/v3"); ok {
+		return host + "/api/graphql"
+	}
+	return trimmed + "/graphql"
 }
 
 // Kind is the adapter's name.
@@ -123,9 +150,8 @@ func (g *GitHub) Repo(ctx context.Context) (core.RepoInfo, error) {
 	return payload.toRepoInfo(), nil
 }
 
-// PullRequest returns one pull request with the reviews and file summary the
-// policy gate reads. The tickets it closes come from GraphQL and are added by
-// plan item 3.3.
+// PullRequest returns one pull request with the reviews, the file summary and
+// the linked tickets the policy gate reads.
 func (g *GitHub) PullRequest(ctx context.Context, number int) (core.PullRequest, error) {
 	var payload ghPull
 	path := g.path("pulls", strconv.Itoa(number))
@@ -147,7 +173,60 @@ func (g *GitHub) PullRequest(ctx context.Context, number int) (core.PullRequest,
 	if len(paths) > 0 {
 		pr.Files.Paths = paths
 	}
+
+	closing, err := g.closingIssues(ctx, number)
+	if err != nil {
+		return core.PullRequest{}, err
+	}
+	pr.ClosingIssues = closing
 	return pr, nil
+}
+
+// gitHubClosingIssues asks for the tickets a pull request closes: the links
+// GitHub made from the closing keywords in the body and from the Development
+// sidebar, which are the only linkage flow trusts (P12, spec 04 §3).
+const gitHubClosingIssues = `query($owner:String!,$repo:String!,$number:Int!,$first:Int!,$after:String){` +
+	`repository(owner:$owner,name:$repo){` +
+	`pullRequest(number:$number){` +
+	`closingIssuesReferences(first:$first,after:$after){` +
+	`nodes{number repository{nameWithOwner}}` +
+	`pageInfo{hasNextPage endCursor}` +
+	`}}}}`
+
+// closingIssues returns the tickets the forge itself says a pull request
+// closes. An adapter whose declaration cannot verify the link returns none, so
+// that the tracker falls back to its own convention instead of being told a
+// pull request closes nothing (spec 04 §3, spec 05 §1).
+func (g *GitHub) closingIssues(ctx context.Context, number int) ([]string, error) {
+	if !g.caps.CanVerify(core.CapLinkedIssuesRead) {
+		return nil, nil
+	}
+	variables := map[string]any{
+		"owner":  g.owner,
+		"repo":   g.repo,
+		"number": number,
+		"first":  gitHubLinkPageSize,
+	}
+	var keys []string
+	for page := 0; page < maxPages; page++ {
+		data, err := graphQL[ghClosingIssues](ctx, g, gitHubClosingIssues, variables)
+		if err != nil {
+			return nil, explain(err, "read the tickets pull request #%d of %s closes", number, g.Slug())
+		}
+		keys = append(keys, data.keys(g.owner, g.repo)...)
+		pull := data.Repository.PullRequest
+		if pull == nil {
+			return keys, nil
+		}
+		info := pull.ClosingIssuesReferences.PageInfo
+		if !info.HasNextPage || info.EndCursor == "" {
+			return keys, nil
+		}
+		variables["after"] = info.EndCursor
+	}
+	return nil, core.Errorf(core.ErrUnavailable, "read the tickets pull request #%d of %s closes", number, g.Slug()).
+		WithWhy("the provider offered more than %d pages of linked tickets", maxPages).
+		WithFix("link the pull request to the tickets it really closes")
 }
 
 // reviews returns the submitted reviews on a pull request, oldest first.
@@ -596,6 +675,49 @@ func paginate[T any](ctx context.Context, g *GitHub, req core.Request, visit fun
 		// as it stands.
 		req = core.Request{Path: next, Header: req.Header}
 	}
+}
+
+// graphQL sends one GraphQL query and returns its data. GitHub answers 200
+// whatever happened and says what went wrong beside the data, so the envelope
+// is unwrapped here: an answer carrying errors is a refusal, with the sentinel
+// its type means, whatever came back alongside (spec 10 §2).
+func graphQL[T any](ctx context.Context, g *GitHub, query string, variables map[string]any) (T, error) {
+	var envelope ghGraphQLResponse[T]
+	_, err := g.do(ctx, core.Request{
+		Method: http.MethodPost,
+		Path:   g.graphQL,
+		Body:   ghGraphQLRequest{Query: query, Variables: variables},
+		Out:    &envelope,
+		// A query is a read however it is sent, so trying it again
+		// cannot do anything twice — which POST's default policy, which
+		// knows only the method, has to assume it could.
+		Retry: core.RetryAlways,
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	if len(envelope.Errors) > 0 {
+		var zero T
+		return zero, graphQLError(envelope.Errors)
+	}
+	return envelope.Data, nil
+}
+
+// graphQLError states a GraphQL errors array as one refusal, keeping every
+// message: a query that failed for two reasons has two things to fix.
+func graphQLError(errs []ghGraphQLError) error {
+	messages := make([]string, 0, len(errs))
+	for _, e := range errs {
+		if message := strings.TrimSpace(e.Message); message != "" {
+			messages = append(messages, message)
+		}
+	}
+	if len(messages) == 0 {
+		messages = append(messages, "the provider gave no reason")
+	}
+	return core.Errorf(errs[0].sentinel(), "ask GitHub's GraphQL API").
+		WithWhy("%s", strings.Join(messages, "; "))
 }
 
 // gitHubListState maps a query's state onto the one GitHub's list endpoint
