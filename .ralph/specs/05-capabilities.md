@@ -106,3 +106,24 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   `pr_closed_unmerged` are not offered as built-in automation by any tracker
   researched. `core.NativeTransitionCapability` reports an event as unknown,
   and §1.1's `owner: native` check then rejects it with "use owner: flow".
+- **§4 an attestation stands in for an observation, never over one (item
+  2.2).** `verify: false` means flow has no way to look, so an attestation is
+  what makes the difference equal. When `verify: true`, flow looked: an
+  attestation claiming otherwise is ignored, and the ladder carries on to
+  `native`. A human's word covers what flow cannot see, not what it can.
+- **§4 the zero `Permissions` allows nothing (item 2.2).** Resolution takes
+  what `Probe` reported; before a probe, or when one failed, there are no
+  tokens, so `cap.requires` is unmet and the ladder falls through to the
+  remediation. flow never attempts a write on the assumption that it probably
+  may.
+- **§3 `Permissions` is tokens plus evidence (item 2.2).** `Tokens` are the
+  adapter's own vocabulary — the same words `requires` lists — and `Evidence`
+  is what flow read to decide, one line each ("X-OAuth-Scopes: repo,
+  project"). A refusal can then say what flow saw rather than only what it
+  wanted. The tokens themselves stay per-adapter: §3 defines GitHub's, and
+  each new forge brings its own.
+- **§4 a resolution carries its own explanation (item 2.2).** Every outcome,
+  including `noop`, comes back with one line of why, and a `follow_up` that
+  was blocked on permissions names the tokens that were missing. The renderer
+  in §5 therefore has nothing to work out for itself, and the JSON and the
+  terminal cannot disagree about the reason.
