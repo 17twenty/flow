@@ -81,17 +81,24 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 ### Status notes
 
 **Done.** The repo is real: target layout per spec 01 §1 on `origin/main`, Go
-module `github.com/17twenty/flow`, and plan items 0.1–0.5 complete and ticked in
-`.ralph/IMPLEMENTATION_PLAN.md`. The binary parses the whole spec 02 command
-tree; unimplemented commands fail as `ErrUnsupported` (exit 1), which is the only
-stub the plan permits. Core has sentinels with exit-code mapping, `UserError`
-what/why/fix rendering, and the spec 15 §2 redacting slog handler. `flow version`
-is fully implemented in both human and `--json` form. SIGINT (130) and `--timeout`
-(69) are tested against the real signal plumbing using a `flowtest`-tagged
-blocking command.
+module `github.com/17twenty/flow`. Plan items 0.1–0.5 and 1.1 are complete and
+ticked in `.ralph/IMPLEMENTATION_PLAN.md`.
 
-**What currently verifies.** The spec's Verify command cannot pass until `doctor`
-exists. Today's equivalent, all green:
+- *Skeleton (plan Phase 0).* The binary parses the whole spec 02 command tree;
+  unimplemented commands fail as `ErrUnsupported` (exit 1), the only stub the
+  plan permits. Core has sentinels with exit-code mapping, `UserError`
+  what/why/fix rendering, and the spec 15 §2 redacting slog handler.
+  `flow version` is fully implemented in human and `--json` form. SIGINT (130)
+  and `--timeout` (69) are tested against the real signal plumbing via a
+  `flowtest`-tagged blocking command.
+- *Parser (plan 1.1).* `internal/commits` implements the spec 08 §1 grammar and
+  never errors. It handles CRLF, `core.commentChar`, scissors, merge/revert/
+  autosquash forms and the `BREAKING CHANGE` footer, and reports rune-accurate
+  columns for linter diagnostics. `FuzzParse` is seeded from
+  `assets/testdata/commits`; a 45s run did 26M execs with no panics.
+
+**What currently verifies.** The spec's Verify command cannot pass until
+`doctor` exists. Today's equivalent, all green:
 
 ```sh
 test -z "$(gofmt -l .)" && go vet ./... && go build -o bin/flow . && \
@@ -101,8 +108,8 @@ test -z "$(gofmt -l .)" && go vet ./... && go build -o bin/flow . && \
 ```
 
 **Phase 2 is ticked with one caveat**: plan item 0.6 ("CI green on main") now has
-a workflow and a first push, so GitHub Actions should be running it — nobody has
-confirmed the run is green. Every step of `ci.yml` passes locally.
+a workflow and pushed commits, so GitHub Actions should be running it — nobody
+has confirmed the run is green. Every step of `ci.yml` passes locally.
 
 **Phase 1 stays unticked.** Its local half is done (layout, module, first push);
 its GitHub-side half (Project, labels, App, `FLOW_PROJECT_TOKEN`, running
@@ -117,10 +124,15 @@ above, and its three unticked acceptance criteria track exactly that.
 4. Approve installing `gh` (Homebrew) so the agent can seed issues and drive the
    Project. Until then `bootstrap/seed-issues.sh` cannot run.
 
-**Single best next step:** plan item 1.1 — the Conventional Commit header parser
-in `internal/commits` (spec 08 §1), with table tests and `FuzzParse` seeded from
-`assets/testdata/commits`. It is the deepest dependency in Phase 1, needs no
-network and no GitHub access, and unblocks 1.2 (linter), 1.3 (`check commit`) and
-ultimately 2.13 (the policy gate). Work down plan Phase 1 from there; none of it
-is blocked by the human prerequisites.
+**Single best next step:** plan item 1.2 — the linter rules in
+`internal/commits` (spec 08 §2), implementing every `cc.*` rule id with
+severity, message, column and fix text. It must also rewrite
+`assets/testdata/commits/{valid,invalid}.txt` to v2 rule ids **in the same
+commit** and record a Decision in spec 08: the seeds still expect the retired
+`cc.footer.*`, `cc.trailer.*`, `cc.body.wrap` and `cc.description.imperative`
+rules, and carry `Refs:`/`Flag-Added:`/`Migration:` footers from the earlier,
+wider design. `TestCorpusInvalidSamplesMatchHeaderFormat` already pins which
+samples must fail the grammar, so keep it passing through the rewrite. Then 1.3
+(`check commit` + safe autofix) gives the first genuinely implemented command.
+
 
