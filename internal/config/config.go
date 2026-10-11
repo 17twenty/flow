@@ -147,7 +147,7 @@ type Tracker struct {
 	// Project identifies the board: a GitHub project number, a Jira project
 	// key or a Linear team key. It may be a placeholder until doctor resolves
 	// it (spec 03 §2).
-	Project string `yaml:"project,omitempty"`
+	Project Pending `yaml:"project,omitempty"`
 	// URL is the tracker's base URL, for providers like Jira Cloud whose host
 	// is per-tenant.
 	URL string `yaml:"url,omitempty"`
@@ -308,13 +308,13 @@ type FollowUps struct {
 // placeholders until doctor resolves them (spec 03 §2).
 type Owners struct {
 	// Default receives anything the other roles do not claim.
-	Default string `yaml:"default,omitempty"`
+	Default Pending `yaml:"default,omitempty"`
 	// TrackerAdmin receives work needing tracker administration.
-	TrackerAdmin string `yaml:"tracker_admin,omitempty"`
+	TrackerAdmin Pending `yaml:"tracker_admin,omitempty"`
 	// ForgeAdmin receives work needing repository administration.
-	ForgeAdmin string `yaml:"forge_admin,omitempty"`
+	ForgeAdmin Pending `yaml:"forge_admin,omitempty"`
 	// Platform receives work needing deployment or infrastructure access.
-	Platform string `yaml:"platform,omitempty"`
+	Platform Pending `yaml:"platform,omitempty"`
 }
 
 // Attestation is how long a human's "I checked this myself" counts for

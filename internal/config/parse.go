@@ -100,6 +100,9 @@ func Parse(src []byte, path string) (*Config, error) {
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal(src, &doc); err != nil {
+		if hint, ok := placeholderSyntaxHint(src, path); ok {
+			return nil, newParseError(path, []Problem{hint})
+		}
 		return nil, newParseError(path, translate(err, path, nil))
 	}
 	if doc.Kind == 0 {
@@ -110,12 +113,16 @@ func Parse(src []byte, path string) (*Config, error) {
 	}
 
 	index := indexNodes(&doc)
+	problems := checkPlaceholders(&doc, path)
 
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-		return nil, newParseError(path, translate(err, path, index))
+		problems = append(problems, translate(err, path, index)...)
+	}
+	if len(problems) > 0 {
+		return nil, newParseError(path, sortProblems(problems))
 	}
 	if cfg.Version != Version {
 		return nil, newParseError(path, []Problem{versionProblem(cfg.Version, path, index)})
@@ -163,6 +170,12 @@ func translate(err error, path string, index *nodeIndex) []Problem {
 	for _, message := range raw {
 		problems = append(problems, locate(message, path, index))
 	}
+	return sortProblems(problems)
+}
+
+// sortProblems puts problems in file order, so a reader works down the file
+// once instead of jumping about.
+func sortProblems(problems []Problem) []Problem {
 	slices.SortStableFunc(problems, func(a, b Problem) int {
 		if a.Line != b.Line {
 			return a.Line - b.Line

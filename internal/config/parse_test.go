@@ -106,7 +106,7 @@ func TestParseFull(t *testing.T) {
 			Type:      TrackerJiraCloud,
 			Owner:     "17twenty",
 			OwnerType: OwnerOrg,
-			Project:   "FLOW",
+			Project:   Known("FLOW"),
 			URL:       "https://17twenty.atlassian.net",
 			Auth:      Auth{TokenEnv: "JIRA_API_TOKEN", EmailEnv: "JIRA_EMAIL"},
 		},
@@ -159,10 +159,10 @@ func TestParseFull(t *testing.T) {
 		FollowUps: FollowUps{
 			Labels: []string{"flow-followup"},
 			Owners: Owners{
-				Default:      "@17twenty",
-				TrackerAdmin: "@tracker",
-				ForgeAdmin:   "@forge",
-				Platform:     "@platform",
+				Default:      Known("@17twenty"),
+				TrackerAdmin: Known("@tracker"),
+				ForgeAdmin:   Known("@forge"),
+				Platform:     Known("@platform"),
 			},
 		},
 		Attestation: Attestation{DefaultTTL: 30 * Day},

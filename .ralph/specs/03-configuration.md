@@ -223,3 +223,25 @@ gate, relaxed policy).
   Preset and default layering is precedence (§ top), and lands with the rest of
   precedence in plan item 1.8; until then, callers needing a default say so
   themselves (as `flow check commit` does with `commits.DefaultSettings`).
+- **§2 placement is enforced at decode, not left to `config.semantics` (item
+  1.5).** §1.1 lists the allowed placeholder paths among the semantic rules,
+  but a `${pending:…}` anywhere else can never be resolved by anything: there
+  is no discover, choose, create or ask step for `forge.repo`. `config.Parse`
+  therefore refuses it with the rest of the file's problems, and
+  `config.semantics` keeps the §1.1 rules that depend on observing the world.
+- **§2 a placeholder is the whole value or it is an error (item 1.5).**
+  `board-${pending:project}` is refused rather than concatenated: the resolver
+  writes the value it found to the lock, and there is nowhere to record which
+  part of a string it belongs to. Anything else resembling interpolation —
+  `${env:HOME}`, `${project}`, an unclosed `${` — is refused in the same way,
+  with the message saying `${pending:name}` is the only one that exists.
+- **§2 the flow-mapping mistake is diagnosed, not relayed (item 1.5).** YAML
+  cannot hold an unquoted `${…}` inside `{…}` and reports it as a missing
+  brace, on the line the mapping opened on. When a syntax error coincides with
+  a `${` inside a flow collection, flow replaces the parser's message with the
+  real cause and points at the placeholder: put each key on its own line, or
+  quote the value.
+- **§2 self-referential anchors are walked once (item 1.5).** `&a [*a]` is four
+  bytes of valid YAML that parses into a cyclic node tree; walking it for
+  placeholders exhausted memory. The walk now keeps a record of the nodes it is
+  inside and refuses to re-enter one.

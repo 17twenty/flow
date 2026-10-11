@@ -46,7 +46,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.4 Config types with strict YAML decoding — specs: 03 §1 — deps: 0.2 (#17)
   - note: config/{config,duration,parse}.go; every problem located line:col, decisions in spec 03. Parse applies no defaults — layering lands with precedence in 1.8.
   - AC: unknown keys error with line:col; durations with d/w
-- [ ] 1.5 Placeholders — specs: 03 §2 — deps: 1.4 (#18)
+- [x] 1.5 Placeholders — specs: 03 §2 — deps: 1.4 (#18)
+  - note: config/placeholder.go; Pending type at tracker.project + followups.owners.*, placement enforced in Parse, flow-mapping mistake diagnosed. FuzzParse found a cyclic-alias memory bomb.
   - AC: Pending values only at allowed paths; block-style requirement documented in error
 - [ ] 1.6 Semantic validation and secret heuristics — specs: 03 §1.1 — deps: 1.4, 2.1 (#19)
   - AC: one test per rule incl. native-owner capability check
