@@ -1,0 +1,15 @@
+✓ pr.ticket.linked
+✗ pr.ticket.in_project  a linked issue is not on the board
+    - #12 is not an item of the project  https://example.invalid/12
+    → add the issue to the project
+✗ ticket.ready  a linked ticket does not meet the Definition of Ready
+    - #12 is not ready: it has no "Acceptance criteria" heading — say how anybody will know this is done; it has no parent — link it to the epic or bigger piece of work it belongs to  https://example.invalid/12
+    → fill in what the ticket is missing, or move it back until it is ready
+✗ pr.title.conventional  header is not a Conventional Commit
+    → write it as type(scope): description, for example feat(cli): add --json
+✓ pr.breaking.explained
+· agent.human_review  a person opened this
+✓ wip.review
+✓ wip.in_progress
+✓ ticket.not_blocked
+✗ 3 errors — pr.ticket.in_project, ticket.ready, pr.title.conventional

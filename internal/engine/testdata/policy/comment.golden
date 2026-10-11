@@ -1,0 +1,24 @@
+### flow policy
+
+| | rule | what is wrong | fix |
+|---|---|---|---|
+| ✗ | `pr.ticket.in_project` | 2 linked issues are not on the board | add the issue to the project |
+| ✗ | `ticket.ready` | 2 linked tickets do not meet the Definition of Ready | fill in what the ticket is missing, or move it back until it is ready |
+| ✗ | `pr.title.conventional` | header is not a Conventional Commit | write it as type(scope): description, for example feat(cli): add --json |
+| ⚠ | `ticket.not_blocked` | a linked ticket is marked blocked | clear the blocker, or say on the ticket that this pull request is what clears it |
+
+**pr.ticket.in_project**
+
+- #12 is not an item of the project <https://example.invalid/12>
+- #13 is not an item of the project <https://example.invalid/13>
+
+**ticket.ready**
+
+- #12 is not ready: it has no "Acceptance criteria" heading — say how anybody will know this is done; it has no parent — link it to the epic or bigger piece of work it belongs to <https://example.invalid/12>
+- #13 is not ready: it has no "Acceptance criteria" heading — say how anybody will know this is done; it has no parent — link it to the epic or bigger piece of work it belongs to; the tracker has it flagged as blocked — clear the blocker before starting <https://example.invalid/13>
+
+**ticket.not_blocked**
+
+- #13 is blocked <https://example.invalid/13>
+
+<!-- flow:policy -->

@@ -107,6 +107,9 @@ DoR is evaluated by `check pr` (rule `ticket.ready`) and in doctor live health.
 Counts from the tracker (column membership), cross-checked with forge state
 for `in_review` (open non-draft PRs linked to tickets); the max is used.
 Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
+
+## Decisions
+
 - **§7 `max_size` is a key, not a name in `rules` (item 2.12).** Spec §7's
   table lists it among the rules, but it needs a duration and the other five
   need nothing, so the configuration models it as
@@ -148,3 +151,9 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
 - **§7 no rules means no Definition of Ready (item 2.12).** Every ticket is
   ready. A team that has not agreed what ready means should not have flow
   inventing one for them.
+- **§8 the board/forge reconciliation happens before the gate sees it (item
+  2.13).** Spec §8 takes the counts from the tracker, cross-checks `in_review`
+  against the forge and uses the larger. Both halves need the network, so the
+  command does the reconciling and hands the gate one list per column. The
+  gate's rules stay pure, which is what lets `flow check pr` and doctor's live
+  audit agree (spec 09 decisions).

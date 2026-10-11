@@ -48,3 +48,73 @@ spec 04 §5 (`--no-transitions` to skip).
 
 Per-rule tables; strictness mapping; description truncation golden; comment
 golden; determinism; fork/read-only path; draft path.
+
+## Decisions
+
+- **§2 the snapshot is given, never gathered (item 2.13).** Every rule is a
+  pure function of `engine.PolicySnapshot`. Asking the forge for the pull
+  request, the tracker for its tickets and the board for its counts is the
+  command's work. The gate must give the same verdict on a laptop, in CI and
+  in doctor's live audit, and a rule that could reach the network could
+  disagree with itself between the three.
+- **§2 a rule set to `off` is not evaluated and does not appear (item 2.13).**
+  Off is the team saying they do not want the question asked. Reporting it as
+  a pass, or as a skip, would be flow answering it anyway.
+- **§2 an unknown strictness is read as standard (item 2.13).** Configuration
+  validation rejects one, so reaching the engine with it means a binary older
+  than the file. The baseline is the honest answer to "what would flow have
+  done before this word existed". This is the opposite of spec 04 §7's unknown
+  *rule*, which fails closed: a missing rule would open a gate the team
+  believes is shut, whereas a missing strictness only changes how loudly the
+  rules that do exist complain.
+- **§2 the review and in-progress columns are the ones the transitions name
+  (item 2.13).** `wip.review` reads the column `pr_ready_for_review` lands in
+  and `wip.in_progress` the column `pr_opened_draft` lands in. Matching column
+  ids called "in_review" and "in_progress" would be flow owning names the team
+  owns; the events already say which column is which.
+- **§2 "it entered review before the limit was exceeded" is a place in the
+  arrival order (item 2.13).** The column's items are sorted by when they
+  arrived, and a pull request is let off when all of its tickets are inside the
+  first `limit` of them. A tracker that will not say when an item arrived gives
+  no order, so the exemption does not apply at all: a pull request is let off
+  on evidence or not at all.
+- **§2 expedited work is outside the WIP rules entirely (item 2.13).** Items
+  carrying a `workflow.expedite` label are not counted, and a pull request
+  whose own ticket carries one skips both rules. Expedite is the team's agreed
+  way past a limit (spec 04 §8); warning about it would be telling them off
+  for following their own process.
+- **§2 `ticket.ready` stops at the first in-progress column, and everything
+  past it (item 2.13).** The table says "already in in_progress/in_review"; the
+  rule is implemented as "at or past the first column of category
+  `in_progress`", which also covers done. The Definition of Ready is the entry
+  gate to starting work, and a ticket that has gone through it has gone through
+  it. The snapshot carries the *configured* column id, resolved through the
+  lock by the caller: the engine never maps a tracker column itself (spec 04 §2).
+- **§2 a key the tracker cannot produce is evidence, not a ticket (item
+  2.13).** Spec 04 §3 has unknown keys reported rather than trusted, so an
+  unresolvable key does not satisfy `pr.ticket.linked`; it is listed underneath
+  the failure so the author can see which key flow could not find.
+- **§2 `pr.title.conventional` reports five of the linter's rules (item
+  2.13).** `cc.header.format`, `cc.type.allowed`, `cc.scope.required`,
+  `cc.scope.allowed` and `cc.header.length`, exactly as the table says. The
+  description's case and full stop are style and belong to the optional commit
+  hook; the body rules have no body to read on a pull request title; and
+  `cc.breaking.explained` is its own policy rule.
+- **§2 a draft is judged in full and reported as pending (item 2.13).** The
+  rules still run and the comment still says what is wrong — that is what the
+  author wants while they are still writing. Only the commit status softens, to
+  `pending` and `draft — not enforced`. A red cross on work somebody is still
+  thinking about teaches people to ignore red crosses.
+- **§2 the description's count is never trimmed, only its list (item 2.13).**
+  When the rule ids do not fit in 140 characters they are dropped from the end
+  and `, +N more` is appended; the leading count stays true. A description
+  saying "2 errors" when there were nine would be a lie told to save eleven
+  characters. When even one id will not fit, the line is the count alone.
+- **§2 `comment: never` removes the comment rather than leaving it (item
+  2.13).** A team that turns comments off is saying they do not want flow
+  writing on their pull requests. Honouring that only for new comments would
+  leave the ones flow already wrote arguing with a status that has moved on.
+  `on_failure` removes it when nothing is wrong, which is the same rule.
+- **§2 the comment lists only what did not hold (item 2.13).** Somebody reading
+  it has a pull request to fix. Nine rows with two crosses in them makes them
+  hunt for the crosses.

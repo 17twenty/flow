@@ -165,3 +165,10 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
   every new desired item a change to the planner as well as to the adapter.
   `Item.Equal` treats a missing id as "not yet created", because a desired
   item cannot know the id the provider will give it.
+- **§2 the config → commits mapping lives in engine (item 2.13).**
+  `internal/commits` depends on the standard library alone and must not read
+  `.flow.yaml`, so something has to turn `commits.*` into `commits.Settings`.
+  `engine.CommitSettings` does it, because engine already depends on both and
+  the policy gate is the first caller that needs it. The defaults are filled in
+  there too, so that an incomplete configuration lints by the same convention
+  spec 03 §1 ships.
