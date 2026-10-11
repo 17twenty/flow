@@ -30,12 +30,22 @@ import (
 type gitHubFake struct {
 	fx       coretest.ForgeFixture
 	pageSize int
+	// statuses is a history, as GitHub's is: publishing a status appends to
+	// it and replaces nothing.
+	statuses map[string][]core.CommitStatus
+	// comments are the comments on each issue, in the order they were
+	// written, and nextID is the identity the next one gets.
+	comments map[int][]ghComment
+	nextID   int64
 	// loop makes every page point at another one, which is what a provider
 	// with a bug in its own Link header does to a client that trusts it.
 	loop bool
 
 	mu          sync.Mutex
 	requests    []string
+	methods     []string
+	writing     int
+	mostWriting int
 	notModified int
 	userAgents  map[string]int
 }
@@ -43,10 +53,48 @@ type gitHubFake struct {
 // newGitHubServer stands the fake up and returns it with its server.
 func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *httptest.Server) {
 	t.Helper()
-	fake := &gitHubFake{fx: fx, pageSize: 2, userAgents: map[string]int{}}
+	fake := &gitHubFake{
+		fx:         fx,
+		pageSize:   2,
+		statuses:   map[string][]core.CommitStatus{},
+		comments:   map[int][]ghComment{},
+		userAgents: map[string]int{},
+	}
+	for sha, statuses := range fx.Statuses {
+		fake.statuses[sha] = slices.Clone(statuses)
+	}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	return fake, srv
+}
+
+// addComment seeds a comment written by somebody else.
+func (f *gitHubFake) addComment(number int, author, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextID++
+	comment := ghComment{
+		ID:        f.nextID,
+		Body:      body,
+		CreatedAt: coretest.ContractNow,
+		UpdatedAt: coretest.ContractNow,
+	}
+	comment.User.Login = author
+	f.comments[number] = append(f.comments[number], comment)
+}
+
+// comment returns the comments on a pull request as the fake holds them.
+func (f *gitHubFake) commentsOn(number int) []ghComment {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.comments[number])
+}
+
+// statusHistory returns every status published on a commit, oldest first.
+func (f *gitHubFake) statusHistory(sha string) []core.CommitStatus {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.statuses[sha])
 }
 
 // Requests returns the paths asked for, in order.
@@ -54,6 +102,36 @@ func (f *gitHubFake) Requests() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.requests)
+}
+
+// enterWriting records that a mutation is in flight.
+func (f *gitHubFake) enterWriting() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writing++
+	f.mostWriting = max(f.mostWriting, f.writing)
+}
+
+// leaveWriting records that a mutation finished, after holding it open.
+func (f *gitHubFake) leaveWriting(hold time.Duration) {
+	time.Sleep(hold)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writing--
+}
+
+// MostWriting returns the most mutations that were ever in flight at once.
+func (f *gitHubFake) MostWriting() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.mostWriting
+}
+
+// Methods returns the methods asked for, in order.
+func (f *gitHubFake) Methods() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.methods)
 }
 
 // NotModified returns how many conditional requests were answered 304.
@@ -75,8 +153,16 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// inside a ref has asked GitHub about a different branch, and a
 	// decoded path hides exactly that mistake.
 	f.requests = append(f.requests, r.URL.EscapedPath())
+	f.methods = append(f.methods, r.Method)
 	f.userAgents[r.Header.Get("User-Agent")]++
 	f.mu.Unlock()
+
+	if r.Method != http.MethodGet {
+		f.enterWriting()
+		// Long enough that two mutations arriving together would be seen
+		// to overlap, rather than passing by being quick.
+		defer f.leaveWriting(time.Millisecond)
+	}
 
 	if r.Header.Get("X-GitHub-Api-Version") != gitHubAPIVersion {
 		f.fail(w, http.StatusBadRequest, "no API version was pinned")
@@ -106,6 +192,14 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.files(w, r, segments[1])
 	case segments[0] == "commits" && len(segments) == 1:
 		f.commits(w, r)
+	case segments[0] == "commits" && len(segments) == 3 && segments[2] == "statuses":
+		f.commitStatuses(w, r, segments[1])
+	case segments[0] == "statuses" && len(segments) == 2:
+		f.publishStatus(w, r, segments[1])
+	case segments[0] == "issues" && len(segments) == 3 && segments[2] == "comments":
+		f.issueComments(w, r, segments[1])
+	case segments[0] == "issues" && len(segments) == 3 && segments[1] == "comments":
+		f.issueComment(w, r, segments[2])
 	case segments[0] == "compare" && len(segments) > 1:
 		f.compare(w, r, strings.Join(segments[1:], "/"))
 	case segments[0] == "contents" && len(segments) > 1:
@@ -215,6 +309,155 @@ func (f *gitHubFake) commits(w http.ResponseWriter, r *http.Request) {
 		page = append(page, ghCommitJSON(commit))
 	}
 	f.writePage(w, r, page)
+}
+
+// commitStatuses serves a commit's status history, newest first.
+func (f *gitHubFake) commitStatuses(w http.ResponseWriter, r *http.Request, sha string) {
+	if r.Method != http.MethodGet {
+		f.fail(w, http.StatusMethodNotAllowed, "statuses are read, not written, here")
+		return
+	}
+	f.mu.Lock()
+	history := slices.Clone(f.statuses[sha])
+	f.mu.Unlock()
+	slices.Reverse(history)
+
+	page := make([]any, 0, len(history))
+	for _, status := range history {
+		page = append(page, map[string]any{
+			"context":     status.Context,
+			"state":       status.State,
+			"description": status.Description,
+			"target_url":  status.TargetURL,
+			"created_at":  status.CreatedAt,
+			"updated_at":  status.CreatedAt,
+		})
+	}
+	f.writePage(w, r, page)
+}
+
+// publishStatus appends a status to a commit's history, as GitHub does: it
+// replaces nothing, and the newest one from a context is the verdict.
+func (f *gitHubFake) publishStatus(w http.ResponseWriter, r *http.Request, sha string) {
+	if r.Method != http.MethodPost {
+		f.fail(w, http.StatusMethodNotAllowed, "a status is published with POST")
+		return
+	}
+	var body ghStatusRequest
+	if !f.decode(w, r, &body) {
+		return
+	}
+	if body.Context == "" || body.State == "" {
+		f.fail(w, http.StatusUnprocessableEntity, "a status needs a context and a state")
+		return
+	}
+	if len([]rune(body.Description)) > gitHubStatusDescription {
+		f.fail(w, http.StatusUnprocessableEntity, "the description is too long")
+		return
+	}
+	status := core.CommitStatus{
+		Context:     body.Context,
+		State:       body.State,
+		Description: body.Description,
+		TargetURL:   body.TargetURL,
+		CreatedAt:   coretest.ContractNow,
+	}
+	f.mu.Lock()
+	f.statuses[sha] = append(f.statuses[sha], status)
+	f.mu.Unlock()
+
+	f.writeJSON(w, r, map[string]any{
+		"context":     status.Context,
+		"state":       status.State,
+		"description": status.Description,
+		"target_url":  status.TargetURL,
+		"created_at":  status.CreatedAt,
+	})
+}
+
+// issueComments lists and writes the comments on a pull request, which GitHub
+// addresses as an issue.
+func (f *gitHubFake) issueComments(w http.ResponseWriter, r *http.Request, raw string) {
+	pr, ok := f.findPull(raw)
+	if !ok {
+		f.fail(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		f.mu.Lock()
+		comments := slices.Clone(f.comments[pr.Number])
+		f.mu.Unlock()
+		page := make([]any, 0, len(comments))
+		for _, comment := range comments {
+			page = append(page, ghCommentJSON(comment))
+		}
+		f.writePage(w, r, page)
+	case http.MethodPost:
+		var body ghCommentRequest
+		if !f.decode(w, r, &body) {
+			return
+		}
+		f.mu.Lock()
+		f.nextID++
+		comment := ghComment{
+			ID:        f.nextID,
+			Body:      body.Body,
+			CreatedAt: coretest.ContractNow,
+			UpdatedAt: coretest.ContractNow,
+			HTMLURL:   f.fx.Repo.URL + "/pull/" + raw + "#issuecomment-" + strconv.FormatInt(f.nextID, 10),
+		}
+		comment.User.Login = "flow"
+		f.comments[pr.Number] = append(f.comments[pr.Number], comment)
+		f.mu.Unlock()
+		f.write(w, r, http.StatusCreated, mustJSON(ghCommentJSON(comment)), "application/json")
+	default:
+		f.fail(w, http.StatusMethodNotAllowed, "comments are listed and written here")
+	}
+}
+
+// issueComment edits and deletes one comment by its identity.
+func (f *gitHubFake) issueComment(w http.ResponseWriter, r *http.Request, raw string) {
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		f.fail(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for number, comments := range f.comments {
+		for i, comment := range comments {
+			if comment.ID != id {
+				continue
+			}
+			switch r.Method {
+			case http.MethodPatch:
+				var body ghCommentRequest
+				if !f.decode(w, r, &body) {
+					return
+				}
+				comment.Body, comment.UpdatedAt = body.Body, coretest.ContractNow
+				f.comments[number][i] = comment
+				f.writeJSON(w, r, ghCommentJSON(comment))
+			case http.MethodDelete:
+				f.comments[number] = slices.Delete(f.comments[number], i, i+1)
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				f.fail(w, http.StatusMethodNotAllowed, "a comment is edited or deleted here")
+			}
+			return
+		}
+	}
+	f.fail(w, http.StatusNotFound, "Not Found")
+}
+
+// decode reads a JSON request body.
+func (f *gitHubFake) decode(w http.ResponseWriter, r *http.Request, into any) bool {
+	if err := json.NewDecoder(r.Body).Decode(into); err != nil {
+		f.fail(w, http.StatusBadRequest, "the body is not JSON: "+err.Error())
+		return false
+	}
+	return true
 }
 
 // compare answers the ancestry question the fixture's history implies.
@@ -411,6 +654,27 @@ func ghCommitJSON(commit core.Commit) map[string]any {
 		doc["author"] = map[string]any{"login": commit.Author}
 	}
 	return doc
+}
+
+// ghCommentJSON renders a comment as GitHub does.
+func ghCommentJSON(comment ghComment) map[string]any {
+	return map[string]any{
+		"id":         comment.ID,
+		"user":       map[string]any{"login": comment.User.Login},
+		"body":       comment.Body,
+		"created_at": comment.CreatedAt,
+		"updated_at": comment.UpdatedAt,
+		"html_url":   comment.HTMLURL,
+	}
+}
+
+// mustJSON encodes a document the fake built itself.
+func mustJSON(doc any) []byte {
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 // stampOrNil renders a zero time as JSON null, as GitHub does.

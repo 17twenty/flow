@@ -2,6 +2,7 @@ package forge
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,3 +243,70 @@ var ghCompareStatuses = []string{
 
 // known reports whether the comparison status is one flow understands.
 func (c ghCompare) known() bool { return slices.Contains(ghCompareStatuses, c.Status) }
+
+// ghStatus is GET /repos/{owner}/{repo}/commits/{sha}/statuses, which GitHub
+// serves newest first.
+type ghStatus struct {
+	Context     string    `json:"context"`
+	State       string    `json:"state"`
+	Description string    `json:"description"`
+	TargetURL   string    `json:"target_url"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// toCommitStatus converts the payload.
+func (s ghStatus) toCommitStatus() core.CommitStatus {
+	return core.CommitStatus{
+		Context:     s.Context,
+		State:       s.State,
+		Description: s.Description,
+		TargetURL:   s.TargetURL,
+		CreatedAt:   s.CreatedAt,
+	}
+}
+
+// ghStatusRequest is POST /repos/{owner}/{repo}/statuses/{sha}.
+type ghStatusRequest struct {
+	State       string `json:"state"`
+	Context     string `json:"context"`
+	Description string `json:"description,omitempty"`
+	TargetURL   string `json:"target_url,omitempty"`
+}
+
+// ghComment is GET /repos/{owner}/{repo}/issues/{number}/comments. A pull
+// request is an issue to GitHub's comment endpoints.
+type ghComment struct {
+	ID   int64 `json:"id"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	HTMLURL   string    `json:"html_url"`
+}
+
+// toComment converts the payload, reporting false for a comment that does not
+// carry a marker the wanted one matches — which is every comment a person
+// wrote.
+func (c ghComment) toComment(want core.Marker) (core.Comment, bool) {
+	marker, ok := core.FindMarker(c.Body)
+	if !ok || !want.Matches(marker) {
+		return core.Comment{}, false
+	}
+	return core.Comment{
+		ID:        strconv.FormatInt(c.ID, 10),
+		Author:    c.User.Login,
+		Body:      c.Body,
+		Marker:    marker,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+		URL:       c.HTMLURL,
+	}, true
+}
+
+// ghCommentRequest is the body of POST and PATCH on a comment.
+type ghCommentRequest struct {
+	Body string `json:"body"`
+}

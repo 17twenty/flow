@@ -132,7 +132,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 3.1 GitHub: repo, PRs, reviews, commits, compare — specs: 10 §2 — deps: 2.16, 2.3 (#45)
   - note: internal/forge/{github,github_wire}.go. The read half of the forge contract now passes against GitHub's own REST shapes, served by a fake that paginates and answers conditional requests — the two things an in-memory fake can never exercise. The contract suite became addressable case by case (`ForgeContractSubset`) so that an adapter can be held to the part of it that has landed. The methods of 3.2–3.7 refuse with ErrUnsupported and name what they wanted.
   - AC: pagination via Link; conditional requests; contract suite subset passes
-- [ ] 3.2 GitHub: commit statuses and marker comments — specs: 10 §2, 09 §2 — deps: 3.1, 2.15 (#46)
+- [x] 3.2 GitHub: commit statuses and marker comments — specs: 10 §2, 09 §2 — deps: 3.1, 2.15 (#46)
+  - note: GitHub's statuses endpoint is a history and its comments are everybody's, so the adapter turns both into the state flow means: the latest verdict per context, and the one comment carrying flow's marker. Neither is written when the provider already says exactly that, so a gate that runs every minute leaves one status and one comment rather than a thousand. Mutations of one repository are serialised, which is what spec 10 §2's note about secondary limits asks for.
   - AC: status idempotency; comment upsert/delete by marker
 - [ ] 3.3 GitHub: linked issues via closingIssuesReferences — specs: 04 §3, 10 §2 — deps: 3.1 (#47)
   - AC: cross-repo references returned repo-qualified

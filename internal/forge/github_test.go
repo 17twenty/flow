@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +77,8 @@ func TestGitHubMeetsTheReadHalfOfTheContract(t *testing.T) {
 		"commits on the trunk, newest first",
 		"ancestry proves a merge reached an environment",
 		"files on the trunk",
+		"a commit status replaces the last verdict from the same context",
+		"a comment is edited in place, found by its marker, and deleted once",
 	)
 }
 
@@ -392,18 +396,12 @@ func TestGitHubRefusesWhatItsPlanItemHasNotLanded(t *testing.T) {
 	_, srv := newGitHubServer(t, fx)
 	adapter := newGitHubAdapter(t, srv, fx, nil)
 	ctx := t.Context()
-	marker := core.NewMarker(core.MarkerPolicy, "pr", "1")
 
 	calls := map[string]func() error{
 		"Probe":            func() error { _, err := adapter.Probe(ctx); return err },
 		"Protection":       func() error { _, err := adapter.Protection(ctx, "main"); return err },
 		"SetProtection":    func() error { return adapter.SetProtection(ctx, "main", core.Protection{}) },
 		"SetMergeSettings": func() error { return adapter.SetMergeSettings(ctx, core.MergeSettings{}) },
-		"CommitStatuses":   func() error { _, err := adapter.CommitStatuses(ctx, "abc"); return err },
-		"SetCommitStatus":  func() error { return adapter.SetCommitStatus(ctx, "abc", core.CommitStatus{}) },
-		"UpsertComment":    func() error { return adapter.UpsertComment(ctx, 1, marker, "x") },
-		"Comment":          func() error { _, err := adapter.Comment(ctx, 1, marker); return err },
-		"DeleteComment":    func() error { return adapter.DeleteComment(ctx, 1, marker) },
 		"ProposeFiles":     func() error { _, err := adapter.ProposeFiles(ctx, core.FileProposal{}); return err },
 	}
 	for name, call := range calls {
@@ -427,4 +425,242 @@ func numbers(prs []core.PullRequest) []int {
 		out = append(out, pr.Number)
 	}
 	return out
+}
+
+func TestGitHubDoesNotPublishAVerdictTheCommitAlreadyCarries(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	status := core.CommitStatus{Context: "flow/policy", State: core.StatusSuccess, Description: "✓ all rules pass"}
+
+	for range 3 {
+		if err := adapter.SetCommitStatus(t.Context(), coretest.SHADeployed, status); err != nil {
+			t.Fatalf("SetCommitStatus: %v", err)
+		}
+	}
+	if history := fake.statusHistory(coretest.SHADeployed); len(history) != 1 {
+		t.Errorf("the commit carries %d statuses, want the one verdict said three times", len(history))
+	}
+
+	status.Description = "✗ 1 error — ticket.ready"
+	status.State = core.StatusFailure
+	if err := adapter.SetCommitStatus(t.Context(), coretest.SHADeployed, status); err != nil {
+		t.Fatalf("SetCommitStatus(changed): %v", err)
+	}
+	history := fake.statusHistory(coretest.SHADeployed)
+	if len(history) != 2 {
+		t.Fatalf("the commit carries %d statuses, want the verdict to have changed", len(history))
+	}
+
+	statuses, err := adapter.CommitStatuses(t.Context(), coretest.SHADeployed)
+	if err != nil {
+		t.Fatalf("CommitStatuses: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("CommitStatuses = %+v, want the latest verdict per context, not the history", statuses)
+	}
+	if statuses[0].State != core.StatusFailure {
+		t.Errorf("the verdict is %q, want the newest", statuses[0].State)
+	}
+}
+
+func TestGitHubKeepsEveryContextsLatestVerdict(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.pageSize = 1
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	for _, status := range []core.CommitStatus{
+		{Context: "ci/test", State: core.StatusFailure, Description: "one test failed"},
+		{Context: "flow/policy", State: core.StatusPending, Description: "draft — not enforced"},
+		{Context: "ci/test", State: core.StatusSuccess, Description: "all tests pass"},
+	} {
+		if err := adapter.SetCommitStatus(t.Context(), coretest.SHAHead, status); err != nil {
+			t.Fatalf("SetCommitStatus(%s): %v", status.Context, err)
+		}
+	}
+	statuses, err := adapter.CommitStatuses(t.Context(), coretest.SHAHead)
+	if err != nil {
+		t.Fatalf("CommitStatuses: %v", err)
+	}
+	got := map[string]string{}
+	for _, status := range statuses {
+		if _, repeated := got[status.Context]; repeated {
+			t.Fatalf("CommitStatuses = %+v, want one verdict per context", statuses)
+		}
+		got[status.Context] = status.State
+	}
+	if got["ci/test"] != core.StatusSuccess || got["flow/policy"] != core.StatusPending {
+		t.Errorf("statuses = %v, want ci/test's newest verdict and flow/policy's only one", got)
+	}
+}
+
+func TestGitHubShortensADescriptionGitHubWouldRefuse(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	long := strings.Repeat("é", 400)
+	if err := adapter.SetCommitStatus(t.Context(), coretest.SHADeployed, core.CommitStatus{
+		Context: "flow/policy", State: core.StatusFailure, Description: long,
+	}); err != nil {
+		t.Fatalf("SetCommitStatus: %v", err)
+	}
+	history := fake.statusHistory(coretest.SHADeployed)
+	if len(history) != 1 {
+		t.Fatalf("got %d statuses, want the long one published", len(history))
+	}
+	if got := len([]rune(history[0].Description)); got != 140 {
+		t.Errorf("the description is %d characters, want it cut to GitHub's 140", got)
+	}
+	if !strings.HasSuffix(history[0].Description, "…") {
+		t.Errorf("the description is %q, want it to show that it was cut", history[0].Description)
+	}
+}
+
+func TestGitHubRefusesAStatusNoForgeCouldPublish(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	cases := map[string]core.CommitStatus{
+		"no context":           {State: core.StatusSuccess},
+		"no state":             {Context: "flow/policy"},
+		"a state nobody knows": {Context: "flow/policy", State: "probably-fine"},
+	}
+	for name, status := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := adapter.SetCommitStatus(t.Context(), coretest.SHAHead, status)
+			if !errors.Is(err, core.ErrValidation) {
+				t.Fatalf("SetCommitStatus = %v, want a refusal flow explains itself", err)
+			}
+		})
+	}
+	if got := len(fake.Requests()); got != 0 {
+		t.Errorf("the provider was asked %d times about a status flow should never send", got)
+	}
+}
+
+func TestGitHubLeavesCommentsItDidNotWriteAlone(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	marker := core.NewMarker(core.MarkerPolicy, "pr", "1")
+
+	fake.addComment(1, "dev", "I think this is fine.")
+	fake.addComment(1, "flow", core.MarkBody("a follow-up", core.NewMarker(core.MarkerFollowUp, "check", "x"), true))
+
+	if err := adapter.UpsertComment(t.Context(), 1, marker, "two rules failed"); err != nil {
+		t.Fatalf("UpsertComment: %v", err)
+	}
+	if err := adapter.UpsertComment(t.Context(), 1, marker, "one rule failed"); err != nil {
+		t.Fatalf("UpsertComment again: %v", err)
+	}
+	comments := fake.commentsOn(1)
+	if len(comments) != 3 {
+		t.Fatalf("the pull request has %d comments, want the two it had and one of flow's", len(comments))
+	}
+	if comments[0].Body != "I think this is fine." {
+		t.Errorf("a person's comment was rewritten to %q", comments[0].Body)
+	}
+	if !strings.Contains(comments[1].Body, "a follow-up") {
+		t.Errorf("flow's comment about something else was rewritten to %q", comments[1].Body)
+	}
+	if !strings.Contains(comments[2].Body, "one rule failed") {
+		t.Errorf("the policy comment says %q, want the second body", comments[2].Body)
+	}
+	if !strings.Contains(comments[2].Body, marker.HTML()) {
+		t.Errorf("the marker is not an HTML comment: %q", comments[2].Body)
+	}
+
+	if err := adapter.DeleteComment(t.Context(), 1, marker); err != nil {
+		t.Fatalf("DeleteComment: %v", err)
+	}
+	if left := fake.commentsOn(1); len(left) != 2 {
+		t.Errorf("deleting flow's comment left %d comments, want the other two untouched", len(left))
+	}
+}
+
+func TestGitHubDoesNotEditACommentThatAlreadySaysThis(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	marker := core.NewMarker(core.MarkerPolicy, "pr", "1")
+
+	for range 3 {
+		if err := adapter.UpsertComment(t.Context(), 1, marker, "two rules failed"); err != nil {
+			t.Fatalf("UpsertComment: %v", err)
+		}
+	}
+	var written int
+	for _, method := range fake.Methods() {
+		if method == "POST" || method == "PATCH" {
+			written++
+		}
+	}
+	if written != 1 {
+		t.Errorf("the comment was written %d times, want once: saying the same thing again is not an edit", written)
+	}
+}
+
+func TestGitHubRefusesCommentsItCouldNotFindAgain(t *testing.T) {
+	fx := coretest.ContractForge()
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	if err := adapter.UpsertComment(t.Context(), 1, core.Marker{}, "a body"); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("UpsertComment with no marker = %v, want a refusal", err)
+	}
+	if _, err := adapter.Comment(t.Context(), 1, core.Marker{}); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("Comment with no marker = %v, want a refusal", err)
+	}
+}
+
+func TestGitHubReportsAMissingPullRequestWhenCommentingOnIt(t *testing.T) {
+	fx := coretest.ContractForge()
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	marker := core.NewMarker(core.MarkerPolicy, "pr", "4040")
+
+	if _, err := adapter.Comment(t.Context(), 4040, marker); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("Comment on a pull request that is not there = %v, want ErrNotFound", err)
+	}
+	if err := adapter.DeleteComment(t.Context(), 4040, marker); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("DeleteComment on a pull request that is not there = %v, want ErrNotFound", err)
+	}
+}
+
+func TestGitHubChangesOneRepositoryOneCallAtATime(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	marker := core.NewMarker(core.MarkerPolicy, "pr", "1")
+
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			body := "run " + strconv.Itoa(i)
+			if err := adapter.UpsertComment(t.Context(), 1, marker, body); err != nil {
+				t.Errorf("UpsertComment: %v", err)
+			}
+			status := core.CommitStatus{
+				Context:     "flow/policy",
+				State:       core.StatusFailure,
+				Description: body,
+			}
+			if err := adapter.SetCommitStatus(t.Context(), coretest.SHADeployed, status); err != nil {
+				t.Errorf("SetCommitStatus: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := fake.MostWriting(); got != 1 {
+		t.Errorf("%d changes to the repository were in flight at once, want them serialised", got)
+	}
+	if comments := fake.commentsOn(1); len(comments) != 1 {
+		t.Errorf("six concurrent runs left %d comments, want the one they all meant", len(comments))
+	}
 }

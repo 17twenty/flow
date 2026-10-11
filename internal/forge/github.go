@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/17twenty/flow/internal/core"
@@ -37,7 +38,16 @@ const (
 	// maxPages bounds a paginated read, so that a provider looping its own
 	// Link header cannot make flow walk forever.
 	maxPages = 500
+	// gitHubStatusDescription is the longest description GitHub keeps on a
+	// commit status.
+	gitHubStatusDescription = 140
 )
+
+// gitHubStatusStates are the states GitHub accepts on a commit status, which
+// are core's own (spec 10 §2).
+var gitHubStatusStates = []string{
+	core.StatusSuccess, core.StatusFailure, core.StatusPending, core.StatusError,
+}
 
 // GitHubHeader returns the headers every GitHub REST call carries. The root
 // passes it to [core.ClientOptions] so that the adapter and anything else
@@ -70,6 +80,11 @@ type GitHub struct {
 	owner  string
 	repo   string
 	caps   core.CapabilitySet
+	// writing serialises the calls that change the repository. GitHub's
+	// secondary rate limit counts concurrent mutations of one repository,
+	// and answers a burst of them with a refusal that costs more than the
+	// concurrency ever bought (spec 10 §2).
+	writing sync.Mutex
 }
 
 // NewGitHub returns an adapter for one repository.
@@ -308,29 +323,206 @@ func (g *GitHub) SetMergeSettings(ctx context.Context, s core.MergeSettings) err
 	return notYet("set the merge settings of %s", g.Slug())
 }
 
-// CommitStatuses returns the statuses on a commit. Plan item 3.2.
+// CommitStatuses returns the latest verdict from each context on a commit,
+// newest first. GitHub's endpoint is a history — every status ever published,
+// including the ones since replaced — and a history is not what a caller
+// asking "what do the checks say" means (spec 09 §2).
 func (g *GitHub) CommitStatuses(ctx context.Context, sha string) ([]core.CommitStatus, error) {
-	return nil, notYet("read the statuses on %s", sha)
+	if sha == "" {
+		return nil, core.Errorf(core.ErrValidation, "read the statuses on a commit of %s", g.Slug()).
+			WithWhy("no commit was named")
+	}
+	var (
+		statuses []core.CommitStatus
+		seen     = map[string]bool{}
+	)
+	req := core.Request{
+		Path:  g.path("commits", sha, "statuses"),
+		Query: url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+	}
+	err := paginate(ctx, g, req, func(s ghStatus) bool {
+		if seen[s.Context] {
+			return true
+		}
+		seen[s.Context] = true
+		statuses = append(statuses, s.toCommitStatus())
+		return true
+	})
+	if err != nil {
+		return nil, explain(err, "read the statuses on %s of %s", sha, g.Slug())
+	}
+	return statuses, nil
 }
 
-// SetCommitStatus publishes a status on a commit. Plan item 3.2.
+// SetCommitStatus publishes a status on a commit, unless that context already
+// says exactly this — GitHub keeps every status it is told, so publishing the
+// same verdict on every run would fill a commit's history with repetitions of
+// one sentence (spec 09 §2).
 func (g *GitHub) SetCommitStatus(ctx context.Context, sha string, s core.CommitStatus) error {
-	return notYet("publish the %s status on %s", s.Context, sha)
+	switch {
+	case sha == "":
+		return core.Errorf(core.ErrValidation, "publish a status on %s", g.Slug()).
+			WithWhy("no commit was named")
+	case s.Context == "":
+		return core.Errorf(core.ErrValidation, "publish a status on %s of %s", sha, g.Slug()).
+			WithWhy("the status names no context, so nothing could replace it later").
+			WithFix("give the status a context, such as flow/policy")
+	case !slices.Contains(gitHubStatusStates, s.State):
+		return core.Errorf(core.ErrValidation, "publish the %s status on %s of %s", s.Context, sha, g.Slug()).
+			WithWhy("%q is not a state a commit status can be in", s.State).
+			WithFix("use one of %s", strings.Join(gitHubStatusStates, ", "))
+	}
+	s.Description = truncate(s.Description, gitHubStatusDescription)
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	latest, err := g.latestStatus(ctx, sha, s.Context)
+	if err != nil {
+		return err
+	}
+	if latest != nil && latest.State == s.State && latest.Description == s.Description && latest.TargetURL == s.TargetURL {
+		return nil
+	}
+
+	req := core.Request{
+		Method: http.MethodPost,
+		Path:   g.path("statuses", sha),
+		Body: ghStatusRequest{
+			State:       s.State,
+			Context:     s.Context,
+			Description: s.Description,
+			TargetURL:   s.TargetURL,
+		},
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return explain(err, "publish the %s status on %s of %s", s.Context, sha, g.Slug())
+	}
+	return nil
 }
 
-// UpsertComment writes flow's comment on a pull request. Plan item 3.2.
+// latestStatus returns the newest status from one context, or nil. The walk
+// stops at the first one it finds, because GitHub serves them newest first.
+func (g *GitHub) latestStatus(ctx context.Context, sha, want string) (*core.CommitStatus, error) {
+	var found *core.CommitStatus
+	req := core.Request{
+		Path:    g.path("commits", sha, "statuses"),
+		Query:   url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+		NoCache: true,
+	}
+	err := paginate(ctx, g, req, func(s ghStatus) bool {
+		if s.Context != want {
+			return true
+		}
+		status := s.toCommitStatus()
+		found = &status
+		return false
+	})
+	if err != nil {
+		return nil, explain(err, "read the %s status on %s of %s", want, sha, g.Slug())
+	}
+	return found, nil
+}
+
+// UpsertComment writes flow's comment on a pull request, editing the one
+// carrying the marker rather than writing a second one. A pull request is an
+// issue to GitHub's comment endpoints, which is why they are addressed as one.
 func (g *GitHub) UpsertComment(ctx context.Context, number int, m core.Marker, body string) error {
-	return notYet("comment on pull request #%d", number)
+	if m.IsZero() {
+		return core.Errorf(core.ErrValidation, "comment on pull request #%d of %s", number, g.Slug()).
+			WithWhy("the comment carries no marker, so flow could never find it again").
+			WithFix("mark the comment with the kind of writing it is")
+	}
+	// GitHub keeps an HTML comment in a body and shows nobody, so the
+	// marker goes in one rather than on a visible line (spec 11 §1).
+	marked := core.MarkBody(body, m, true)
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	existing, err := g.findComment(ctx, number, m)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if existing.Body == marked {
+			return nil
+		}
+		req := core.Request{
+			Method: http.MethodPatch,
+			Path:   g.path("issues", "comments", existing.ID),
+			Body:   ghCommentRequest{Body: marked},
+		}
+		if _, err := g.do(ctx, req); err != nil {
+			return explain(err, "update flow's comment on pull request #%d of %s", number, g.Slug())
+		}
+		return nil
+	}
+
+	req := core.Request{
+		Method: http.MethodPost,
+		Path:   g.path("issues", strconv.Itoa(number), "comments"),
+		Body:   ghCommentRequest{Body: marked},
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return explain(err, "comment on pull request #%d of %s", number, g.Slug())
+	}
+	return nil
 }
 
-// Comment returns flow's marked comment on a pull request. Plan item 3.2.
+// Comment returns flow's marked comment on a pull request, or nil when there
+// is none. A pull request that is not there is an error; a comment that is not
+// there is an answer.
 func (g *GitHub) Comment(ctx context.Context, number int, m core.Marker) (*core.Comment, error) {
-	return nil, notYet("read flow's comment on pull request #%d", number)
+	return g.findComment(ctx, number, m)
 }
 
-// DeleteComment removes flow's marked comment. Plan item 3.2.
+// DeleteComment removes flow's marked comment. Deleting one that is not there
+// succeeds: the caller asked for it to be gone, and it is.
 func (g *GitHub) DeleteComment(ctx context.Context, number int, m core.Marker) error {
-	return notYet("delete flow's comment on pull request #%d", number)
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	existing, err := g.findComment(ctx, number, m)
+	if err != nil || existing == nil {
+		return err
+	}
+	req := core.Request{Method: http.MethodDelete, Path: g.path("issues", "comments", existing.ID)}
+	if _, err := g.do(ctx, req); err != nil {
+		// Somebody else deleting it first is the outcome that was wanted.
+		if errors.Is(err, core.ErrNotFound) {
+			return nil
+		}
+		return explain(err, "delete flow's comment on pull request #%d of %s", number, g.Slug())
+	}
+	return nil
+}
+
+// findComment returns the first comment on a pull request whose body carries a
+// marker the wanted one matches.
+func (g *GitHub) findComment(ctx context.Context, number int, m core.Marker) (*core.Comment, error) {
+	if m.IsZero() {
+		return nil, core.Errorf(core.ErrValidation, "find flow's comment on pull request #%d of %s", number, g.Slug()).
+			WithWhy("no marker was given, and flow does not read comments it did not write")
+	}
+	var found *core.Comment
+	req := core.Request{
+		Path:    g.path("issues", strconv.Itoa(number), "comments"),
+		Query:   url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+		NoCache: true,
+	}
+	err := paginate(ctx, g, req, func(c ghComment) bool {
+		comment, ok := c.toComment(m)
+		if !ok {
+			return true
+		}
+		found = &comment
+		return false
+	})
+	if err != nil {
+		return nil, explain(err, "read flow's comment on pull request #%d of %s", number, g.Slug())
+	}
+	return found, nil
 }
 
 // ProposeFiles offers a set of files as a pull request. Plan item 3.5.
@@ -418,6 +610,18 @@ func gitHubListState(state string) string {
 	default:
 		return "all"
 	}
+}
+
+// truncate shortens text to at most limit characters, marking that it did so.
+// A provider's own ceiling is the adapter's to keep: another forge has another
+// one, and a caller that overruns should still publish something readable
+// rather than be refused.
+func truncate(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return strings.TrimRight(string(runes[:limit-1]), " ") + "…"
 }
 
 // refOrDefault names the ref in a message when one was given.

@@ -125,3 +125,41 @@ duplicate-pipeline hazards). MR closing issues: `GET
   of acme/widget" — while keeping the sentinel `core.Client` derived from the
   status, so the exit code and the fix stay the provider's and only the
   sentence is flow's.
+- **§2 a commit's statuses are a state, not a history (item 3.2).**
+  `GET /commits/{sha}/statuses` returns every status ever published, newest
+  first, including the ones since replaced. `CommitStatuses` keeps the first it
+  sees from each context and drops the rest, because a caller asking what the
+  checks say means the verdict, not the argument that led to it. The combined
+  endpoint would collapse them too, but spec 10 §2 names this one and it is the
+  only one that can be paged.
+- **§2 a verdict already published is not published again (item 3.2).** GitHub
+  appends; it never replaces. A gate that runs on every push would otherwise
+  write the same sentence onto a commit until the status list is unreadable.
+  `SetCommitStatus` reads the newest status from its own context first and
+  returns without writing when the state, description and target URL all match
+  — spec 09 §2's "skip posting" rule, kept by the adapter so that every caller
+  gets it and no caller has to remember it. The read stops at the first status
+  from that context and is never served from the ETag cache: a verdict is a
+  thing flow is about to change.
+- **§2 GitHub's own ceiling on a description is the adapter's to keep (item
+  3.2).** 140 characters is GitHub's limit and another forge has another one, so
+  the adapter cuts a longer description on a rune boundary and marks the cut
+  with an ellipsis rather than being refused by the provider. A state GitHub
+  does not have, and a status with no context, are refused before anything is
+  sent: there is no honest way to publish either.
+- **§2 flow edits its own comment and nobody else's (item 3.2).** The comment
+  endpoints are addressed as issues, because a pull request is one to GitHub.
+  flow lists them, takes the first whose body carries a marker the wanted one
+  matches, and edits that; a comment with no marker, or with another kind of
+  marker, is somebody else's writing and is left alone. The marker goes in an
+  HTML comment, which GitHub keeps and shows nobody. Writing the body it
+  already has is not an edit, so a re-run does not bump the comment's
+  timestamp or re-notify everybody watching.
+- **§2 deleting a comment that is not there is success (item 3.2).** The caller
+  asked for it to be gone. A 404 from the delete itself — somebody got there
+  first — is the same outcome and is reported the same way.
+- **§2 mutations of one repository are serialised (item 3.2).** GitHub's
+  secondary rate limit counts concurrent writes to one repository and answers a
+  burst with a refusal that costs more than the concurrency bought. The adapter
+  holds one lock across each mutation, read-before-write included, so two
+  concurrent runs of the gate cannot both find no comment and both write one.
