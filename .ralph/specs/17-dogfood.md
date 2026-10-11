@@ -161,3 +161,27 @@ Each iteration, as the agent identity:
 | `live.transitions.native` | merged/closed → Done within 15 min |
 | `live.tickets.review_has_pr` | 100% |
 | `live.tickets.ready_dor` | 100% (issue forms guarantee AC) |
+
+## Decisions
+
+- **§1 builder identity: classic PAT for now, App deferred.** The topology table
+  names a GitHub App bot `17twenty-flow-agent[bot]` as the builder, and §1 states
+  the agent MUST use a different identity from the human. During v1 construction
+  the agent authenticates with a classic PAT belonging to `@17twenty` instead.
+  The reason is a product requirement, not convenience: flow must work across
+  forges, and a GitHub App is a GitHub-shaped answer that GitLab and others do
+  not share, so building against one would bake a GitHub assumption into the
+  adapter boundary that spec 10 exists to keep thin. A PAT is the lowest common
+  denominator every forge offers.
+
+  This has a consequence that is **not yet resolved**: a PR opened with
+  `@17twenty`'s credential is authored by `@17twenty`, who cannot approve it, so
+  `agent.human_review` and `live.prs.reviewed` become unsatisfiable the moment
+  the loop switches to `pr` mode (§5 Stage B). Until a second identity exists,
+  Stage B and the Stage C acceptance run (`flow doctor` green for 14 days) cannot
+  both hold. Git *authorship* is independent of the push credential, so commits
+  continue to be authored as `17twenty-flow-agent[bot]`; only API-created objects
+  carry the human's identity. Revisit before Stage B: either a second account, a
+  machine user, or an App used solely as a credential source for the GitHub
+  adapter while the adapter interface stays forge-neutral.
+

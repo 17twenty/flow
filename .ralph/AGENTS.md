@@ -4,19 +4,21 @@ CURRENT MODE: direct
 <!-- Human switches to `pr` at bootstrap Stage B (specs/17-dogfood.md §5). -->
 
 ## Identity
-- Act only as the GitHub App bot `17twenty-flow-agent[bot]` (GH_TOKEN = installation token).
-- Never act as @17twenty. Never approve PRs.
+- Auth: classic PAT (`GH_TOKEN`). The GitHub App is deferred — flow must stay forge-neutral (specs/17-dogfood.md Decisions).
+- Author commits as `17twenty-flow-agent[bot]`: `git -c user.name=... -c user.email=...`. Authorship is independent of the push credential.
+- Never approve PRs. API-created objects currently carry @17twenty — blocks `agent.human_review`; resolve before Stage B.
 
 ## Toolchain
-- Go: latest stable (`go version`). Module `github.com/17twenty/flow`, `package main` at root.
+- Go: the version in `go.mod` (CI uses `go-version-file`). Bump `go.mod` to upgrade; never let CI drift to `stable`.
+- Module `github.com/17twenty/flow`, `package main` at root.
 
 ## Commands
 - Build: `go build -o bin/flow .`   Run: `go run . <cmd>`
 - Test: `go test ./... -race -count=1`   One: `go test ./internal/commits -run TestParse -v -count=1`
 - Golden update: `go test ./internal/engine -run Golden -update`
 - CLI tests build with: `go build -tags flowtest`
-- Vet/static/vuln: `go vet ./...`; `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`; `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
-- Issues/Project: `gh issue view N`, `gh issue develop N --checkout`, `gh project item-list <n> --owner 17twenty --format json`
+- Vet/static/vuln: `go vet ./...`; `go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...`; `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
+- No `gh` on this machine: use `curl` against `api.github.com` with `GH_TOKEN`.
 
 ## Conventions (specs win)
 - YAML `go.yaml.in/yaml/v3` (strict). TOML `github.com/BurntSushi/toml`.
@@ -34,3 +36,5 @@ CURRENT MODE: direct
 - `invalid.txt` samples split cleanly: only those expecting `cc.header.format` must fail to parse; the rest must parse so the linter can judge them.
 - The commit corpus is the linter's contract: `# expect:` sets are matched exactly (no extras), and `TestCorpusCoversEveryRule` fails if a rule has no sample. Add a sample with the rule.
 - `internal/commits` must not import `internal/config` (spec 01 §2). Config maps into `commits.Settings` instead.
+- Unpinned analysers break CI with no repo change: `staticcheck@latest` cannot read Go 1.27 export data, so `go-version: stable` turned every push red. Pin the toolchain to `go.mod` and the analyser to a version.
+- Verify CI from the API after pushing — a green local tree proves nothing about the runner's Go version.
