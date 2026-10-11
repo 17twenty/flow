@@ -5,7 +5,9 @@
 package forge
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -752,9 +754,175 @@ func (g *GitHub) findComment(ctx context.Context, number int, m core.Marker) (*c
 	return found, nil
 }
 
-// ProposeFiles offers a set of files as a pull request. Plan item 3.5.
+// ProposeFiles offers a set of files as a pull request from the proposal's own
+// branch. flow never writes the default branch (spec 06 §4): the files are
+// committed to flow/setup-<id> and offered, and proposing the same id again
+// updates that branch and that pull request rather than opening another.
 func (g *GitHub) ProposeFiles(ctx context.Context, p core.FileProposal) (core.PullRequest, error) {
-	return core.PullRequest{}, notYet("propose %d files", len(p.Files))
+	switch {
+	case p.ID == "":
+		return core.PullRequest{}, core.Errorf(core.ErrValidation, "propose files to %s", g.Slug()).
+			WithWhy("the proposal has no id, so it has no branch").
+			WithFix("give the proposal an id, such as files")
+	case p.Title == "":
+		return core.PullRequest{}, core.Errorf(core.ErrValidation, "propose files to %s", g.Slug()).
+			WithWhy("the proposal has no title").
+			WithFix("title it as a conventional commit, such as chore(flow): add the policy workflow")
+	case len(p.Files) == 0:
+		return core.PullRequest{}, core.Errorf(core.ErrValidation, "propose files to %s", g.Slug()).
+			WithWhy("the proposal carries no files").
+			WithFix("name the files to propose")
+	}
+	for _, file := range p.Files {
+		if file.Path == "" {
+			return core.PullRequest{}, core.Errorf(core.ErrValidation, "propose files to %s", g.Slug()).
+				WithWhy("a file in the proposal has no path")
+		}
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	repo, err := g.Repo(ctx)
+	if err != nil {
+		return core.PullRequest{}, err
+	}
+	branch := p.Branch()
+	if err := g.ensureBranch(ctx, branch, repo.DefaultBranch); err != nil {
+		return core.PullRequest{}, err
+	}
+	for _, file := range p.Files {
+		if err := g.writeFile(ctx, branch, p.Title, file); err != nil {
+			return core.PullRequest{}, err
+		}
+	}
+	return g.offer(ctx, p, branch, repo.DefaultBranch)
+}
+
+// ensureBranch creates the proposal's branch at the tip of base when it is not
+// there. A branch that already exists is left where it is: it carries the
+// previous proposal, and resetting it would throw away a commit somebody may
+// have added to the pull request.
+func (g *GitHub) ensureBranch(ctx context.Context, branch, base string) error {
+	switch _, err := g.ref(ctx, branch); {
+	case err == nil:
+		return nil
+	case !errors.Is(err, core.ErrNotFound):
+		return err
+	}
+	from, err := g.ref(ctx, base)
+	if err != nil {
+		return err
+	}
+	req := core.Request{
+		Method: http.MethodPost,
+		Path:   g.path("git", "refs"),
+		Body:   ghRefRequest{Ref: "refs/heads/" + branch, SHA: from},
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return explain(err, "branch %s off %s of %s", branch, base, g.Slug())
+	}
+	return nil
+}
+
+// ref returns the commit a branch points at.
+func (g *GitHub) ref(ctx context.Context, branch string) (string, error) {
+	var payload ghRef
+	path := g.path("git", "ref", "heads/"+branch)
+	if _, err := g.do(ctx, core.Request{Path: path, Out: &payload}); err != nil {
+		return "", explain(err, "read the branch %s of %s", branch, g.Slug())
+	}
+	if payload.Object.SHA == "" {
+		return "", core.Errorf(core.ErrUnavailable, "read the branch %s of %s", branch, g.Slug()).
+			WithWhy("the forge named no commit for it")
+	}
+	return payload.Object.SHA, nil
+}
+
+// writeFile commits one file to the proposal's branch, and writes nothing when
+// the branch already holds exactly those bytes — a proposal re-run every hour
+// should not be a commit every hour.
+func (g *GitHub) writeFile(ctx context.Context, branch, message string, file core.ProposedFile) error {
+	var current ghContents
+	req := core.Request{
+		Path:  g.path("contents", file.Path),
+		Query: url.Values{"ref": []string{branch}},
+		Out:   &current,
+	}
+	switch _, err := g.do(ctx, req); {
+	case err == nil:
+		if held, ok := current.decoded(); ok && bytes.Equal(held, file.Content) {
+			return nil
+		}
+	case !errors.Is(err, core.ErrNotFound):
+		return explain(err, "read %s on %s of %s", file.Path, branch, g.Slug())
+	default:
+		current.SHA = ""
+	}
+
+	write := core.Request{
+		Method: http.MethodPut,
+		Path:   g.path("contents", file.Path),
+		Body: ghContentsRequest{
+			Message: message,
+			Content: base64.StdEncoding.EncodeToString(file.Content),
+			Branch:  branch,
+			SHA:     current.SHA,
+		},
+	}
+	if _, err := g.do(ctx, write); err != nil {
+		return explain(err, "write %s on %s of %s", file.Path, branch, g.Slug())
+	}
+	return nil
+}
+
+// offer opens the pull request for a proposal, or updates the one that is
+// already open for its branch.
+func (g *GitHub) offer(ctx context.Context, p core.FileProposal, branch, base string) (core.PullRequest, error) {
+	open, err := g.pullFromBranch(ctx, branch)
+	if err != nil {
+		return core.PullRequest{}, err
+	}
+	var payload ghPull
+	req := core.Request{Method: http.MethodPost, Path: g.path("pulls"), Out: &payload}
+	if open > 0 {
+		req.Method = http.MethodPatch
+		req.Path = g.path("pulls", strconv.Itoa(open))
+		req.Body = ghPullUpdate{Title: p.Title, Body: p.Body}
+	} else {
+		req.Body = ghPullCreate{Title: p.Title, Body: p.Body, Head: branch, Base: base}
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return core.PullRequest{}, explain(err, "offer %s to %s of %s", branch, base, g.Slug())
+	}
+	return payload.toPullRequest(), nil
+}
+
+// pullFromBranch returns the number of the open pull request coming from a
+// branch, or zero when there is none.
+func (g *GitHub) pullFromBranch(ctx context.Context, branch string) (int, error) {
+	var found int
+	req := core.Request{
+		Path: g.path("pulls"),
+		Query: url.Values{
+			"state":     []string{"open"},
+			"head":      []string{g.owner + ":" + branch},
+			"sort":      []string{"updated"},
+			"direction": []string{"desc"},
+			"per_page":  []string{strconv.Itoa(gitHubPageSize)},
+		},
+	}
+	err := paginate(ctx, g, req, func(pull ghPull) bool {
+		if pull.Head.Ref == branch {
+			found = pull.Number
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return 0, explain(err, "look for the pull request from %s of %s", branch, g.Slug())
+	}
+	return found, nil
 }
 
 // do sends one request with GitHub's media type and API version.

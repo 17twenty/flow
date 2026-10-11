@@ -227,3 +227,25 @@ duplicate-pipeline hazards). MR closing issues: `GET
   own message does not say which strategy to put back. The reply is compared
   with what was asked for, so an organisation policy that pins the strategies
   is reported as a conflict instead of passing as a write that did nothing.
+- **§2 a proposal is committed with the contents API, one file at a time (item
+  3.5).** §2's table names refs and contents, so that is what the adapter uses:
+  a branch off the trunk, then a write per file. The git data API would make
+  one commit of the lot, at the cost of blobs, a tree and a commit object to go
+  wrong; the branch is squashed when it merges, so the tidier history is one
+  nobody ever reads. Every write quotes the blob it replaces, which is what
+  stops flow from overwriting an edit somebody made to the proposal.
+- **§2 a file the branch already holds is not written again (item 3.5).** The
+  current content is read before each write and an identical one is skipped.
+  `flow apply` is meant to be safe to run on a timer, and a commit per run
+  would turn a proposal nobody has merged into a branch nobody can read.
+- **§2 the proposal's branch is created once and never reset (item 3.5).** A
+  branch that is already there carries the last proposal and may carry a commit
+  somebody added to the pull request; forcing it back to the trunk would throw
+  that away. flow writes the files it was given onto whatever is there, which
+  is what "updated in place" means.
+- **§2 the pull request is found by its head branch (item 3.5).** `flow/setup-
+  <id>` is the proposal's identity, so the open pull request from that branch is
+  the one to update — title and body are patched and no second one is opened.
+  Looking it up by the lock would make a proposal unfindable to anybody holding
+  a different lock, and GitHub refuses a second pull request from one branch
+  anyway.

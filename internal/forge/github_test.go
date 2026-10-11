@@ -1,8 +1,10 @@
 package forge
 
 import (
+	"bytes"
 	"errors"
 	"maps"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -84,6 +86,7 @@ func TestGitHubMeetsTheReadHalfOfTheContract(t *testing.T) {
 		"merge settings",
 		"a commit status replaces the last verdict from the same context",
 		"a comment is edited in place, found by its marker, and deleted once",
+		"files are proposed on their own branch and updated in place",
 	)
 }
 
@@ -519,8 +522,7 @@ func TestGitHubRefusesWhatItsPlanItemHasNotLanded(t *testing.T) {
 	ctx := t.Context()
 
 	calls := map[string]func() error{
-		"Probe":        func() error { _, err := adapter.Probe(ctx); return err },
-		"ProposeFiles": func() error { _, err := adapter.ProposeFiles(ctx, core.FileProposal{}); return err },
+		"Probe": func() error { _, err := adapter.Probe(ctx); return err },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
@@ -717,6 +719,84 @@ func TestSameProtectionComparesEveryFieldProtectionHas(t *testing.T) {
 		if sameProtection(core.Protection{}, changed) {
 			t.Errorf("sameProtection ignores Protection.%s, so a difference in it would never be written", field.Name)
 		}
+	}
+}
+
+func TestGitHubProposesOnItsOwnBranchAndNeverTheTrunk(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	workflow := ".github/workflows/flow.yml"
+	proposal := core.FileProposal{
+		ID:    "files",
+		Title: "chore(flow): add the policy workflow",
+		Body:  "flow proposes this.",
+		Files: []core.ProposedFile{{Path: workflow, Content: []byte("name: flow\non: [push]\n")}},
+	}
+
+	pr, err := adapter.ProposeFiles(t.Context(), proposal)
+	if err != nil {
+		t.Fatalf("ProposeFiles: %v", err)
+	}
+	if pr.HeadRef != "flow/setup-files" || pr.BaseRef != fx.Repo.DefaultBranch {
+		t.Errorf("the proposal is %s → %s, want flow/setup-files → %s", pr.HeadRef, pr.BaseRef, fx.Repo.DefaultBranch)
+	}
+	if got := fake.fileOn(fx.Repo.DefaultBranch, workflow); !bytes.Equal(got, fx.Files[workflow]) {
+		t.Errorf("the trunk now holds %q; flow never writes the default branch", got)
+	}
+	if got := fake.fileOn("flow/setup-files", workflow); !bytes.Equal(got, proposal.Files[0].Content) {
+		t.Errorf("the branch holds %q, want the proposed content", got)
+	}
+}
+
+func TestGitHubCommitsNothingWhenTheBranchAlreadyHoldsTheProposal(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	proposal := core.FileProposal{
+		ID:    "files",
+		Title: "chore(flow): add the policy workflow",
+		Files: []core.ProposedFile{{Path: "docs/flow.md", Content: []byte("# flow\n")}},
+	}
+	if _, err := adapter.ProposeFiles(t.Context(), proposal); err != nil {
+		t.Fatalf("ProposeFiles: %v", err)
+	}
+
+	before := len(fake.Methods())
+	if _, err := adapter.ProposeFiles(t.Context(), proposal); err != nil {
+		t.Fatalf("ProposeFiles again: %v", err)
+	}
+	for i, method := range fake.Methods()[before:] {
+		if method == http.MethodPut {
+			t.Errorf("the second proposal rewrote %s; the branch already held it", fake.Requests()[before+i])
+		}
+		if method == http.MethodPost {
+			t.Errorf("the second proposal posted to %s; the branch and the pull request were already there", fake.Requests()[before+i])
+		}
+	}
+}
+
+func TestGitHubRefusesAProposalThatCouldNotBeOffered(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	file := core.ProposedFile{Path: "a.txt", Content: []byte("a")}
+
+	cases := map[string]core.FileProposal{
+		"no id":    {Title: "chore(flow): x", Files: []core.ProposedFile{file}},
+		"no title": {ID: "files", Files: []core.ProposedFile{file}},
+		"no files": {ID: "files", Title: "chore(flow): x"},
+		"no path":  {ID: "files", Title: "chore(flow): x", Files: []core.ProposedFile{{Content: []byte("a")}}},
+	}
+	for name, proposal := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := adapter.ProposeFiles(t.Context(), proposal); !errors.Is(err, core.ErrValidation) {
+				t.Fatalf("ProposeFiles = %v, want it refused as validation", err)
+			}
+		})
+	}
+	if len(fake.Requests()) != 0 {
+		t.Errorf("a proposal flow could not make was sent anyway: %v", fake.Requests())
 	}
 }
 

@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"slices"
 	"strconv"
@@ -534,6 +535,71 @@ func mergeRequest(s core.MergeSettings) ghRepoRequest {
 		SquashMergeCommitMessage: squashMessageToGitHub(s.SquashMessage),
 		DeleteBranchOnMerge:      s.DeleteBranchOnMerge,
 	}
+}
+
+// ghRef is GET /repos/{owner}/{repo}/git/ref/{ref}.
+type ghRef struct {
+	Ref    string `json:"ref"`
+	Object struct {
+		SHA  string `json:"sha"`
+		Type string `json:"type"`
+	} `json:"object"`
+}
+
+// ghRefRequest is POST /repos/{owner}/{repo}/git/refs.
+type ghRefRequest struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
+}
+
+// ghContents is GET /repos/{owner}/{repo}/contents/{path} asked for as JSON,
+// which carries the blob's identity as well as its bytes. The identity is
+// what an update has to quote, so this is read even though [GitHub.File]
+// fetches the bytes raw.
+type ghContents struct {
+	Path     string `json:"path"`
+	SHA      string `json:"sha"`
+	Content  string `json:"content"`
+	Encoding string `json:"encoding"`
+}
+
+// decoded returns the file's bytes, reporting false when GitHub sent an
+// encoding it did not promise or left the content out, which it does for a
+// file too large to inline.
+func (c ghContents) decoded() ([]byte, bool) {
+	if c.Encoding != "base64" {
+		return nil, false
+	}
+	// GitHub wraps the base64 at 60 columns, which the decoder will not
+	// have.
+	raw, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(c.Content), ""))
+	if err != nil {
+		return nil, false
+	}
+	return raw, true
+}
+
+// ghContentsRequest is PUT /repos/{owner}/{repo}/contents/{path}. SHA names
+// the blob being replaced and is left out when the file is new.
+type ghContentsRequest struct {
+	Message string `json:"message"`
+	Content string `json:"content"`
+	Branch  string `json:"branch"`
+	SHA     string `json:"sha,omitempty"`
+}
+
+// ghPullCreate is POST /repos/{owner}/{repo}/pulls.
+type ghPullCreate struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Head  string `json:"head"`
+	Base  string `json:"base"`
+}
+
+// ghPullUpdate is PATCH /repos/{owner}/{repo}/pulls/{number}.
+type ghPullUpdate struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
 }
 
 // ghRepoRequest is the body of PATCH /repos/{owner}/{repo}. Merge strategies

@@ -141,7 +141,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 3.4 GitHub: rulesets/protection read, additive required check, merge settings — specs: 10 §2, 06 §4 — deps: 3.1 (#48)
   - note: GitHub protects a branch two ways, so flow reads both and folds them into one answer: a check required by either is required, and a rule that forbids force-pushing wins over a classic protection that permits it. The classic PUT replaces the whole of a branch's protection, so the merge happens in the adapter against what the branch says now — which is where additivity lives. Protection either mechanism already provides is not written again, taking protection off is refused, and merge strategies are written whole and read back so a pinned repository is a conflict rather than a silent no-op.
   - AC: existing required contexts preserved
-- [ ] 3.5 GitHub: file proposal via PR — specs: 06 §4 — deps: 3.1 (#49)
+- [x] 3.5 GitHub: file proposal via PR — specs: 06 §4 — deps: 3.1 (#49)
+  - note: refs and contents, as spec 10 §2 says: branch off the trunk once, write each file quoting the blob it replaces, then open the pull request from that branch or patch the one already open. A file the branch already holds is not written again, so a proposal left unmerged does not grow a commit per apply. The trunk is never written, and a proposal flow could not offer — no id, title, files or path — is refused before anything is sent.
   - AC: re-run updates the same PR
 - [ ] 3.6 GitHub: deployments read — specs: 13 §3 — deps: 3.1 (#50)
   - AC: newest successful per env; ancestry via compare cached

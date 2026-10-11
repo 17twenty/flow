@@ -1,10 +1,14 @@
 package forge
 
 import (
+	"bytes"
+	"cmp"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -54,6 +58,12 @@ type gitHubFake struct {
 	// fixedMerge makes the repository ignore a change to its merge
 	// settings, as an organisation policy that pins them does.
 	fixedMerge bool
+	// branches holds each branch's files, keyed by branch then path, and
+	// refs the commit each branch points at. A file is read and written on
+	// a branch, which is how a proposal keeps off the trunk.
+	branches map[string]map[string][]byte
+	refs     map[string]string
+	nextPR   int
 
 	mu          sync.Mutex
 	requests    []string
@@ -75,6 +85,16 @@ func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *http
 		userAgents:  map[string]int{},
 		protections: map[string]core.Protection{},
 		rules:       map[string][]any{},
+		branches:    map[string]map[string][]byte{},
+		refs:        map[string]string{},
+	}
+	fake.branches[fx.Repo.DefaultBranch] = maps.Clone(fx.Files)
+	if fake.branches[fx.Repo.DefaultBranch] == nil {
+		fake.branches[fx.Repo.DefaultBranch] = map[string][]byte{}
+	}
+	fake.refs[fx.Repo.DefaultBranch] = coretest.SHADeployed
+	for _, pr := range fx.PullRequests {
+		fake.nextPR = max(fake.nextPR, pr.Number)
 	}
 	for branch, protection := range fx.Protections {
 		fake.protections[branch] = protection
@@ -211,8 +231,12 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.patchRepo(w, r)
 	case len(segments) == 0:
 		f.writeJSON(w, r, ghRepoJSON(f.fx.Repo))
+	case segments[0] == "pulls" && len(segments) == 1 && r.Method == http.MethodPost:
+		f.openPull(w, r)
 	case segments[0] == "pulls" && len(segments) == 1:
 		f.pulls(w, r)
+	case segments[0] == "pulls" && len(segments) == 2 && r.Method == http.MethodPatch:
+		f.editPull(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 2:
 		f.pull(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "reviews":
@@ -233,6 +257,10 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.protection(w, r, strings.Join(segments[1:len(segments)-1], "/"))
 	case segments[0] == "rules" && len(segments) > 2 && segments[1] == "branches":
 		f.branchRules(w, r, strings.Join(segments[2:], "/"))
+	case segments[0] == "git" && len(segments) == 2 && segments[1] == "refs":
+		f.createRef(w, r)
+	case segments[0] == "git" && len(segments) > 3 && segments[1] == "ref" && segments[2] == "heads":
+		f.readRef(w, r, strings.Join(segments[3:], "/"))
 	case segments[0] == "compare" && len(segments) > 1:
 		f.compare(w, r, strings.Join(segments[1:], "/"))
 	case segments[0] == "contents" && len(segments) > 1:
@@ -251,6 +279,8 @@ func (f *gitHubFake) pulls(w http.ResponseWriter, r *http.Request) {
 	}
 	state := query.Get("state")
 	base := query.Get("base")
+	// head is owner-qualified, as GitHub insists.
+	head := strings.TrimPrefix(query.Get("head"), f.fx.Repo.Owner+":")
 
 	prs := slices.Clone(f.fx.PullRequests)
 	sort.SliceStable(prs, func(i, j int) bool { return prs[i].UpdatedAt.After(prs[j].UpdatedAt) })
@@ -258,6 +288,9 @@ func (f *gitHubFake) pulls(w http.ResponseWriter, r *http.Request) {
 	var page []any
 	for _, pr := range prs {
 		if base != "" && pr.BaseRef != base {
+			continue
+		}
+		if head != "" && pr.HeadRef != head {
 			continue
 		}
 		switch state {
@@ -751,18 +784,220 @@ func (f *gitHubFake) graphQLError(w http.ResponseWriter, r *http.Request, kind, 
 	})
 }
 
-// contents serves a file's bytes, as the raw media type does.
+// contents serves a file's bytes raw, its identity as JSON, and writes it
+// back. A file belongs to a branch, which is what keeps a proposal off the
+// trunk.
 func (f *gitHubFake) contents(w http.ResponseWriter, r *http.Request, path string) {
-	content, ok := f.fx.Files[path]
+	if r.Method == http.MethodPut {
+		f.writeContents(w, r, path)
+		return
+	}
+	branch := cmp.Or(r.URL.Query().Get("ref"), f.fx.Repo.DefaultBranch)
+	f.mu.Lock()
+	files, known := f.branches[branch]
+	content, ok := files[path]
+	f.mu.Unlock()
+	if !known {
+		f.fail(w, http.StatusNotFound, "No commit found for the ref "+branch)
+		return
+	}
 	if !ok {
 		f.fail(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if r.Header.Get("Accept") != gitHubRaw {
-		f.fail(w, http.StatusNotAcceptable, "a file must be asked for raw")
+	if r.Header.Get("Accept") == gitHubRaw {
+		f.write(w, r, http.StatusOK, content, "text/plain")
 		return
 	}
-	f.write(w, r, http.StatusOK, content, "text/plain")
+	f.writeJSON(w, r, map[string]any{
+		"path":     path,
+		"sha":      blobSHA(content),
+		"encoding": "base64",
+		// GitHub wraps the base64 it sends, and a decoder that does not
+		// expect the newlines fails on the real thing.
+		"content": wrap(base64.StdEncoding.EncodeToString(content), 60),
+		"type":    "file",
+	})
+}
+
+// writeContents commits a file to a branch. GitHub refuses a write that does
+// not quote the blob being replaced, which is what stops two writers from
+// losing each other's work.
+func (f *gitHubFake) writeContents(w http.ResponseWriter, r *http.Request, path string) {
+	var body ghContentsRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the file did not decode: "+err.Error())
+		return
+	}
+	content, err := base64.StdEncoding.DecodeString(body.Content)
+	if err != nil {
+		f.fail(w, http.StatusBadRequest, "the content is not base64")
+		return
+	}
+	if body.Message == "" {
+		f.fail(w, http.StatusUnprocessableEntity, "Invalid request: message is required")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	files, known := f.branches[body.Branch]
+	if !known {
+		f.fail(w, http.StatusNotFound, "Branch "+body.Branch+" not found")
+		return
+	}
+	if held, ok := files[path]; ok && body.SHA != blobSHA(held) {
+		f.fail(w, http.StatusConflict, path+" does not match "+body.SHA)
+		return
+	} else if !ok && body.SHA != "" {
+		f.fail(w, http.StatusUnprocessableEntity, path+" does not exist")
+		return
+	}
+	files[path] = content
+	f.refs[body.Branch] = blobSHA(content)
+	f.writeJSON(w, r, map[string]any{
+		"content": map[string]any{"path": path, "sha": blobSHA(content)},
+		"commit":  map[string]any{"sha": f.refs[body.Branch]},
+	})
+}
+
+// fileOn returns a file as a branch holds it.
+func (f *gitHubFake) fileOn(branch, path string) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.branches[branch][path]
+}
+
+// readRef serves the commit a branch points at.
+func (f *gitHubFake) readRef(w http.ResponseWriter, r *http.Request, branch string) {
+	f.mu.Lock()
+	sha, ok := f.refs[branch]
+	f.mu.Unlock()
+	if !ok {
+		f.fail(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	f.writeJSON(w, r, map[string]any{
+		"ref":    "refs/heads/" + branch,
+		"object": map[string]any{"sha": sha, "type": "commit"},
+	})
+}
+
+// createRef branches off a commit, taking that commit's files with it.
+func (f *gitHubFake) createRef(w http.ResponseWriter, r *http.Request) {
+	var body ghRefRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the ref did not decode: "+err.Error())
+		return
+	}
+	branch, ok := strings.CutPrefix(body.Ref, "refs/heads/")
+	if !ok || body.SHA == "" {
+		f.fail(w, http.StatusUnprocessableEntity, "Invalid request: ref and sha are required")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, exists := f.refs[branch]; exists {
+		f.fail(w, http.StatusUnprocessableEntity, "Reference already exists")
+		return
+	}
+	files := map[string][]byte{}
+	for from, sha := range f.refs {
+		if sha == body.SHA {
+			files = maps.Clone(f.branches[from])
+			break
+		}
+	}
+	f.refs[branch] = body.SHA
+	f.branches[branch] = files
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ref":    body.Ref,
+		"object": map[string]any{"sha": body.SHA, "type": "commit"},
+	})
+}
+
+// openPull opens a pull request, refusing one from a branch that is no
+// different from its base, as GitHub does.
+func (f *gitHubFake) openPull(w http.ResponseWriter, r *http.Request) {
+	var body ghPullCreate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the pull request did not decode: "+err.Error())
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if body.Title == "" || body.Head == "" || body.Base == "" {
+		f.fail(w, http.StatusUnprocessableEntity, "Invalid request: title, head and base are required")
+		return
+	}
+	if _, ok := f.refs[body.Head]; !ok {
+		f.fail(w, http.StatusUnprocessableEntity, "Field head is invalid")
+		return
+	}
+	if maps.EqualFunc(f.branches[body.Head], f.branches[body.Base], bytes.Equal) {
+		f.fail(w, http.StatusUnprocessableEntity, "No commits between "+body.Base+" and "+body.Head)
+		return
+	}
+	f.nextPR++
+	pr := core.PullRequest{
+		Number:    f.nextPR,
+		Title:     body.Title,
+		Body:      body.Body,
+		Author:    "flow",
+		State:     core.PRStateOpen,
+		HeadRef:   body.Head,
+		HeadSHA:   f.refs[body.Head],
+		BaseRef:   body.Base,
+		CreatedAt: coretest.ContractNow,
+		UpdatedAt: coretest.ContractNow,
+		URL:       f.fx.Repo.URL + "/pull/" + strconv.Itoa(f.nextPR),
+	}
+	f.fx.PullRequests = append(f.fx.PullRequests, pr)
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(ghPullJSON(pr, true))
+}
+
+// editPull changes an open pull request's title and body.
+func (f *gitHubFake) editPull(w http.ResponseWriter, r *http.Request, raw string) {
+	var body ghPullUpdate
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the pull request did not decode: "+err.Error())
+		return
+	}
+	number, err := strconv.Atoi(raw)
+	if err != nil {
+		f.fail(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, pr := range f.fx.PullRequests {
+		if pr.Number != number {
+			continue
+		}
+		pr.Title, pr.Body, pr.UpdatedAt = body.Title, body.Body, coretest.ContractNow
+		f.fx.PullRequests[i] = pr
+		f.writeJSON(w, r, ghPullJSON(pr, true))
+		return
+	}
+	f.fail(w, http.StatusNotFound, "Not Found")
+}
+
+// blobSHA is the identity a file's bytes have, as git gives one.
+func blobSHA(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:20])
+}
+
+// wrap breaks a string into lines of at most n characters, as GitHub wraps
+// the base64 of a file.
+func wrap(text string, n int) string {
+	var lines []string
+	for len(text) > n {
+		lines = append(lines, text[:n])
+		text = text[n:]
+	}
+	return strings.Join(append(lines, text), "\n")
 }
 
 // findPull returns the fixture's pull request by number.
