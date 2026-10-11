@@ -48,3 +48,31 @@ status + "pipelines must succeed" (pass `pipeline_id` of the MR pipeline to avoi
 duplicate-pipeline hazards). MR closing issues: `GET
 /projects/:id/merge_requests/:iid/closes_issues` (structured). Deployments:
 `GET /projects/:id/deployments?environment=&status=success`.
+
+## Decisions
+
+- **§1 detection is split: parsing now, probing with the adapters (item
+  1.11).** `internal/git.ParseRemote` turns a remote URL into host, owner and
+  repository; deciding what a non-`github.com` host *is* needs `core.Client` and
+  belongs with the adapters that do the probing (items 3.1, 3.7). Nothing in
+  `internal/git` touches the network.
+- **§1 the scp-like form is recognised by git's own rule (item 1.11).** A colon
+  that comes before any slash makes `[user@]host:path`; anything else is a URL
+  or a path on this machine. Reimplementing a cleverer rule would disagree with
+  git about somebody's remote, which is the one thing the parser must never do.
+- **§1 owner is everything above the repository (item 1.11).** GitLab nests
+  groups arbitrarily deep, so `Owner` is the whole path above the final
+  segment — `acme/platform/tooling` — and `Repo` is the last segment with one
+  `.git` suffix removed. A URL that names a host but no owner is refused rather
+  than half-parsed: every forge flow speaks to addresses repositories as
+  `owner/name`.
+- **§1 a remote URL never carries a credential out of the parser (item
+  1.11).** `https://<token>@host/owner/repo` is a working clone URL, so
+  `Remote.URL` is rebuilt without any userinfo and `Remote.User` is populated
+  only for ssh, where the user names an account rather than hides a secret.
+  Spec 15 §2's redactor cannot help here: a bare token in the userinfo position
+  matches no known shape once it is somebody's custom forge token.
+- **§1 a local path is parsed, not refused (item 1.11).** `/srv/git/flow.git`
+  and `file://…` remotes give a `Remote` with no host, which `Local()` reports.
+  Detection then has something honest to say — flow cannot talk to it — instead
+  of the parser failing on a repository that is otherwise fine.

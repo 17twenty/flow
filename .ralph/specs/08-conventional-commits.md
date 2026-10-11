@@ -110,3 +110,14 @@ invalid samples preceded by `# expect: <rule-ids>`). NOTE: these seeds include
   comments.** git strips comment lines before applying its own cleanup, so a
   blank inserted after an intervening comment would not survive to separate
   header from body.
+- **§1 git parses trailers, and `BREAKING CHANGE:` is not one (item 1.11).**
+  `internal/git.Trailers` shells out to `git interpret-trailers --parse`, so a
+  repository's own `trailer.*` settings decide where the trailer block starts
+  and folded values are unfolded for free. git requires a trailer key to be a
+  single token, so Conventional Commits' `BREAKING CHANGE:` footer is body text
+  to it: `internal/commits` finds that footer itself and must keep doing so.
+- **§1 `core.commentChar: auto` reads as unset (item 1.11).** With `auto`, git
+  picks a character per message that does not appear in it. flow cannot predict
+  the choice, so `Repo.CommentChar` reports no character and the caller keeps
+  git's default `#`. The alternative — guessing — would strip a line somebody
+  meant to keep.

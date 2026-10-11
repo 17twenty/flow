@@ -45,6 +45,7 @@ No other packages. New packages require a proposal in `IMPLEMENTATION_PLAN.md`
 - `forge`, `tracker`, `deploys` → `core` only. Never each other, never `engine`.
 - `commits` → stdlib only.
 - `config` → `core`.
+- `git` → `core`.
 - `engine` → `core`, `config`, `commits`, `git` and adapter INTERFACES (concrete
   adapters injected from `cli.go`).
 - `ui` → `core`, `engine` result types. Never adapters.
@@ -130,3 +131,14 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
 - Deterministic output ordering everywhere (plans, lock, JSON).
 - JSON types in `core/jsonapi.go` with `"schema": "flow.<kind>/v1"`.
 - Every exported identifier documented. Files < 800 lines.
+
+## Decisions
+
+- **§2 `git` → `core` (item 1.11).** §2 listed every package's dependencies but
+  `git`'s. It takes `core`, like `config` does, so that a git that refuses can
+  be reported in the same what/why/fix shape as everything else and mapped to
+  an exit code. It takes nothing else, and never the network.
+- **§1 `internal/git` is read-only (item 1.11).** Every command it runs answers
+  a question; none changes a repository. Writing — the commit-msg hook (item
+  1.13) — is the root package's job, through the ordinary file system, so there
+  is no path by which reading state can alter it.

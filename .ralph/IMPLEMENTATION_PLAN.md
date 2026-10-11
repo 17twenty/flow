@@ -62,7 +62,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: struct↔schema parity test; go generate writes assets/schema/flow.v1.json; staleness test
 - [ ] 1.10 Presets embedded and valid — specs: 03 §7 — deps: 1.6 (#23)
   - AC: lean-kanban, deploy-done, minimal decode + validate; golden
-- [ ] 1.11 internal/git — specs: 01 §1, 10 §1 — deps: 0.2 (#24)
+- [x] 1.11 internal/git — specs: 01 §1, 10 §1 — deps: 0.2 (#24)
+  - note: read-only exec git. Remote parsing drops credentials from the URL; an unborn HEAD is an empty log rather than an error; detached HEAD reports no branch; trailers come from git itself, which does not treat BREAKING CHANGE as one. Forge detection's probing half stays with the adapters (3.1, 3.7).
   - AC: root, remote parsing (SSH/HTTPS/subgroups), log range, hooks path, ls-files tracked, interpret-trailers parsing
 - [ ] 1.12 UI styles and plain/markdown/JSON renderers — specs: 12 — deps: 0.3 (#25)
   - AC: golden renders for sample plan and doctor results; ASCII + NO_COLOR
