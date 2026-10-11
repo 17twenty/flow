@@ -305,7 +305,7 @@ func TestParseStripsComments(t *testing.T) {
 func TestParseCustomCommentChar(t *testing.T) {
 	t.Parallel()
 	in := "; a comment\nfix(ui): tidy\n\n# not a comment here\n; also a comment"
-	m := commits.ParseWithOptions(in, commits.Options{CommentChar: ';'})
+	m := commits.ParseWithOptions(in, commits.ParseOptions{CommentChar: ';'})
 	if m.Header != "fix(ui): tidy" {
 		t.Errorf("Header = %q", m.Header)
 	}
@@ -334,7 +334,7 @@ func TestParseScissors(t *testing.T) {
 func TestParseScissorsCustomCommentChar(t *testing.T) {
 	t.Parallel()
 	in := "fix: x\n\nBody.\n; ------------------------ >8 ------------------------\ndiff --git a/x b/x"
-	m := commits.ParseWithOptions(in, commits.Options{CommentChar: ';'})
+	m := commits.ParseWithOptions(in, commits.ParseOptions{CommentChar: ';'})
 	if m.Body != "Body." {
 		t.Errorf("Body = %q, want the scissors section dropped", m.Body)
 	}

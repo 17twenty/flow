@@ -56,7 +56,7 @@ func (k Kind) String() string {
 const defaultCommentChar = '#'
 
 // Options tunes parsing for one repository.
-type Options struct {
+type ParseOptions struct {
 	// CommentChar begins a git comment line. Zero means git's default, '#'.
 	// Callers read the real value from core.commentChar via internal/git.
 	CommentChar byte
@@ -125,11 +125,11 @@ func (m Message) Conventional() bool { return m.Type != "" }
 func (m Message) HeaderLen() int { return utf8.RuneCountInString(m.Header) }
 
 // Parse parses a commit message using git's default comment character.
-func Parse(raw string) Message { return ParseWithOptions(raw, Options{}) }
+func Parse(raw string) Message { return ParseWithOptions(raw, ParseOptions{}) }
 
 // ParseWithOptions parses a commit message. It never returns an error: callers
 // inspect Type to learn whether the header is conventional.
-func ParseWithOptions(raw string, opts Options) Message {
+func ParseWithOptions(raw string, opts ParseOptions) Message {
 	m := Message{Raw: raw}
 
 	comment := opts.CommentChar

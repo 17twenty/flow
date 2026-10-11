@@ -32,3 +32,5 @@ CURRENT MODE: direct
 - Signal tests: `signal.Notify` in the test first, so a signal landing before `run()` registers cannot kill the test process.
 - GitHub push protection rejects token-shaped literals even in test fixtures. Assemble fake credentials from concatenated parts at run time.
 - `invalid.txt` samples split cleanly: only those expecting `cc.header.format` must fail to parse; the rest must parse so the linter can judge them.
+- The commit corpus is the linter's contract: `# expect:` sets are matched exactly (no extras), and `TestCorpusCoversEveryRule` fails if a rule has no sample. Add a sample with the rule.
+- `internal/commits` must not import `internal/config` (spec 01 §2). Config maps into `commits.Settings` instead.

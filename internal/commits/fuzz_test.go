@@ -10,75 +10,6 @@ import (
 	"github.com/17twenty/flow/internal/commits"
 )
 
-// corpusDir holds the shared commit samples used by the linter tests and as
-// fuzz seeds.
-const corpusDir = "../../assets/testdata/commits"
-
-// readSamples returns the samples in one corpus file. Samples are separated by
-// a line containing only "---" (spec 08 §4).
-func readSamples(t *testing.T, name string) []string {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(corpusDir, name))
-	if err != nil {
-		t.Fatalf("read corpus %s: %v", name, err)
-	}
-	var out []string
-	for _, sample := range strings.Split(string(raw), "\n---\n") {
-		if strings.TrimSpace(sample) != "" {
-			out = append(out, sample)
-		}
-	}
-	return out
-}
-
-// The corpus must actually exist and hold samples, or the fuzz seeds below are
-// silently empty.
-func TestCorpusIsReadable(t *testing.T) {
-	t.Parallel()
-	for _, name := range []string{"valid.txt", "invalid.txt"} {
-		if got := readSamples(t, name); len(got) < 5 {
-			t.Errorf("%s yielded %d samples, want a populated corpus", name, len(got))
-		}
-	}
-}
-
-// Every sample in valid.txt must parse as a Conventional Commit. The seeds
-// carry footers from an earlier design, which this package ignores: trailers
-// are read by internal/git, not here (spec 08 §1).
-func TestCorpusValidSamplesParse(t *testing.T) {
-	t.Parallel()
-	for _, sample := range readSamples(t, "valid.txt") {
-		m := commits.Parse(sample)
-		if !m.Conventional() {
-			t.Errorf("valid corpus sample did not parse:\n%s", sample)
-		}
-	}
-}
-
-// Samples whose expectation is cc.header.format must fail to parse; every other
-// invalid sample must parse, since its problem is a linter rule, not grammar.
-func TestCorpusInvalidSamplesMatchHeaderFormat(t *testing.T) {
-	t.Parallel()
-	for _, sample := range readSamples(t, "invalid.txt") {
-		expectsFormat := strings.Contains(firstLine(sample), "cc.header.format")
-		m := commits.Parse(sample)
-		if expectsFormat && m.Conventional() {
-			t.Errorf("sample expecting cc.header.format parsed anyway:\n%s", sample)
-		}
-		if !expectsFormat && !m.Conventional() {
-			t.Errorf("sample expecting a non-grammar rule failed to parse:\n%s", sample)
-		}
-	}
-}
-
-// firstLine returns the first line of s.
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
 // FuzzParse checks that parsing never panics and that a Message which claims to
 // be conventional is internally consistent, whatever the input.
 func FuzzParse(f *testing.F) {
@@ -103,7 +34,7 @@ func FuzzParse(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, raw string, commentChar byte) {
-		m := commits.ParseWithOptions(raw, commits.Options{CommentChar: commentChar})
+		m := commits.ParseWithOptions(raw, commits.ParseOptions{CommentChar: commentChar})
 
 		if m.Raw != raw {
 			t.Fatalf("Raw was modified: %q != %q", m.Raw, raw)

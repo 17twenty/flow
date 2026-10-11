@@ -35,7 +35,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - note: internal/commits/parse.go; never errors, 26M fuzz execs clean
   - AC: table tests (scopes, `!`, comment char, scissors, merge/revert/fixup)
   - AC: FuzzParse seeded from assets/testdata/commits; no panics
-- [ ] 1.2 Linter rules and v2 seed data — specs: 08 §2, §4 — deps: 1.1
+- [x] 1.2 Linter rules and v2 seed data — specs: 08 §2, §4 — deps: 1.1  
+  - note: all 9 rules; corpus rewritten to v2 ids, decisions in spec 08
   - AC: every v2 rule id implemented with column + fix text
   - AC: seed files rewritten to v2 rule ids; valid.txt → zero errors; invalid.txt → exact expected sets
 - [ ] 1.3 Safe autofix and `flow check commit` — specs: 08 §3, 02 §2 — deps: 1.2

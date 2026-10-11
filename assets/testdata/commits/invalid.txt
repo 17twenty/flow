@@ -1,80 +1,51 @@
 # expect: cc.header.format
 Added CSV export
 ---
+# expect: cc.header.format
+feat(billing) add CSV export
+---
+# expect: cc.header.format
+feat(billing):add CSV export
+---
+# expect: cc.header.format
+feat(): add CSV export
+---
 # expect: cc.type.allowed
 feature(billing): add CSV export
-
-Refs: HPB-123
 ---
 # expect: cc.type.allowed
 Feat(billing): add CSV export
-
-Refs: HPB-123
----
-# expect: cc.description.period
-fix: handle empty VM list.
-
-Refs: HPB-200
----
-# expect: cc.description.case
-fix: Handle empty VM list
-
-Refs: HPB-200
----
-# expect: cc.description.imperative
-fix: fixed empty VM list crash
-
-Refs: HPB-200
 ---
 # expect: cc.header.length
 feat(billing): add a CSV export for invoices that includes every line item and tax breakdown
-
-Refs: HPB-123
+---
+# expect: cc.description.case
+fix: Handle empty VM list
+---
+# expect: cc.description.period
+fix: handle empty VM list.
+---
+# expect: cc.description.case, cc.description.period
+docs: Clarify GPU quota limits.
 ---
 # expect: cc.body.leading_blank
 fix: handle empty VM list
 The dashboard crashed.
-
-Refs: HPB-200
 ---
-# expect: cc.footer.ticket
-feat(billing): add CSV export
----
-# expect: cc.footer.ticket
-fix: handle empty VM list
-
-Refs: not-a-key
----
-# expect: cc.breaking.description
+# expect: cc.breaking.explained
 feat(api)!: drop v1 volume endpoints
-
-Refs: HPB-310
 ---
-# expect: cc.trailer.flag.name
-feat(billing): gate layout behind flag
-
-Refs: HPB-601
-Flag-Added: Invoice Layout V2
+# settings: scope_required
+# expect: cc.scope.required
+fix: handle empty VM list
 ---
-# expect: cc.trailer.migration.value
-feat(db): add region column
-
-Refs: HPB-700
-Migration: sometimes
+# settings: scopes=api|billing|core
+# expect: cc.scope.allowed
+feat(payments): add CSV export
 ---
-# expect: cc.header.format
-feat(billing) add CSV export
-
-Refs: HPB-123
+# settings: scopes=api|billing|core
+# expect: cc.scope.allowed
+refactor(core,payments): extract retry policy
 ---
-# expect: cc.header.format
-feat(billing):add CSV export
-
-Refs: HPB-123
----
-# expect: cc.body.wrap
-fix: avoid double charge on retry
-
-This body line is deliberately much longer than one hundred characters so that it trips the wrap rule here.
-
-Refs: HPB-901
+# expect: cc.type.allowed, cc.header.length
+Feature(billing): add a CSV export for invoices with every line item and tax

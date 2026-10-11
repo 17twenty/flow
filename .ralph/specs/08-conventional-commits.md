@@ -49,3 +49,41 @@ invalid samples preceded by `# expect: <rule-ids>`). NOTE: these seeds include
   (`cc.footer.*`, `cc.trailer.*`, `cc.body.wrap`, `cc.description.imperative`) —
   item 1.2 MUST rewrite the seed files to v2 rules in the same commit and record
   a Decision here.
+
+## Decisions
+
+- **§4 seed files rewritten (item 1.2).** Both corpus files now describe v2 only.
+  Samples expecting the retired `cc.footer.ticket`, `cc.trailer.flag.name`,
+  `cc.trailer.migration.value`, `cc.body.wrap` and `cc.description.imperative`
+  rules were removed, and `cc.breaking.description` was renamed to its v2 id
+  `cc.breaking.explained` (its sample lost its body, which v2 accepts as an
+  explanation). The `Refs:`, `Flag-Added:`, `Flag-Removed:`, `Migration:` and
+  `Agent:` trailers were dropped from `valid.txt`: flow does not read them, and
+  leaving them implied otherwise. `Co-authored-by:` and `BREAKING CHANGE:`
+  remain, being git and Conventional Commits standards respectively. New samples
+  cover `cc.scope.required` and `cc.scope.allowed`, which the v1 corpus never
+  exercised. `TestCorpusCoversEveryRule` now fails if any rule in `AllRules()`
+  lacks a sample.
+- **§4 corpus directives.** A sample may carry `# settings: <directives>` before
+  its `# expect:` line, so scope rules can be exercised without forcing them on
+  the whole corpus. Two directives exist: `scope_required`, and
+  `scopes=a|b|c` to set the allowed list. Any other directive fails the test
+  rather than being ignored.
+- **§2 which messages are skipped.** The table says "Merge commits skipped".
+  This extends to every form git writes itself: merges, `Revert "…"` reverts and
+  `fixup!`/`squash!`/`amend!` autosquash commits. None can satisfy the grammar,
+  no human chose their wording, and the autosquash ones disappear on rebase, so
+  reporting `cc.header.format` against them is pure noise. A message using the
+  conventional `revert:` *type* is an ordinary commit and is linted normally.
+- **§2 `cc.scope.allowed` with several scopes.** One violation is reported per
+  disallowed scope, each pointing at that scope's own column, rather than one
+  violation for the whole list. Scope comparison is case-sensitive: configured
+  scopes are the authority on their own spelling.
+- **§2 `cc.description.case` exceptions.** "Acronym" means the opening word
+  holds two or more capitals (`CSV`, `GPU`, `I/O`). "Backticked identifier"
+  means the description's first character is a backtick.
+- **§2 `cc.breaking.explained` for pull requests.** A "Breaking change" section
+  is a line that, once markdown heading and emphasis characters and a trailing
+  colon are stripped, equals "breaking change" or "breaking changes" in any
+  case; a `BREAKING CHANGE:` footer in the body also satisfies the rule.
+
