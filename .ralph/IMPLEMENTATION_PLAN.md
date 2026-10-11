@@ -88,7 +88,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.3 coretest fakes and contract suites — specs: 14 — deps: 0.2 (#30)
   - note: core gained the domain types and the three adapter interfaces alongside the fakes, since nothing could be faked before they existed. Forge took Compare, File and Comment; Clock is Now plus Sleep; an observation is a list of core.Item so desired and observed share one shape. Contracts take a fixture and a constructor, and the fakes sit them.
   - AC: FakeForge/FakeTracker/FakeDeploys with fault injection; contracts pass against fakes
-- [ ] 2.4 Desired state and canonical observation hashing — specs: 06 §1–2 — deps: 1.10, 2.2 (#31)
+- [x] 2.4 Desired state and canonical observation hashing — specs: 06 §1–2 — deps: 1.10, 2.2 (#31)
+  - note: engine/desired.go derives spec 06 §1's table from the configuration rather than carrying it; engine/canonical.go is a legible quoted encoding whose hash is what the lock records. A desired field is only ever something the provider can report back. Resolve items have no contents; Additive items allow the provider more than was asked for. Goldens per preset under internal/engine/testdata/desired.
   - AC: pure, golden; hash stable under reordering
 - [ ] 2.5 Planner and plan JSON — specs: 06 §2, 05 §5 — deps: 2.4, 2.3 (#32)
   - AC: golden plain/JSON for lean-kanban vs GitHub-Projects-like and Jira-like fakes
