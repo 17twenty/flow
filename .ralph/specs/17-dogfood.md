@@ -185,3 +185,27 @@ Each iteration, as the agent identity:
   machine user, or an App used solely as a credential source for the GitHub
   adapter while the adapter interface stays forge-neutral.
 
+- **§2 `seed-issues.sh` drops the `gh` dependency.** The script was written
+  against `gh project` and `gh issue`; the loop host has neither. It now uses
+  `curl` + `jq` against REST for issues and GraphQL for Projects v2, with
+  `GH_TOKEN` supplied by the environment. Bootstrap should need no more than the
+  tools a CI image already carries, and `gh project` is itself a thin wrapper
+  over the same GraphQL calls.
+- **§5 Stage A seeds finished work closed.** The script originally matched only
+  unticked (`- [ ]`) plan lines, so items completed before seeding would never
+  appear on the board and the Project would misrepresent progress from its first
+  day. It now seeds ticked items too and closes them immediately, letting the
+  built-in "Item closed → Done" workflow place them. The board therefore shows
+  8 items already in Done, which is the truth.
+- **§3 the auto-add workflow races issue creation.** With "Auto-add to project"
+  enabled, an issue can land in the Project before the script's explicit
+  `addProjectV2ItemById`, which then fails `UNPROCESSABLE: Content already
+  exists`. This killed the first seeding run part-way. The script now looks for
+  an existing item first, adds only if absent, and re-queries if the add loses
+  the race, so either ordering converges on exactly one item.
+- **§5 seeding is resumable.** Plan markers are written through after every item
+  rather than once at the end, and an item's identity is the `Plan item <id>.`
+  line in its issue body rather than its title. A run that dies part-way is
+  therefore re-runnable without duplicating: the interrupted first run left
+  issue #32 unmarked, and the re-run adopted it instead of seeding a second copy.
+
