@@ -1,0 +1,126 @@
+package core
+
+import "context"
+
+// Forge is the Git host: pull requests, reviews, branch protection, commit
+// statuses and the files that make the workflow run (spec 01 §3).
+//
+// Every method that talks to a provider takes a context and returns an error
+// wrapping one of the sentinels in errors.go, so that the caller can decide
+// what to do without knowing which forge it was talking to.
+type Forge interface {
+	// Kind is the adapter's name, matching the capability declaration and the
+	// forge.type in configuration.
+	Kind() string
+	// Capabilities is what this adapter can do, as declared (spec 05 §1).
+	Capabilities() CapabilitySet
+	// Probe reports what the credential is allowed to do.
+	Probe(ctx context.Context) (Permissions, error)
+
+	// Repo describes the repository: its default branch and merge settings.
+	Repo(ctx context.Context) (RepoInfo, error)
+	// PullRequest returns one pull request, with its reviews, head SHA, file
+	// summary and the issues the forge says it closes.
+	PullRequest(ctx context.Context, number int) (PullRequest, error)
+	// PullRequests returns the pull requests matching a query, newest first.
+	PullRequests(ctx context.Context, q PRQuery) ([]PullRequest, error)
+	// Commits returns commits on a branch, newest first.
+	Commits(ctx context.Context, q CommitQuery) ([]Commit, error)
+	// Compare reports the ancestry between two commits, which is how flow
+	// proves a merge reached an environment (spec 13 §3).
+	Compare(ctx context.Context, base, head string) (Comparison, error)
+	// File returns the content of a file at a ref, so that doctor can see
+	// whether the workflow that runs flow is actually on the trunk.
+	File(ctx context.Context, path, ref string) ([]byte, error)
+
+	// Protection returns the effective protection of a branch, whichever
+	// mechanism configured it.
+	Protection(ctx context.Context, branch string) (Protection, error)
+	// SetProtection applies protection additively: it never removes a
+	// required check or a setting flow did not ask for (spec 06 §4).
+	SetProtection(ctx context.Context, branch string, p Protection) error
+	// SetMergeSettings sets the repository's merge strategies.
+	SetMergeSettings(ctx context.Context, s MergeSettings) error
+
+	// CommitStatuses returns the statuses on a commit, newest first.
+	CommitStatuses(ctx context.Context, sha string) ([]CommitStatus, error)
+	// SetCommitStatus publishes a status on a commit. Publishing the same
+	// context twice replaces the earlier verdict.
+	SetCommitStatus(ctx context.Context, sha string, s CommitStatus) error
+
+	// UpsertComment writes flow's comment on a pull request, editing the one
+	// carrying that marker if it is already there (spec 11 §1).
+	UpsertComment(ctx context.Context, number int, m Marker, body string) error
+	// Comment returns flow's comment carrying that marker, or nil when there
+	// is none.
+	Comment(ctx context.Context, number int, m Marker) (*Comment, error)
+	// DeleteComment removes the comment carrying that marker. Deleting a
+	// comment that is not there is not an error.
+	DeleteComment(ctx context.Context, number int, m Marker) error
+
+	// ProposeFiles offers a set of files as a pull request from the
+	// proposal's own branch. It never writes the default branch, and making
+	// the same proposal again updates the open pull request in place.
+	ProposeFiles(ctx context.Context, p FileProposal) (PullRequest, error)
+}
+
+// Tracker is the ticket system: the board, its columns, its items, and the
+// follow-ups flow files against itself (spec 01 §3).
+type Tracker interface {
+	// Kind is the adapter's name, matching the capability declaration and the
+	// tracker.type in configuration.
+	Kind() string
+	// Capabilities is what this adapter can do, as declared (spec 05 §1).
+	Capabilities() CapabilitySet
+	// Probe reports what the credential is allowed to do.
+	Probe(ctx context.Context) (Permissions, error)
+
+	// Discover offers the candidates that could answer a placeholder, given
+	// whatever hints configuration already provides (spec 07 §3).
+	Discover(ctx context.Context, what string, hint map[string]string) ([]Candidate, error)
+	// ParseRef turns a URL a human pasted into a reference flow can record.
+	ParseRef(raw string) (Ref, error)
+
+	// Observe returns the current state of one desired item, canonically, so
+	// that it can be diffed and hashed (spec 06 §2).
+	Observe(ctx context.Context, what string) (Observation, error)
+	// Apply makes one change, and reports what it became.
+	Apply(ctx context.Context, c Change) (ApplyResult, error)
+
+	// Ticket returns one ticket by key.
+	Ticket(ctx context.Context, key string) (Ticket, error)
+	// Tickets returns the tickets matching a query.
+	Tickets(ctx context.Context, q TicketQuery) ([]Ticket, error)
+	// Move takes a ticket to another column. It is idempotent: moving a
+	// ticket to the column it is already in does nothing. Only transitions
+	// the configuration gives flow are performed this way (spec 04 §5).
+	Move(ctx context.Context, key string, to ColumnID) error
+
+	// CreateFollowUp files a ticket for work flow cannot do, or returns the
+	// one already filed: the marker makes it idempotent (spec 07 §4).
+	CreateFollowUp(ctx context.Context, f FollowUp) (Ticket, error)
+	// FindFollowUp returns the ticket carrying a marker, or nil when there is
+	// none. A marker naming fewer fields matches more tickets (spec 11 §1).
+	FindFollowUp(ctx context.Context, m Marker) (*Ticket, error)
+	// Comment writes a marked comment on a ticket.
+	Comment(ctx context.Context, key string, m Marker, body string) error
+	// Reopen reopens a closed ticket, recording why.
+	Reopen(ctx context.Context, key string, reason string) error
+
+	// LinkedKeys returns the ticket keys a pull request is for, using the
+	// forge's structured link first and the tracker's own documented
+	// convention as a fallback. It never applies a user-supplied pattern
+	// (P12, spec 04 §3).
+	LinkedKeys(pr PullRequest) []string
+}
+
+// DeploySource is where flow learns that a commit reached an environment
+// (spec 13).
+type DeploySource interface {
+	// Kind is [SourceForgeDeployments] or [SourceCommitStatus].
+	Kind() string
+	// Capabilities is what this source can do, as declared (spec 05 §1).
+	Capabilities() CapabilitySet
+	// Deployments returns the records matching a query, newest first.
+	Deployments(ctx context.Context, q DeployQuery) ([]Deployment, error)
+}

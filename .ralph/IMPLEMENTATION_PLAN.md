@@ -85,7 +85,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.2 Outcome resolution — specs: 05 §4 — deps: 2.1 (#29)
   - note: engine/outcome.go is spec 05 §4's ladder literally, plus core.Permissions (tokens + evidence). An attestation substitutes for an observation flow cannot make and never overrules one it can; the zero Permissions allows nothing; every Resolution carries its own why, and names missing tokens.
   - AC: exhaustive table over set/verify/remediation/permission/attestation
-- [ ] 2.3 coretest fakes and contract suites — specs: 14 — deps: 0.2 (#30)
+- [x] 2.3 coretest fakes and contract suites — specs: 14 — deps: 0.2 (#30)
+  - note: core gained the domain types and the three adapter interfaces alongside the fakes, since nothing could be faked before they existed. Forge took Compare, File and Comment; Clock is Now plus Sleep; an observation is a list of core.Item so desired and observed share one shape. Contracts take a fixture and a constructor, and the fakes sit them.
   - AC: FakeForge/FakeTracker/FakeDeploys with fault injection; contracts pass against fakes
 - [ ] 2.4 Desired state and canonical observation hashing — specs: 06 §1–2 — deps: 1.10, 2.2 (#31)
   - AC: pure, golden; hash stable under reordering

@@ -142,3 +142,26 @@ Tools via `go run …@latest`: staticcheck, govulncheck.
   a question; none changes a repository. Writing — the commit-msg hook (item
   1.13) — is the root package's job, through the ordinary file system, so there
   is no path by which reading state can alter it.
+- **§3 the shapes are indicative, and three methods were added to `Forge`
+  (item 2.3).** `Compare(base, head)` because spec 13 §3 proves a merge
+  reached an environment by ancestry and nothing else could answer it;
+  `File(path, ref)` because doctor's `forge.files` check has to read the
+  workflow on the default branch to see that it runs `flow check pr`; and
+  `Comment(number, marker)` because `DeleteComment` already has to find a
+  comment by its marker, and a gate that cannot read its own last comment
+  cannot tell an unchanged verdict from a new one (spec 09 §2). Nothing was
+  removed.
+- **§5 `core.Clock` is `Now` and `Sleep` (item 2.3).** A live check is a pure
+  function of what it fetched and what time it is, so the time has to be an
+  input; and the retry budget in `core.Client` is the other thing that must
+  not really wait in a test. `coretest.FakeClock` advances instead of
+  sleeping and records what it was asked to wait for, so a backoff can be
+  asserted rather than endured.
+- **§3 an observation is a list of items, not a shape per desired item (item
+  2.3).** `core.Item{ID, Name, Fields map[string]string}` describes a status
+  option, a label and a WIP limit equally well, so `Observe` and the desired
+  state have one shape and the planner can diff them without knowing what
+  they are. The alternative — a Go type per row of spec 06 §1 — would make
+  every new desired item a change to the planner as well as to the adapter.
+  `Item.Equal` treats a missing id as "not yet created", because a desired
+  item cannot know the id the provider will give it.

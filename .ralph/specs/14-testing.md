@@ -40,3 +40,24 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   about vulnerabilities disclosed since the last run, so there pinning would
   defeat the point.
 
+- **The fakes are the reference implementation, and sit the contract
+  themselves (item 2.3).** `coretest.FakeForge`, `FakeTracker` and
+  `FakeDeploys` are run through `ForgeContract`, `TrackerContract` and
+  `DeployContract` in `coretest`'s own tests. A contract no implementation
+  passes is a wish; holding the fakes to it means the engine tests run
+  against adapters that behave exactly as the real ones must, and a contract
+  that cannot be satisfied is found when it is written rather than in phase
+  3.
+- **A contract is given a fixture and a constructor (item 2.3).**
+  `ForgeContract(t, func(t, ForgeFixture) core.Forge)`. The fixtures —
+  `ContractForge`, `ContractTracker`, `ContractDeploys` — are exported, so a
+  real adapter's test seeds its `httptest` server from the same world the
+  in-memory fake is built from, and both are asked the same questions about
+  the same repository. Without a shared world each suite would test a
+  different thing and agree only by accident.
+- **Faults are injected by method name (item 2.3).** `Fail`, `FailOnce`,
+  `Heal` and `Calls` on an embedded `coretest.Faults`, keyed by the method's
+  own name. It needs no generated mock and no interface per failure, and
+  `FailOnce` is what makes "retried once, then succeeded" expressible. Every
+  fake also refuses a cancelled context with `ErrUnavailable`, so the root's
+  signal handling is testable offline.

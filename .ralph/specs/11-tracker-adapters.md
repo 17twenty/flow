@@ -92,3 +92,15 @@ reopen, pagination, error mapping.
   line, so editing a comment ten times leaves one marker, and switching a
   provider from the HTML form to the visible form does not leave both. Flow
   reads bodies it did not write last.
+- **§1 `ColumnID` is the tracker's column; `Status` is the ticket's status
+  (item 2.3).** The shape lists both, and they are not the same thing: on
+  GitHub Projects and Linear a status *is* a column, but a Jira board column
+  gathers several statuses, so a ticket in "In Review" and one in "Awaiting
+  QA" can share a column. `Move` takes the tracker's `ColumnID`, and the lock
+  is what maps flow's configured column ids onto it — the adapter never sees
+  flow's vocabulary.
+- **§1 a ticket also carries its size and why it was closed (item 2.3).** The
+  `max_size` rule in spec 04 §7 needs an estimate, and `live.tickets.
+  done_merged` in spec 07 §6 exempts work closed as not planned. Both are
+  facts about the ticket, so they belong on it: `Size` is zero when the
+  tracker has no such field, and `CloseReason` is empty when it does not say.
