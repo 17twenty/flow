@@ -26,3 +26,17 @@ query params `key|token|access_token|private_token`. Replacement `[REDACTED:<kin
 ## 4. Files, network
 User config 0600; cache dir 0700. TLS always verified; `SSL_CERT_FILE`,
 `HTTPS_PROXY` honoured. No telemetry.
+
+## Decisions
+
+- **§2 `<kind>` in `[REDACTED:<kind>]`.** The spec names the replacement but not
+  the vocabulary. `<kind>` is the credential shape that matched:
+  `github_token` (`gh[pousr]_`), `github_pat`, `gitlab_token`, `linear_key`,
+  `atlassian_token`, `jwt`. When only the *key name* or a *URL parameter name*
+  identified the value as sensitive — the shape being unknown — the kind is
+  `secret`. This keeps the marker informative for debugging without revealing
+  anything about the value itself.
+- **§2 URL parameter matching.** The listed names (`key|token|access_token|
+  private_token`) are matched as suffixes of the parameter name, so `api_key`
+  and `private_token` are both caught. Matching is case-insensitive.
+

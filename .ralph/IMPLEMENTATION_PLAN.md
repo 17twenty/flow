@@ -9,17 +9,22 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 0 — Skeleton
 
-- [ ] 0.1 Module and kong root with every v2 command registered — specs: 01 §1, 02 — deps: —
+- [x] 0.1 Module and kong root with every v2 command registered — specs: 01 §1, 02 — deps: —  
+  - note: kong root, all v2 commands registered, stubs return ErrUnsupported
   - AC: `go install .` produces `flow`; `flow --help` shows groups Setup/Verify/CI/Meta
   - AC: unimplemented commands return ErrUnsupported (exit 1) — the only permitted temporary stub
   - AC: kong parse errors exit 64; SIGINT exits 130
-- [ ] 0.2 Sentinel errors and exit-code mapping — specs: 01 §5, 02 §4 — deps: 0.1
+- [x] 0.2 Sentinel errors and exit-code mapping — specs: 01 §5, 02 §4 — deps: 0.1  
+  - note: core/errors.go sentinels + ExitCode, UserError what/why/fix
   - AC: table test maps every sentinel (and wrapped) to its exit code
-- [ ] 0.3 slog setup with redacting handler — specs: 15 §2 — deps: 0.2
+- [x] 0.3 slog setup with redacting handler — specs: 15 §2 — deps: 0.2  
+  - note: core/redact.go handler; kinds decided in spec 15 Decisions
   - AC: table test covers every key/value/URL pattern in spec 15 §2
-- [ ] 0.4 flow version — specs: 02 §2 — deps: 0.1
+- [x] 0.4 flow version — specs: 02 §2 — deps: 0.1  
+  - note: buildDetails from ReadBuildInfo; -X main.version overrides
   - AC: human and --json (`flow.version/v1`) from ReadBuildInfo; ldflags override
-- [ ] 0.5 assets package with go:embed — specs: 01 §1 — deps: 0.1
+- [x] 0.5 assets package with go:embed — specs: 01 §1 — deps: 0.1  
+  - note: assets/embed.go embeds capabilities, presets, templates, schema
   - AC: embeds capabilities/, presets/, templates/, schema/; test lists files
 - [ ] 0.6 CI green on main — specs: 14, 17 §2 — deps: 0.1
   - AC: `.github/workflows/ci.yml` passes on main
