@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/17twenty/flow/main/assets/schema/flow.v1.json
-# Preset: minimal. No Ready gate content rules; relaxed policy.
+# Preset: minimal. No Ready gate on the board; relaxed policy.
 version: 1
 preset: minimal
 
@@ -21,7 +21,7 @@ workflow:
   done_on: merged                 # merged | deployed   (spec 04 §6)
   columns:                        # ordered; ids stable; names = tracker display names
     - { id: backlog,     name: Backlog,     category: todo }
-    - { id: ready,       name: Ready,       category: todo, gate: definition_of_ready }
+    - { id: ready,       name: Ready,       category: todo }
     - { id: in_progress, name: In progress, category: in_progress, wip: { per_person: 2 } }
     - { id: in_review,   name: In review,   category: in_progress, wip: { limit: 3 } }
     - { id: done,        name: Done,        category: done }
@@ -39,8 +39,8 @@ workflow:
     require_comment: true
 
 definition_of_ready:
-  rules: [not_blocked]
-  # optional: flag_if_user_facing, design_if_ui, max_size: 2d
+  rules: [not_blocked]           # no column gates on this; check pr still reads it
+  # optional: acceptance_criteria, parent_link, flag_if_user_facing, design_if_ui, max_size: 2d
 
 commits:
   convention: conventional

@@ -401,3 +401,25 @@ gate, relaxed policy).
   2.13), which is where that registry exists; only the severity vocabulary is
   checked now. Checking ids against a hard-coded list in two places is how
   they drift.
+- **§7 `minimal` has no Ready gate at all (item 1.10).** The sentence is "no
+  Ready gate, relaxed policy", and the literal reading is the simplest: the
+  `ready` column carries no `gate:` key. `definition_of_ready.rules` keeps
+  `not_blocked`, because spec 04 §7 has `check pr` read the definition of
+  ready whether or not a column gates on it — the preset starts a team with
+  one rule, not with none.
+- **§7 a preset is copied with its comments (item 1.10).** `PresetSource`
+  returns the file verbatim and `flow init` writes that, rather than
+  re-rendering the decoded config. The comment beside each key is the
+  documentation a team actually reads, and a round trip through the structs
+  would delete all of it. `LoadPreset` decodes the same bytes for the code
+  paths that need values.
+- **§7 presets are read from an `fs.FS` the caller supplies (item 1.10).** As
+  with the capability registry, `config` does not import `assets`: the root
+  passes `assets.Presets()`. A preset name outside `PresetNames` is refused
+  before the file system is touched, so a typo names the presets that exist.
+- **§7 a preset still holds its placeholders (item 1.10).** `tracker.project`
+  and every `followups.owners.*` are `${pending:…}` in all three files, and
+  `forge.repo` is `owner/name`: a preset cannot know a board number or a
+  team's handles, and `flow init` fills them in. A golden file per preset pins
+  what each one decodes to, so changing a preset is a change somebody looked
+  at.

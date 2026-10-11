@@ -16,7 +16,7 @@ import (
 	yaml "go.yaml.in/yaml/v3"
 )
 
-var update = flag.Bool("update", false, "rewrite the committed JSON Schema")
+var update = flag.Bool("update", false, "rewrite the committed JSON Schema and golden files")
 
 // TestSchemaFileIsCurrent is both the generator and the staleness check: with
 // -update it writes assets/schema/flow.v1.json, and without it fails when the
