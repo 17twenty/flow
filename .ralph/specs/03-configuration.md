@@ -192,3 +192,34 @@ between Go structs and schema (reflection in the test only). Staleness test.
 `lean-kanban` (default; `done_on: merged` + deploy lag SLO), `deploy-done`
 (`done_on: deployed`, flow owns the deployed transition), `minimal` (no Ready
 gate, relaxed policy).
+
+## Decisions
+
+- **§1 `version` is structural, not semantic (item 1.4).** `config.Parse` refuses
+  anything but `version: 1` before any other check, and a missing `version` is
+  reported at line 1. A file written for another schema version cannot be
+  decoded into these structs at all, so deferring the check to
+  `config.semantics` (§1.1) would mean reporting a cascade of unknown-key errors
+  for keys that are perfectly valid in their own version.
+- **§1 every problem is reported, not just the first (item 1.4).** Strict
+  decoding collects unknown keys, type mismatches and invalid values across the
+  whole file and reports them in file order. Fixing a policy file one error per
+  run is the kind of friction that makes people stop running the tool.
+- **§1 positions: line:column where the document parsed, line only where it did
+  not (item 1.4).** Unknown keys, wrong types and invalid values are located to
+  `path:line:column` by matching the YAML node tree against the decoder's
+  errors. A YAML *syntax* error has no node tree to match, so flow reports the
+  line the library gives and no column — and that line is the library's:
+  yaml.v3 renders scanner errors from a one-based mark but parser errors from a
+  zero-based one, so an unterminated `{…}` is reported one line early. Correcting
+  it would mean guessing which kind of error a message came from.
+- **§1 durations (item 1.4).** `d` is exactly 24h and `w` exactly 7d: flow
+  measures elapsed time between a merge and a deployment, never calendar days,
+  so daylight saving and leap seconds never enter into it. A bare number is
+  refused — `max_lag: 2` is a question, not a value — with the single exception
+  of `0`. Durations render back with days as the largest unit, so `1w` is read
+  and written as `7d`; two spellings of one span is one too many.
+- **§1 Parse applies no defaults (item 1.4).** It returns the file as written.
+  Preset and default layering is precedence (§ top), and lands with the rest of
+  precedence in plan item 1.8; until then, callers needing a default say so
+  themselves (as `flow check commit` does with `commits.DefaultSettings`).

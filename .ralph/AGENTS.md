@@ -42,3 +42,5 @@ CURRENT MODE: direct
 - A commit-message rewriter must never change which lines git treats as comments or scissors — trimming `" #x"` to `"#x"` deletes the line.
 - Mixing whitespace definitions (`TrimRight` cutset vs `unicode.IsSpace`) breaks idempotence. Pick one per concern.
 - `run()` takes stdin as a parameter so commands reading `-` stay testable in-process.
+- yaml.v3 locates errors by line and never by column. Decode into a `yaml.Node` first, index key/value nodes by line, and match the decoder's messages against it to recover the column.
+- A custom `UnmarshalYAML` must return a `*yaml.TypeError` with a `line N:` prefix, or yaml aborts the decode at that value and drops the position.

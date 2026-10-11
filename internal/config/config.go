@@ -1,0 +1,346 @@
+// Package config reads the files that tell flow what the team wants: the
+// committed `.flow.yaml`, the machine-written `.flow.lock`, and the personal
+// TOML that may only soften presentation and credentials. It owns strict
+// decoding, placeholders, precedence and the JSON Schema (spec 03).
+//
+// Nothing in here talks to a network or a forge: a Config is a value, and the
+// engine is what turns it into intent.
+package config
+
+// Version is the only `.flow.yaml` schema version this build understands.
+const Version = 1
+
+// Forge kinds (spec 03 §1).
+const (
+	ForgeGitHub = "github"
+	ForgeGitea  = "gitea"
+	ForgeGitLab = "gitlab"
+)
+
+// Tracker kinds (spec 03 §1).
+const (
+	TrackerGitHubProjects = "github-projects"
+	TrackerJiraCloud      = "jira-cloud"
+	TrackerLinear         = "linear"
+)
+
+// Owner types for trackers that distinguish personal from organisation scope.
+const (
+	OwnerUser = "user"
+	OwnerOrg  = "org"
+)
+
+// Column categories. Every column maps onto one of the three states the engine
+// reasons about (spec 04).
+const (
+	CategoryTodo       = "todo"
+	CategoryInProgress = "in_progress"
+	CategoryDone       = "done"
+)
+
+// Gates a column can require before work may enter it.
+const GateDefinitionOfReady = "definition_of_ready"
+
+// What makes a ticket done (spec 04 §6).
+const (
+	DoneOnMerged   = "merged"
+	DoneOnDeployed = "deployed"
+)
+
+// Who performs a transition (P11, spec 04 §5).
+const (
+	// OwnerFlow means flow moves the ticket itself.
+	OwnerFlow = "flow"
+	// OwnerNative means the tracker's own automation moves it and flow verifies.
+	OwnerNative = "native"
+)
+
+// Deployment sources (spec 13).
+const (
+	DeploySourceForge        = "forge_deployments"
+	DeploySourceCommitStatus = "commit_status"
+	DeploySourceNone         = "none"
+)
+
+// Policy strictness levels (spec 09).
+const (
+	StrictnessRelaxed  = "relaxed"
+	StrictnessStandard = "standard"
+	StrictnessStrict   = "strict"
+)
+
+// When the policy gate leaves a comment on a pull request (spec 09).
+const (
+	CommentAlways    = "always"
+	CommentOnFailure = "on_failure"
+	CommentNever     = "never"
+)
+
+// Per-rule severity overrides under policy.rules (spec 09 §2).
+const (
+	SeverityOff   = "off"
+	SeverityWarn  = "warn"
+	SeverityError = "error"
+)
+
+// Config is a decoded `.flow.yaml`. It is the team's desired workflow: what
+// the board looks like, who moves tickets, and what the gate insists on.
+type Config struct {
+	// Version pins the schema. Only [Version] is accepted.
+	Version int `yaml:"version"`
+	// Preset names the shipped starting point this file was derived from.
+	Preset string `yaml:"preset,omitempty"`
+
+	// Forge is where the code and the pull requests live.
+	Forge Forge `yaml:"forge"`
+	// Tracker is where the tickets live.
+	Tracker Tracker `yaml:"tracker"`
+	// Workflow is the board and the rules for moving across it.
+	Workflow Workflow `yaml:"workflow"`
+	// DefinitionOfReady is what a ticket must have before work starts.
+	DefinitionOfReady DefinitionOfReady `yaml:"definition_of_ready"`
+	// Commits is the commit and pull request title convention.
+	Commits Commits `yaml:"commits"`
+	// Deploys is how flow learns that a merge reached production.
+	Deploys Deploys `yaml:"deploys"`
+	// Policy is how the pull request gate reports.
+	Policy Policy `yaml:"policy"`
+	// Agents describes which authors are machines.
+	Agents Agents `yaml:"agents"`
+	// FollowUps is how flow files work it cannot do itself.
+	FollowUps FollowUps `yaml:"followups"`
+	// Attestation is how long a human's word stands for.
+	Attestation Attestation `yaml:"attestation"`
+}
+
+// Auth names the environment variables a credential is read from. It never
+// holds a credential: flow stores names, not secrets (spec 15 §1).
+type Auth struct {
+	// TokenEnv is the environment variable holding the API token.
+	TokenEnv string `yaml:"token_env,omitempty"`
+	// EmailEnv is the variable holding the account email, for providers like
+	// Jira Cloud that pair an email with an API token.
+	EmailEnv string `yaml:"email_env,omitempty"`
+}
+
+// Forge is the Git host: pull requests, reviews, branch protection, statuses.
+type Forge struct {
+	// Type selects the adapter: github, gitea or gitlab.
+	Type string `yaml:"type"`
+	// Repo is the owner/name of the repository.
+	Repo string `yaml:"repo"`
+	// URL is the base web URL for self-managed installations.
+	URL string `yaml:"url,omitempty"`
+	// Auth names the credential's environment variables.
+	Auth Auth `yaml:"auth"`
+}
+
+// Tracker is the ticket system: the board, its columns and its items.
+type Tracker struct {
+	// Type selects the adapter: github-projects, jira-cloud or linear.
+	Type string `yaml:"type"`
+	// Owner is the account the board belongs to, for trackers that scope
+	// projects to a user or an organisation.
+	Owner string `yaml:"owner,omitempty"`
+	// OwnerType disambiguates a personal account from an organisation.
+	OwnerType string `yaml:"owner_type,omitempty"`
+	// Project identifies the board: a GitHub project number, a Jira project
+	// key or a Linear team key. It may be a placeholder until doctor resolves
+	// it (spec 03 §2).
+	Project string `yaml:"project,omitempty"`
+	// URL is the tracker's base URL, for providers like Jira Cloud whose host
+	// is per-tenant.
+	URL string `yaml:"url,omitempty"`
+	// Auth names the credential's environment variables.
+	Auth Auth `yaml:"auth"`
+}
+
+// Workflow is the board flow keeps true: the columns in order, who moves
+// tickets on each event, and the two escape hatches teams actually need.
+type Workflow struct {
+	// DoneOn decides whether done means merged or deployed (spec 04 §6).
+	DoneOn string `yaml:"done_on"`
+	// Columns are the board columns in left-to-right order.
+	Columns []Column `yaml:"columns"`
+	// Transitions maps an event from the vocabulary in spec 04 §4 to the
+	// column it lands in and who performs the move.
+	Transitions map[string]Transition `yaml:"transitions"`
+	// Expedite lets urgent work bypass WIP limits.
+	Expedite Expedite `yaml:"expedite"`
+	// Blocked describes how the team marks work it cannot progress.
+	Blocked Blocked `yaml:"blocked"`
+}
+
+// Column is one board column. Ids are stable and internal; names are whatever
+// the tracker displays and may be renamed without breaking configuration.
+type Column struct {
+	// ID is the stable identifier used everywhere else in the configuration.
+	ID string `yaml:"id"`
+	// Name is the tracker's display name for this column.
+	Name string `yaml:"name"`
+	// Category maps the column onto todo, in_progress or done.
+	Category string `yaml:"category"`
+	// Gate names a condition tickets must satisfy to enter, if any.
+	Gate string `yaml:"gate,omitempty"`
+	// WIP limits how much work may sit here at once. Nil means unlimited.
+	WIP *WIP `yaml:"wip,omitempty"`
+}
+
+// WIP is a work-in-progress limit for one column. A column may limit the whole
+// column, the work per person, or both.
+type WIP struct {
+	// Limit caps the items in the column. Zero means no column-wide cap.
+	Limit int `yaml:"limit,omitempty"`
+	// PerPerson caps the items assigned to any one person. Zero means no cap.
+	PerPerson int `yaml:"per_person,omitempty"`
+}
+
+// Transition says where an event takes a ticket, and who takes it there.
+type Transition struct {
+	// To is the id of the column the ticket moves to.
+	To string `yaml:"to"`
+	// Owner is flow or native (P11).
+	Owner string `yaml:"owner"`
+}
+
+// Expedite is the agreed way to jump the queue, bounded so that it stays the
+// exception.
+type Expedite struct {
+	// Labels mark expedited work; any one of them is enough.
+	Labels []string `yaml:"labels,omitempty"`
+	// Max caps how many expedited items may be in flight at once.
+	Max int `yaml:"max,omitempty"`
+}
+
+// Blocked is how the team records work that cannot move, and what it owes the
+// rest of the team when it does.
+type Blocked struct {
+	// Label marks a blocked ticket.
+	Label string `yaml:"label,omitempty"`
+	// RequireComment demands an explanation alongside the label.
+	RequireComment bool `yaml:"require_comment,omitempty"`
+}
+
+// DefinitionOfReady is what must be true of a ticket before anyone starts it
+// (spec 04 §7).
+type DefinitionOfReady struct {
+	// Rules are the rule ids to enforce, in spec 04 §7.
+	Rules []string `yaml:"rules,omitempty"`
+	// MaxSize bounds a ticket's estimate, for trackers that record one. Zero
+	// disables the check.
+	MaxSize Duration `yaml:"max_size,omitempty"`
+}
+
+// Commits is the commit convention, which under a squash merge is also the
+// pull request title convention (spec 08).
+type Commits struct {
+	// Convention names the grammar. Only "conventional" exists in v1.
+	Convention string `yaml:"convention"`
+	// Types are the permitted commit types.
+	Types []string `yaml:"types,omitempty"`
+	// HeaderMax limits the header length in runes.
+	HeaderMax int `yaml:"header_max,omitempty"`
+	// MergeStrategy tells the gate which text becomes the commit header.
+	MergeStrategy string `yaml:"merge_strategy,omitempty"`
+	// Scopes constrains the scope part of the header.
+	Scopes Scopes `yaml:"scopes"`
+	// UnlinkedTypes are the types allowed to merge without a ticket.
+	UnlinkedTypes []string `yaml:"unlinked_types,omitempty"`
+}
+
+// Scopes constrains the optional scope in a Conventional Commit header.
+type Scopes struct {
+	// Required demands a scope on every header.
+	Required bool `yaml:"required,omitempty"`
+	// Allowed restricts scopes to this list. Empty allows any scope.
+	Allowed []string `yaml:"allowed,omitempty"`
+}
+
+// Deploys is where flow looks to find out whether a merge is actually running
+// (spec 13).
+type Deploys struct {
+	// Source selects forge deployment records, commit statuses, or nothing.
+	Source string `yaml:"source"`
+	// Environment is the environment name the deployer records.
+	Environment string `yaml:"environment,omitempty"`
+	// Contexts are the commit status contexts to read, for the commit_status
+	// source. A trailing * matches by prefix.
+	Contexts []string `yaml:"contexts,omitempty"`
+	// MaxLag is the merged-to-deployed objective doctor holds the team to.
+	MaxLag Duration `yaml:"max_lag,omitempty"`
+	// MaxAge is how long flow tolerates seeing no deployment at all.
+	MaxAge Duration `yaml:"max_age,omitempty"`
+}
+
+// Policy is how the pull request gate presents itself (spec 09).
+type Policy struct {
+	// StatusContext is the commit status name the gate publishes under.
+	StatusContext string `yaml:"status_context,omitempty"`
+	// Strictness selects the baseline severity set.
+	Strictness string `yaml:"strictness,omitempty"`
+	// Comment decides when the gate leaves a pull request comment.
+	Comment string `yaml:"comment,omitempty"`
+	// Rules overrides individual rule severities: off, warn or error.
+	Rules map[string]string `yaml:"rules,omitempty"`
+}
+
+// Agents tells flow which contributors are machines, so that the gate can
+// insist a human stays accountable (spec 09, spec 17).
+type Agents struct {
+	// Authors are the logins treated as agents.
+	Authors []string `yaml:"authors,omitempty"`
+	// Labels mark a pull request as agent work.
+	Labels []string `yaml:"labels,omitempty"`
+	// RequireHumanReview demands a human approval on agent pull requests.
+	RequireHumanReview bool `yaml:"require_human_review,omitempty"`
+}
+
+// FollowUps is how flow files the work it cannot do itself, so that a refusal
+// becomes a tracked ticket rather than a dead end (spec 07 §4).
+type FollowUps struct {
+	// Labels are applied to every follow-up ticket flow opens.
+	Labels []string `yaml:"labels,omitempty"`
+	// Owners routes a follow-up to whoever can actually act on it.
+	Owners Owners `yaml:"owners"`
+}
+
+// Owners routes follow-ups by the kind of access they need. Values may be
+// placeholders until doctor resolves them (spec 03 §2).
+type Owners struct {
+	// Default receives anything the other roles do not claim.
+	Default string `yaml:"default,omitempty"`
+	// TrackerAdmin receives work needing tracker administration.
+	TrackerAdmin string `yaml:"tracker_admin,omitempty"`
+	// ForgeAdmin receives work needing repository administration.
+	ForgeAdmin string `yaml:"forge_admin,omitempty"`
+	// Platform receives work needing deployment or infrastructure access.
+	Platform string `yaml:"platform,omitempty"`
+}
+
+// Attestation is how long a human's "I checked this myself" counts for
+// (spec 07 §8).
+type Attestation struct {
+	// DefaultTTL is how long an attestation stands before it must be renewed.
+	DefaultTTL Duration `yaml:"default_ttl,omitempty"`
+}
+
+// Column returns the column with the given id, and whether it exists.
+func (w Workflow) Column(id string) (Column, bool) {
+	for _, c := range w.Columns {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return Column{}, false
+}
+
+// ColumnIndex returns the position of the column with the given id in board
+// order, or -1. Order is what makes "forward-only" meaningful (spec 04 §5).
+func (w Workflow) ColumnIndex(id string) int {
+	for i, c := range w.Columns {
+		if c.ID == id {
+			return i
+		}
+	}
+	return -1
+}

@@ -43,7 +43,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.3 Safe autofix and `flow check commit` — specs: 08 §3, 02 §2 — deps: 1.2 (#16)  
   - note: commits/fix.go + cmd_check.go; FuzzFix clean over 171M execs. Settings are spec 03 defaults until config lands in 1.4.
   - AC: idempotent fixes; CLI exit codes; --json output
-- [ ] 1.4 Config types with strict YAML decoding — specs: 03 §1 — deps: 0.2 (#17)
+- [x] 1.4 Config types with strict YAML decoding — specs: 03 §1 — deps: 0.2 (#17)
+  - note: config/{config,duration,parse}.go; every problem located line:col, decisions in spec 03. Parse applies no defaults — layering lands with precedence in 1.8.
   - AC: unknown keys error with line:col; durations with d/w
 - [ ] 1.5 Placeholders — specs: 03 §2 — deps: 1.4 (#18)
   - AC: Pending values only at allowed paths; block-style requirement documented in error
