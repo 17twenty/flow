@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -309,6 +310,241 @@ func (c ghComment) toComment(want core.Marker) (core.Comment, bool) {
 // ghCommentRequest is the body of POST and PATCH on a comment.
 type ghCommentRequest struct {
 	Body string `json:"body"`
+}
+
+// ghToggle is GitHub's way of saying a boolean in branch protection: an
+// object with one field, so that the setting can carry more later.
+type ghToggle struct {
+	Enabled bool `json:"enabled"`
+}
+
+// ghProtection is GET /repos/{owner}/{repo}/branches/{branch}/protection, the
+// classic mechanism. A branch with none answers 404.
+type ghProtection struct {
+	RequiredStatusChecks *struct {
+		Strict   bool     `json:"strict"`
+		Contexts []string `json:"contexts"`
+		Checks   []struct {
+			Context string `json:"context"`
+		} `json:"checks"`
+	} `json:"required_status_checks"`
+	RequiredPullRequestReviews *struct {
+		DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
+		RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
+	} `json:"required_pull_request_reviews"`
+	EnforceAdmins                  ghToggle `json:"enforce_admins"`
+	RequiredLinearHistory          ghToggle `json:"required_linear_history"`
+	AllowForcePushes               ghToggle `json:"allow_force_pushes"`
+	AllowDeletions                 ghToggle `json:"allow_deletions"`
+	RequiredConversationResolution ghToggle `json:"required_conversation_resolution"`
+}
+
+// toProtection converts the payload. A protected branch permits nothing it
+// does not say it permits, which is the opposite of an unprotected one.
+func (p ghProtection) toProtection(branch string) core.Protection {
+	protection := core.Protection{
+		Branch:                        branch,
+		Enabled:                       true,
+		EnforceAdmins:                 p.EnforceAdmins.Enabled,
+		RequireLinearHistory:          p.RequiredLinearHistory.Enabled,
+		RequireConversationResolution: p.RequiredConversationResolution.Enabled,
+		AllowForcePush:                p.AllowForcePushes.Enabled,
+		AllowDeletions:                p.AllowDeletions.Enabled,
+	}
+	if checks := p.RequiredStatusChecks; checks != nil {
+		protection.StrictChecks = checks.Strict
+		// checks[] is the newer field and contexts[] the deprecated one;
+		// GitHub answers with both, and a context named in either is
+		// required.
+		for _, check := range checks.Checks {
+			protection.RequiredChecks = append(protection.RequiredChecks, check.Context)
+		}
+		for _, context := range checks.Contexts {
+			if !slices.Contains(protection.RequiredChecks, context) {
+				protection.RequiredChecks = append(protection.RequiredChecks, context)
+			}
+		}
+		slices.Sort(protection.RequiredChecks)
+	}
+	if reviews := p.RequiredPullRequestReviews; reviews != nil {
+		protection.DismissStaleReviews = reviews.DismissStaleReviews
+		protection.RequiredApprovals = reviews.RequiredApprovingReviewCount
+	}
+	return protection
+}
+
+// ghProtectionRequest is the body of PUT on a branch's protection. Every field
+// is required and nullable, so each one is a pointer and none may be omitted:
+// a key left out is read as null, which turns that protection off.
+type ghProtectionRequest struct {
+	RequiredStatusChecks *struct {
+		Strict   bool     `json:"strict"`
+		Contexts []string `json:"contexts"`
+	} `json:"required_status_checks"`
+	EnforceAdmins              *bool `json:"enforce_admins"`
+	RequiredPullRequestReviews *struct {
+		DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
+		RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
+	} `json:"required_pull_request_reviews"`
+	Restrictions                   *struct{} `json:"restrictions"`
+	RequiredLinearHistory          bool      `json:"required_linear_history"`
+	AllowForcePushes               bool      `json:"allow_force_pushes"`
+	AllowDeletions                 bool      `json:"allow_deletions"`
+	RequiredConversationResolution bool      `json:"required_conversation_resolution"`
+}
+
+// protectionRequest renders the protection flow wants as the body GitHub
+// insists on: the whole state, every time.
+func protectionRequest(p core.Protection) ghProtectionRequest {
+	body := ghProtectionRequest{
+		EnforceAdmins:                  &p.EnforceAdmins,
+		RequiredLinearHistory:          p.RequireLinearHistory,
+		AllowForcePushes:               p.AllowForcePush,
+		AllowDeletions:                 p.AllowDeletions,
+		RequiredConversationResolution: p.RequireConversationResolution,
+	}
+	if len(p.RequiredChecks) > 0 || p.StrictChecks {
+		body.RequiredStatusChecks = &struct {
+			Strict   bool     `json:"strict"`
+			Contexts []string `json:"contexts"`
+		}{Strict: p.StrictChecks, Contexts: p.RequiredChecks}
+		if body.RequiredStatusChecks.Contexts == nil {
+			body.RequiredStatusChecks.Contexts = []string{}
+		}
+	}
+	if p.RequiredApprovals > 0 || p.DismissStaleReviews {
+		body.RequiredPullRequestReviews = &struct {
+			DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
+			RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
+		}{DismissStaleReviews: p.DismissStaleReviews, RequiredApprovingReviewCount: p.RequiredApprovals}
+	}
+	return body
+}
+
+// Rule types of GET /repos/{owner}/{repo}/rules/branches/{branch}, the
+// ruleset mechanism. A rule flow has no name for is somebody else's and is
+// left out of what flow reports.
+const (
+	ghRuleStatusChecks   = "required_status_checks"
+	ghRulePullRequest    = "pull_request"
+	ghRuleLinearHistory  = "required_linear_history"
+	ghRuleNonFastForward = "non_fast_forward"
+	ghRuleDeletion       = "deletion"
+)
+
+// ghRule is one effective rule. The parameters differ per type, so they are
+// decoded once the type is known.
+type ghRule struct {
+	Type       string          `json:"type"`
+	Parameters json.RawMessage `json:"parameters"`
+}
+
+// ghStatusCheckRule is the parameters of a required_status_checks rule.
+type ghStatusCheckRule struct {
+	Strict bool `json:"strict_required_status_checks_policy"`
+	Checks []struct {
+		Context string `json:"context"`
+	} `json:"required_status_checks"`
+}
+
+// ghPullRequestRule is the parameters of a pull_request rule.
+type ghPullRequestRule struct {
+	RequiredApprovals       int  `json:"required_approving_review_count"`
+	DismissStaleReviews     bool `json:"dismiss_stale_reviews_on_push"`
+	RequireThreadResolution bool `json:"required_review_thread_resolution"`
+}
+
+// rulesToProtection folds the effective rules into one protection. Rules only
+// ever forbid, so the branch starts out permitting what no rule denies.
+func rulesToProtection(branch string, rules []ghRule) core.Protection {
+	protection := core.Protection{
+		Branch:         branch,
+		Enabled:        true,
+		AllowForcePush: true,
+		AllowDeletions: true,
+	}
+	for _, rule := range rules {
+		switch rule.Type {
+		case ghRuleStatusChecks:
+			var params ghStatusCheckRule
+			if json.Unmarshal(rule.Parameters, &params) != nil {
+				continue
+			}
+			protection.StrictChecks = protection.StrictChecks || params.Strict
+			for _, check := range params.Checks {
+				if check.Context != "" && !protection.RequiresCheck(check.Context) {
+					protection.RequiredChecks = append(protection.RequiredChecks, check.Context)
+				}
+			}
+		case ghRulePullRequest:
+			var params ghPullRequestRule
+			if json.Unmarshal(rule.Parameters, &params) != nil {
+				continue
+			}
+			protection.RequiredApprovals = max(protection.RequiredApprovals, params.RequiredApprovals)
+			protection.DismissStaleReviews = protection.DismissStaleReviews || params.DismissStaleReviews
+			protection.RequireConversationResolution = protection.RequireConversationResolution || params.RequireThreadResolution
+		case ghRuleLinearHistory:
+			protection.RequireLinearHistory = true
+		case ghRuleNonFastForward:
+			protection.AllowForcePush = false
+		case ghRuleDeletion:
+			protection.AllowDeletions = false
+		}
+	}
+	slices.Sort(protection.RequiredChecks)
+	return protection
+}
+
+// squashTitleToGitHub maps flow's squash title setting onto GitHub's. A
+// setting flow does not name is sent as nothing, so that the repository keeps
+// what it had rather than being given a value nobody chose.
+func squashTitleToGitHub(title string) string {
+	switch title {
+	case core.SquashTitlePR:
+		return ghSquashTitlePR
+	case core.SquashTitleCommit:
+		return ghSquashTitleCommit
+	default:
+		return ""
+	}
+}
+
+// squashMessageToGitHub maps flow's squash message setting onto GitHub's.
+func squashMessageToGitHub(message string) string {
+	switch message {
+	case core.SquashMessagePRBody:
+		return ghSquashMessagePRBody
+	case core.SquashMessageCommits:
+		return ghSquashMessageCommits
+	case core.SquashMessageBlank:
+		return ghSquashMessageBlank
+	default:
+		return ""
+	}
+}
+
+// mergeRequest renders the merge settings flow wants as GitHub's own fields.
+func mergeRequest(s core.MergeSettings) ghRepoRequest {
+	return ghRepoRequest{
+		AllowSquashMerge:         s.AllowSquash,
+		AllowMergeCommit:         s.AllowMerge,
+		AllowRebaseMerge:         s.AllowRebase,
+		SquashMergeCommitTitle:   squashTitleToGitHub(s.SquashTitle),
+		SquashMergeCommitMessage: squashMessageToGitHub(s.SquashMessage),
+		DeleteBranchOnMerge:      s.DeleteBranchOnMerge,
+	}
+}
+
+// ghRepoRequest is the body of PATCH /repos/{owner}/{repo}. Merge strategies
+// are one setting written whole (spec 06 §4), so every field is sent.
+type ghRepoRequest struct {
+	AllowSquashMerge         bool   `json:"allow_squash_merge"`
+	AllowMergeCommit         bool   `json:"allow_merge_commit"`
+	AllowRebaseMerge         bool   `json:"allow_rebase_merge"`
+	SquashMergeCommitTitle   string `json:"squash_merge_commit_title,omitempty"`
+	SquashMergeCommitMessage string `json:"squash_merge_commit_message,omitempty"`
+	DeleteBranchOnMerge      bool   `json:"delete_branch_on_merge"`
 }
 
 // The types below are GraphQL's, not REST's. GitHub answers a GraphQL request

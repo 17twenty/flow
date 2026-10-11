@@ -138,7 +138,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 3.3 GitHub: linked issues via closingIssuesReferences — specs: 04 §3, 10 §2 — deps: 3.1 (#47)
   - note: the first GraphQL query flow makes, sent to the endpoint beside the REST root rather than under it. A ticket in another repository comes back qualified, one in this repository does not, and the walk follows the cursor because the table's `first: 20` is a page size and not a ceiling. GraphQL answers 200 when it fails, so the errors array is read as the refusal it is, with the sentinel its type means. The adapter asks only when its declaration says it can verify the link.
   - AC: cross-repo references returned repo-qualified
-- [ ] 3.4 GitHub: rulesets/protection read, additive required check, merge settings — specs: 10 §2, 06 §4 — deps: 3.1 (#48)
+- [x] 3.4 GitHub: rulesets/protection read, additive required check, merge settings — specs: 10 §2, 06 §4 — deps: 3.1 (#48)
+  - note: GitHub protects a branch two ways, so flow reads both and folds them into one answer: a check required by either is required, and a rule that forbids force-pushing wins over a classic protection that permits it. The classic PUT replaces the whole of a branch's protection, so the merge happens in the adapter against what the branch says now — which is where additivity lives. Protection either mechanism already provides is not written again, taking protection off is refused, and merge strategies are written whole and read back so a pinned repository is a conflict rather than a silent no-op.
   - AC: existing required contexts preserved
 - [ ] 3.5 GitHub: file proposal via PR — specs: 06 §4 — deps: 3.1 (#49)
   - AC: re-run updates the same PR

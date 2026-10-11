@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -79,6 +80,8 @@ func TestGitHubMeetsTheReadHalfOfTheContract(t *testing.T) {
 		"commits on the trunk, newest first",
 		"ancestry proves a merge reached an environment",
 		"files on the trunk",
+		"protection is read effectively and written additively",
+		"merge settings",
 		"a commit status replaces the last verdict from the same context",
 		"a comment is edited in place, found by its marker, and deleted once",
 	)
@@ -516,11 +519,8 @@ func TestGitHubRefusesWhatItsPlanItemHasNotLanded(t *testing.T) {
 	ctx := t.Context()
 
 	calls := map[string]func() error{
-		"Probe":            func() error { _, err := adapter.Probe(ctx); return err },
-		"Protection":       func() error { _, err := adapter.Protection(ctx, "main"); return err },
-		"SetProtection":    func() error { return adapter.SetProtection(ctx, "main", core.Protection{}) },
-		"SetMergeSettings": func() error { return adapter.SetMergeSettings(ctx, core.MergeSettings{}) },
-		"ProposeFiles":     func() error { _, err := adapter.ProposeFiles(ctx, core.FileProposal{}); return err },
+		"Probe":        func() error { _, err := adapter.Probe(ctx); return err },
+		"ProposeFiles": func() error { _, err := adapter.ProposeFiles(ctx, core.FileProposal{}); return err },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
@@ -543,6 +543,181 @@ func numbers(prs []core.PullRequest) []int {
 		out = append(out, pr.Number)
 	}
 	return out
+}
+
+func TestGitHubReadsBothProtectionMechanismsAsOne(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRule("main", map[string]any{
+		"type": "required_status_checks",
+		"parameters": map[string]any{
+			"strict_required_status_checks_policy": true,
+			"required_status_checks":               []any{map[string]any{"context": "ci/lint"}},
+		},
+	})
+	fake.addRule("main", map[string]any{
+		"type": "pull_request",
+		"parameters": map[string]any{
+			"required_approving_review_count":   2,
+			"required_review_thread_resolution": true,
+		},
+	})
+	fake.addRule("main", map[string]any{"type": "non_fast_forward"})
+	fake.addRule("main", map[string]any{"type": "deletion"})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	protection, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !protection.RequiresCheck("ci/test") || !protection.RequiresCheck("ci/lint") {
+		t.Errorf("RequiredChecks = %v, want both mechanisms' checks", protection.RequiredChecks)
+	}
+	if protection.RequiredApprovals != 2 {
+		t.Errorf("RequiredApprovals = %d, want 2: the stricter of the two is what the branch really demands", protection.RequiredApprovals)
+	}
+	if !protection.StrictChecks || !protection.RequireConversationResolution {
+		t.Errorf("protection = %+v, want the ruleset's demands carried", protection)
+	}
+	if protection.AllowForcePush || protection.AllowDeletions {
+		t.Error("a branch a ruleset forbids force-pushing or deleting came back permitting it")
+	}
+}
+
+func TestGitHubReportsABranchProtectedOnlyByARulesetAsProtected(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRule("release/1.0", map[string]any{"type": "required_linear_history"})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	protection, err := adapter.Protection(t.Context(), "release/1.0")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !protection.Enabled || !protection.RequireLinearHistory {
+		t.Errorf("Protection(release/1.0) = %+v, want the ruleset alone to count as protection", protection)
+	}
+	if !protection.AllowForcePush || !protection.AllowDeletions {
+		t.Error("a rule that says nothing about force-pushing was read as forbidding it")
+	}
+	if !slices.Contains(fake.Requests(), "/repos/acme/widget/rules/branches/release/1.0") {
+		t.Errorf("the branch was not asked about as one ref: %v", fake.Requests())
+	}
+}
+
+func TestGitHubKeepsTheProtectionItWasNotAskedAbout(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.Protections["main"] = core.Protection{
+		Enabled:             true,
+		RequiredChecks:      []string{"ci/test"},
+		RequiredApprovals:   2,
+		DismissStaleReviews: true,
+		EnforceAdmins:       true,
+	}
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	want := core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}, RequireLinearHistory: true}
+	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	after, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !after.RequiresCheck("ci/test") || !after.RequiresCheck("flow/policy") {
+		t.Errorf("RequiredChecks = %v, want both: GitHub's PUT replaces, so the adapter merges", after.RequiredChecks)
+	}
+	if after.RequiredApprovals != 2 || !after.DismissStaleReviews || !after.EnforceAdmins {
+		t.Errorf("protection = %+v, want the settings flow never mentioned kept", after)
+	}
+	if !after.RequireLinearHistory {
+		t.Error("SetProtection did not apply what it was asked for")
+	}
+}
+
+func TestGitHubProtectsNothingTheBranchAlreadyProtects(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRule("main", map[string]any{
+		"type": "required_status_checks",
+		"parameters": map[string]any{
+			"required_status_checks": []any{map[string]any{"context": "flow/policy"}},
+		},
+	})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	want := core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy", "ci/test"}}
+	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	if slices.Contains(fake.Methods(), "PUT") {
+		t.Error("the adapter rewrote protection a ruleset already provides; a check required either way is required")
+	}
+}
+
+func TestGitHubRefusesToTakeProtectionOff(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	err := adapter.SetProtection(t.Context(), "main", core.Protection{RequiredChecks: []string{"flow/policy"}})
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("SetProtection(disabled) = %v, want it refused as validation", err)
+	}
+	if slices.Contains(fake.Methods(), "PUT") {
+		t.Error("flow wrote protection while being asked to remove it")
+	}
+}
+
+func TestGitHubRefusesMergeSettingsThatLeaveNoWayToMerge(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	err := adapter.SetMergeSettings(t.Context(), core.MergeSettings{DeleteBranchOnMerge: true})
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("SetMergeSettings = %v, want it refused before anything was sent", err)
+	}
+	if slices.Contains(fake.Methods(), "PATCH") {
+		t.Error("flow asked GitHub for a repository nobody could merge into")
+	}
+}
+
+func TestGitHubReportsMergeSettingsTheProviderDidNotKeep(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.fixedMerge = true
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	err := adapter.SetMergeSettings(t.Context(), core.MergeSettings{AllowSquash: true, SquashTitle: core.SquashTitlePR})
+	if !errors.Is(err, core.ErrConflict) {
+		t.Fatalf("SetMergeSettings = %v, want a conflict: a write the provider ignored is not a write", err)
+	}
+}
+
+func TestSameProtectionComparesEveryFieldProtectionHas(t *testing.T) {
+	kind := reflect.TypeOf(core.Protection{})
+	for i := range kind.NumField() {
+		field := kind.Field(i)
+		changed := core.Protection{}
+		value := reflect.ValueOf(&changed).Elem().Field(i)
+		switch field.Type.Kind() {
+		case reflect.String:
+			value.SetString("x")
+		case reflect.Bool:
+			value.SetBool(true)
+		case reflect.Int:
+			value.SetInt(1)
+		case reflect.Slice:
+			value.Set(reflect.ValueOf([]string{"x"}))
+		default:
+			t.Fatalf("Protection.%s is a %s, which sameProtection has no way to compare", field.Name, field.Type.Kind())
+		}
+		if sameProtection(core.Protection{}, changed) {
+			t.Errorf("sameProtection ignores Protection.%s, so a difference in it would never be written", field.Name)
+		}
+	}
 }
 
 func TestGitHubDoesNotPublishAVerdictTheCommitAlreadyCarries(t *testing.T) {

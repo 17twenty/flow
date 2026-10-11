@@ -387,19 +387,167 @@ func (g *GitHub) Probe(ctx context.Context) (core.Permissions, error) {
 	return core.Permissions{}, notYet("probe the credential")
 }
 
-// Protection returns the effective protection of a branch. Plan item 3.4.
+// Protection returns the effective protection of a branch: what the classic
+// mechanism says and what the rulesets say, together. GitHub has both and a
+// repository may use either or neither, so a branch is as protected as the
+// strictest thing said about it (spec 10 §2).
 func (g *GitHub) Protection(ctx context.Context, branch string) (core.Protection, error) {
-	return core.Protection{}, notYet("read the protection of %s", branch)
+	if branch == "" {
+		return core.Protection{}, core.Errorf(core.ErrValidation, "read the protection of %s", g.Slug()).
+			WithWhy("no branch was named")
+	}
+	classic, protected, err := g.classicProtection(ctx, branch)
+	if err != nil {
+		return core.Protection{}, err
+	}
+	rules, ruled, err := g.ruleProtection(ctx, branch)
+	if err != nil {
+		return core.Protection{}, err
+	}
+	switch {
+	case protected && ruled:
+		return classic.Merge(rules), nil
+	case protected:
+		return classic, nil
+	case ruled:
+		return rules, nil
+	default:
+		return core.Protection{Branch: branch}, nil
+	}
 }
 
-// SetProtection applies protection additively. Plan item 3.4.
-func (g *GitHub) SetProtection(ctx context.Context, branch string, p core.Protection) error {
-	return notYet("protect %s", branch)
+// classicProtection reads branch protection, reporting whether the branch has
+// any. GitHub answers 404 for a branch that is not protected, which is an
+// answer rather than a failure.
+func (g *GitHub) classicProtection(ctx context.Context, branch string) (core.Protection, bool, error) {
+	var payload ghProtection
+	path := g.path("branches", branch, "protection")
+	if _, err := g.do(ctx, core.Request{Path: path, Out: &payload}); err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			return core.Protection{Branch: branch}, false, nil
+		}
+		return core.Protection{}, false, explain(err, "read the protection of %s on %s", branch, g.Slug())
+	}
+	return payload.toProtection(branch), true, nil
 }
 
-// SetMergeSettings sets the repository's merge strategies. Plan item 3.4.
+// ruleProtection reads the rulesets in force on a branch, reporting whether
+// any apply. An empty list is the usual answer: rulesets are newer than
+// classic protection and most repositories have none.
+func (g *GitHub) ruleProtection(ctx context.Context, branch string) (core.Protection, bool, error) {
+	var rules []ghRule
+	req := core.Request{
+		Path:  g.path("rules", "branches", branch),
+		Query: url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+	}
+	err := paginate(ctx, g, req, func(rule ghRule) bool {
+		rules = append(rules, rule)
+		return true
+	})
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			return core.Protection{Branch: branch}, false, nil
+		}
+		return core.Protection{}, false, explain(err, "read the rules in force on %s of %s", branch, g.Slug())
+	}
+	if len(rules) == 0 {
+		return core.Protection{Branch: branch}, false, nil
+	}
+	return rulesToProtection(branch, rules), true, nil
+}
+
+// SetProtection applies protection additively: what the branch already
+// requires it goes on requiring, and what it already forbids stays forbidden
+// (spec 06 §4). GitHub's PUT replaces the whole of classic protection, so the
+// merge happens here, against what the branch says now.
+func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Protection) error {
+	switch {
+	case branch == "":
+		return core.Errorf(core.ErrValidation, "protect a branch of %s", g.Slug()).
+			WithWhy("no branch was named")
+	case !want.Enabled:
+		return core.Errorf(core.ErrValidation, "protect %s of %s", branch, g.Slug()).
+			WithWhy("the protection asked for is not enabled, which would mean removing it").
+			WithFix("flow only ever adds protection; take the branch's protection off at the forge yourself")
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	effective, err := g.Protection(ctx, branch)
+	if err != nil {
+		return err
+	}
+	if sameProtection(effective, effective.Merge(want)) {
+		return nil
+	}
+	classic, _, err := g.classicProtection(ctx, branch)
+	if err != nil {
+		return err
+	}
+	merged := classic.Merge(want)
+	req := core.Request{
+		Method: http.MethodPut,
+		Path:   g.path("branches", branch, "protection"),
+		Body:   protectionRequest(merged),
+		// Writing the same whole state twice leaves the same state, so
+		// a retry cannot do anything the first attempt did not.
+		Retry: core.RetryAlways,
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return explain(err, "protect %s of %s", branch, g.Slug())
+	}
+	return nil
+}
+
+// sameProtection reports whether two protections say the same thing. Every
+// field is named rather than compared whole, because [core.Protection] holds a
+// slice; a test walks the type and fails if a field is ever added here without
+// being added below.
+func sameProtection(a, b core.Protection) bool {
+	return a.Branch == b.Branch &&
+		a.Enabled == b.Enabled &&
+		slices.Equal(a.RequiredChecks, b.RequiredChecks) &&
+		a.StrictChecks == b.StrictChecks &&
+		a.RequiredApprovals == b.RequiredApprovals &&
+		a.DismissStaleReviews == b.DismissStaleReviews &&
+		a.RequireLinearHistory == b.RequireLinearHistory &&
+		a.RequireConversationResolution == b.RequireConversationResolution &&
+		a.EnforceAdmins == b.EnforceAdmins &&
+		a.AllowForcePush == b.AllowForcePush &&
+		a.AllowDeletions == b.AllowDeletions
+}
+
+// SetMergeSettings sets the repository's merge strategies. They are one
+// setting written whole (spec 06 §4): the strategies a team did not ask for
+// are the ones it wants turned off, so the call carries all of them.
 func (g *GitHub) SetMergeSettings(ctx context.Context, s core.MergeSettings) error {
-	return notYet("set the merge settings of %s", g.Slug())
+	if !s.AllowSquash && !s.AllowMerge && !s.AllowRebase {
+		return core.Errorf(core.ErrValidation, "set the merge settings of %s", g.Slug()).
+			WithWhy("no way of merging would be left, which GitHub refuses").
+			WithFix("allow at least one of squash, merge commit or rebase")
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	var payload ghRepo
+	req := core.Request{
+		Method: http.MethodPatch,
+		Path:   g.path(),
+		Body:   mergeRequest(s),
+		Out:    &payload,
+		Retry:  core.RetryAlways,
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return explain(err, "set the merge settings of %s", g.Slug())
+	}
+	if got := payload.toRepoInfo().Merge; got != s {
+		return core.Errorf(core.ErrConflict, "set the merge settings of %s", g.Slug()).
+			WithWhy("GitHub kept %+v rather than %+v", got, s).
+			WithFix("check whether an organisation policy fixes the merge strategies")
+	}
+	return nil
 }
 
 // CommitStatuses returns the latest verdict from each context on a commit,

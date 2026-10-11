@@ -44,6 +44,16 @@ type gitHubFake struct {
 	// fail the way GraphQL fails: 200, no data, and a reason.
 	refusalKind    string
 	refusalMessage string
+	// protections are the branches with classic protection, as GitHub
+	// holds them: a PUT replaces the whole of one, which is what makes an
+	// adapter that does not merge lose what was there.
+	protections map[string]core.Protection
+	// rules are the effective rulesets per branch, GitHub's other
+	// mechanism. Most repositories have none.
+	rules map[string][]any
+	// fixedMerge makes the repository ignore a change to its merge
+	// settings, as an organisation policy that pins them does.
+	fixedMerge bool
 
 	mu          sync.Mutex
 	requests    []string
@@ -58,11 +68,16 @@ type gitHubFake struct {
 func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *httptest.Server) {
 	t.Helper()
 	fake := &gitHubFake{
-		fx:         fx,
-		pageSize:   2,
-		statuses:   map[string][]core.CommitStatus{},
-		comments:   map[int][]ghComment{},
-		userAgents: map[string]int{},
+		fx:          fx,
+		pageSize:    2,
+		statuses:    map[string][]core.CommitStatus{},
+		comments:    map[int][]ghComment{},
+		userAgents:  map[string]int{},
+		protections: map[string]core.Protection{},
+		rules:       map[string][]any{},
+	}
+	for branch, protection := range fx.Protections {
+		fake.protections[branch] = protection
 	}
 	for sha, statuses := range fx.Statuses {
 		fake.statuses[sha] = slices.Clone(statuses)
@@ -192,6 +207,8 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	segments := splitPath(rest)
 
 	switch {
+	case len(segments) == 0 && r.Method == http.MethodPatch:
+		f.patchRepo(w, r)
 	case len(segments) == 0:
 		f.writeJSON(w, r, ghRepoJSON(f.fx.Repo))
 	case segments[0] == "pulls" && len(segments) == 1:
@@ -212,6 +229,10 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.issueComments(w, r, segments[1])
 	case segments[0] == "issues" && len(segments) == 3 && segments[1] == "comments":
 		f.issueComment(w, r, segments[2])
+	case segments[0] == "branches" && len(segments) > 2 && segments[len(segments)-1] == "protection":
+		f.protection(w, r, strings.Join(segments[1:len(segments)-1], "/"))
+	case segments[0] == "rules" && len(segments) > 2 && segments[1] == "branches":
+		f.branchRules(w, r, strings.Join(segments[2:], "/"))
 	case segments[0] == "compare" && len(segments) > 1:
 		f.compare(w, r, strings.Join(segments[1:], "/"))
 	case segments[0] == "contents" && len(segments) > 1:
@@ -489,6 +510,137 @@ func (f *gitHubFake) compare(w http.ResponseWriter, r *http.Request, basehead st
 		"ahead_by":  comparison.AheadBy,
 		"behind_by": comparison.BehindBy,
 	})
+}
+
+// protection serves and replaces a branch's classic protection. A PUT
+// replaces the whole of it, exactly as GitHub's does: an adapter that sends
+// only what it was asked for loses everything else, which is the hazard spec
+// 06 §4 is about.
+func (f *gitHubFake) protection(w http.ResponseWriter, r *http.Request, branch string) {
+	switch r.Method {
+	case http.MethodGet:
+		f.mu.Lock()
+		protection, ok := f.protections[branch]
+		f.mu.Unlock()
+		if !ok {
+			f.fail(w, http.StatusNotFound, "Branch not protected")
+			return
+		}
+		f.writeJSON(w, r, ghProtectionJSON(protection))
+	case http.MethodPut:
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			f.fail(w, http.StatusBadRequest, "the protection did not decode: "+err.Error())
+			return
+		}
+		for _, required := range []string{"required_status_checks", "enforce_admins", "required_pull_request_reviews", "restrictions"} {
+			if _, ok := body[required]; !ok {
+				f.fail(w, http.StatusUnprocessableEntity, "Invalid request: "+required+" is required and may be null")
+				return
+			}
+		}
+		protection := core.Protection{Branch: branch, Enabled: true}
+		if checks, ok := body["required_status_checks"].(map[string]any); ok {
+			protection.StrictChecks, _ = checks["strict"].(bool)
+			for _, context := range checks["contexts"].([]any) {
+				protection.RequiredChecks = append(protection.RequiredChecks, context.(string))
+			}
+		}
+		if reviews, ok := body["required_pull_request_reviews"].(map[string]any); ok {
+			protection.DismissStaleReviews, _ = reviews["dismiss_stale_reviews"].(bool)
+			if count, ok := reviews["required_approving_review_count"].(float64); ok {
+				protection.RequiredApprovals = int(count)
+			}
+		}
+		protection.EnforceAdmins, _ = body["enforce_admins"].(bool)
+		protection.RequireLinearHistory, _ = body["required_linear_history"].(bool)
+		protection.AllowForcePush, _ = body["allow_force_pushes"].(bool)
+		protection.AllowDeletions, _ = body["allow_deletions"].(bool)
+		protection.RequireConversationResolution, _ = body["required_conversation_resolution"].(bool)
+		f.mu.Lock()
+		f.protections[branch] = protection
+		f.mu.Unlock()
+		f.writeJSON(w, r, ghProtectionJSON(protection))
+	default:
+		f.fail(w, http.StatusMethodNotAllowed, "no such method on protection")
+	}
+}
+
+// branchRules serves the rulesets in force on a branch. An unruled branch
+// gets an empty list, not a 404, which is what GitHub answers.
+func (f *gitHubFake) branchRules(w http.ResponseWriter, r *http.Request, branch string) {
+	f.mu.Lock()
+	rules := slices.Clone(f.rules[branch])
+	f.mu.Unlock()
+	f.writePage(w, r, rules)
+}
+
+// addRule puts a ruleset rule in force on a branch.
+func (f *gitHubFake) addRule(branch string, rule map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rules[branch] = append(f.rules[branch], rule)
+}
+
+// patchRepo changes the repository's settings, replacing what it is given.
+func (f *gitHubFake) patchRepo(w http.ResponseWriter, r *http.Request) {
+	var body ghRepoRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the settings did not decode: "+err.Error())
+		return
+	}
+	if !body.AllowSquashMerge && !body.AllowMergeCommit && !body.AllowRebaseMerge {
+		f.fail(w, http.StatusUnprocessableEntity, "You cannot disable all merge types")
+		return
+	}
+	f.mu.Lock()
+	if f.fixedMerge {
+		repo := f.fx.Repo
+		f.mu.Unlock()
+		f.writeJSON(w, r, ghRepoJSON(repo))
+		return
+	}
+	f.fx.Repo.Merge = core.MergeSettings{
+		AllowSquash:         body.AllowSquashMerge,
+		AllowMerge:          body.AllowMergeCommit,
+		AllowRebase:         body.AllowRebaseMerge,
+		SquashTitle:         squashTitleFromGitHub(body.SquashMergeCommitTitle),
+		SquashMessage:       squashMessageFromGitHub(body.SquashMergeCommitMessage),
+		DeleteBranchOnMerge: body.DeleteBranchOnMerge,
+	}
+	repo := f.fx.Repo
+	f.mu.Unlock()
+	f.writeJSON(w, r, ghRepoJSON(repo))
+}
+
+// ghProtectionJSON renders branch protection as GitHub does, with both the
+// deprecated contexts list and the newer checks list.
+func ghProtectionJSON(p core.Protection) map[string]any {
+	doc := map[string]any{
+		"enforce_admins":                   map[string]any{"enabled": p.EnforceAdmins},
+		"required_linear_history":          map[string]any{"enabled": p.RequireLinearHistory},
+		"allow_force_pushes":               map[string]any{"enabled": p.AllowForcePush},
+		"allow_deletions":                  map[string]any{"enabled": p.AllowDeletions},
+		"required_conversation_resolution": map[string]any{"enabled": p.RequireConversationResolution},
+	}
+	if len(p.RequiredChecks) > 0 || p.StrictChecks {
+		checks := make([]any, 0, len(p.RequiredChecks))
+		for _, context := range p.RequiredChecks {
+			checks = append(checks, map[string]any{"context": context})
+		}
+		doc["required_status_checks"] = map[string]any{
+			"strict":   p.StrictChecks,
+			"contexts": p.RequiredChecks,
+			"checks":   checks,
+		}
+	}
+	if p.RequiredApprovals > 0 || p.DismissStaleReviews {
+		doc["required_pull_request_reviews"] = map[string]any{
+			"dismiss_stale_reviews":           p.DismissStaleReviews,
+			"required_approving_review_count": p.RequiredApprovals,
+		}
+	}
+	return doc
 }
 
 // graphQL answers the one GraphQL endpoint. GitHub returns 200 whatever

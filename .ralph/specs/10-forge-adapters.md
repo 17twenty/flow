@@ -190,3 +190,40 @@ duplicate-pipeline hazards). MR closing issues: `GET
   the same page limit as the REST walks. A pull request that closes a
   twenty-first ticket is still closing it, and silently dropping it would make
   the gate judge work it could not see.
+- **§2 a branch is as protected as the strictest thing said about it (item
+  3.4).** GitHub has two mechanisms — classic branch protection and rulesets —
+  and a repository may use either, both or neither. `Protection` reads both and
+  folds them together: a check required by either is required, the larger
+  approval count wins, and a rule that forbids force-pushing forbids it
+  whatever classic protection permits. Reading one mechanism would report a
+  protected trunk as unprotected for every team that moved to rulesets.
+- **§2 rules only ever forbid (item 3.4).** The rules endpoint lists what is in
+  force and says nothing about what is not, so a branch with rules starts out
+  permitting force-pushes and deletion and is restricted by the rules that are
+  there. A branch with no rules and no classic protection is not protected at
+  all, which is a different answer from "protected and permissive".
+- **§2 protection is merged here because GitHub's PUT replaces (item 3.4).**
+  The classic endpoint takes the whole of a branch's protection in one body and
+  every field is required, so sending what flow wants would delete the required
+  checks, the approval count and the flags nobody mentioned. The adapter reads
+  what the branch has, merges flow's intent onto it, and writes the result —
+  which is where spec 06 §4's additivity actually lives. The additive contexts
+  endpoint in §2's table is not used: it cannot protect a branch that is not
+  protected, and a merged PUT is additive by construction, so one call does
+  what two would.
+- **§2 protection a branch already provides is not written again (item 3.4).**
+  If the effective protection — either mechanism — already says everything
+  flow wants, nothing is sent. A check required by a ruleset is required; a
+  team that moved to rulesets should not find flow writing a classic
+  protection beside them on every apply.
+- **§2 flow never takes protection off (item 3.4).** `SetProtection` with
+  protection that is not enabled is refused rather than translated into a
+  delete. Everything else flow does to a repository can be undone by running
+  it again; removing the trunk's protection cannot.
+- **§2 merge strategies are written whole and read back (item 3.4).** Spec 06
+  §4 makes them one setting, so the PATCH carries all of them: the strategies
+  a team did not ask for are the ones it wants turned off. Disabling all three
+  is refused before anything is sent, because GitHub refuses it too and its
+  own message does not say which strategy to put back. The reply is compared
+  with what was asked for, so an organisation policy that pins the strategies
+  is reported as a conflict instead of passing as a write that did nothing.
