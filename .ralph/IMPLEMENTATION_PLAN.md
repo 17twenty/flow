@@ -112,7 +112,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 2.11 Drift and attestations — specs: 07 §7–8 — deps: 2.8, 1.7 (#38)
   - note: engine/drift.go. Drift is the difference between "never right" and "was right and somebody changed it", and the lock's observed hash is the only before flow has — so a failure with nothing recorded is not drift, and a drifted check deliberately does not overwrite the remembered good state, or the finding would be reported once and then forgotten. A changed hash that still satisfies is absorbed silently. The after is the plan item's own changes. Attestations record the hash of the desired item they covered, so an unrelated edit does not retire them; only a check whose remedy is attest can be attested, which stops `flow attest` being a silencer. One check, one attestation, ninety days by default, seven days' notice.
   - AC: drift evidence; cosmetic absorption; expiry and invalidation
-- [ ] 2.12 Definition of Ready rules — specs: 04 §7 — deps: 1.4 (#39)
+- [x] 2.12 Definition of Ready rules — specs: 04 §7 — deps: 1.4 (#39)
+  - note: engine/ready.go. Six pure functions of a ticket and the configuration — nothing asks the network, because the same ticket must get the same answer in `flow check pr` on a laptop, in CI and in doctor's live audit. A rule whose trigger is absent is skipped and satisfied; max_size is on only when a limit is set; a rule this build does not know fails closed, because ignoring it would let work through a gate the team believes is closed. The acceptance-criteria rule distinguishes a missing heading from an empty one, which is the ticket the rule exists to catch.
   - AC: table tests per rule incl. issue-form generated bodies
 - [ ] 2.13 Policy rules, status description, comment render — specs: 09 §2 — deps: 1.2, 2.12 (#40)
   - AC: per-rule tables; strictness mapping; 140-char truncation golden; determinism

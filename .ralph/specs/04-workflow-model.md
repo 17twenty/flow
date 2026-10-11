@@ -107,3 +107,44 @@ DoR is evaluated by `check pr` (rule `ticket.ready`) and in doctor live health.
 Counts from the tracker (column membership), cross-checked with forge state
 for `in_review` (open non-draft PRs linked to tickets); the max is used.
 Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
+- **§7 `max_size` is a key, not a name in `rules` (item 2.12).** Spec §7's
+  table lists it among the rules, but it needs a duration and the other five
+  need nothing, so the configuration models it as
+  `definition_of_ready.max_size` beside `rules`. It is on exactly when the
+  limit is greater than zero, and a disabled rule does not appear in the
+  verdict at all rather than appearing as a skip.
+- **§7 a rule that cannot apply is satisfied, not failed (item 2.12).** A
+  ticket that is not labelled `user-facing` has no opinion about feature flags;
+  a tracker with no estimate field cannot answer `max_size`. Flow does not hold
+  work up for a question nobody asked. The verdict records the skip so the
+  difference between "it passed" and "it did not come up" stays visible.
+- **§7 the trigger labels are fixed, not configured (item 2.12).**
+  `user-facing` and `ui` are named by this spec, and flow creates both as part
+  of the desired state. A rule whose trigger label could be renamed per
+  repository is a rule nobody can reason about across repositories — and a team
+  could never switch the rule on, because the label it reads would not exist
+  yet. The *blocked* label is the exception and stays configurable, because
+  `workflow.blocked.label` already names it for the rest of the workflow.
+- **§7 a heading is matched at any level, without regard to case, ignoring
+  trailing `#` and `:` (item 2.12).** "## Acceptance Criteria:" and "###
+  acceptance criteria" are the same heading to everybody except a parser.
+  `#hashtag` is not a heading and neither is seven hashes.
+- **§7 an empty heading fails, and says so differently (item 2.12).** The issue
+  form flow proposes puts the "Acceptance criteria" heading in for you, so a
+  heading with nothing under it means somebody accepted the template and wrote
+  nothing — exactly the ticket the rule exists to catch. "You have no heading"
+  and "you left it empty" are different mistakes, and the person fixing the
+  ticket is told which they made. The next heading of any level ends the
+  section.
+- **§7 all three markdown link spellings count under "Design" (item 2.12).** A
+  bare URL, `[text](url)` and `[text][1]`. Flow is not a markdown linter, and a
+  reference whose definition is missing is a rendering mistake rather than a
+  missing design.
+- **§7 a rule this build does not know fails closed (item 2.12).** Configuration
+  validation rejects an unknown rule, so reaching the engine with one means a
+  binary older than the file. Ignoring it silently would let work through a
+  gate the team believes is closed, so the verdict refuses and names the
+  problem as flow's own rather than the ticket's.
+- **§7 no rules means no Definition of Ready (item 2.12).** Every ticket is
+  ready. A team that has not agreed what ready means should not have flow
+  inventing one for them.
