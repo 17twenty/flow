@@ -1,8 +1,10 @@
 package tracker
 
 import (
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/17twenty/flow/internal/core"
 )
@@ -261,4 +263,368 @@ func (f ghStatusField) items() []core.Item {
 type ghStatusOption struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// has reports whether one of the field's options is that column.
+func (f ghStatusField) has(optionID string) bool {
+	return slices.ContainsFunc(f.Options, func(o ghStatusOption) bool { return o.ID == optionID })
+}
+
+// names is the columns as a human would list them, for an error that has to
+// say what the board does have.
+func (f ghStatusField) names() []string {
+	names := make([]string, 0, len(f.Options))
+	for _, option := range f.Options {
+		names = append(names, option.Name)
+	}
+	return names
+}
+
+// The rest of this file is the ticket side of the board: the items it holds,
+// the issues behind them, and the one mutation that moves an item between
+// columns (spec 11 §2, item 3.9).
+
+// Page sizes for the ticket queries. The items connection is paged at the 100
+// spec 11 §2 asks for, against a shared points budget. The connections inside
+// one issue are bounded rather than paged: a ticket with more than twenty
+// labels or five assignees is not one flow can say anything useful about, and
+// an issue is on a handful of boards at most.
+const ghItemPageSize = 100
+
+// GitHub's own words for the state of an issue, and why it was closed.
+const (
+	ghIssueClosed       = "CLOSED"
+	ghReasonCompleted   = "COMPLETED"
+	ghReasonNotPlanned  = "NOT_PLANNED"
+	ghStatusFieldName   = "Status"
+	ghUpdateItemFieldOp = "updateProjectV2ItemFieldValue"
+)
+
+// ghIssueFields is the part of an Issue every ticket is built from. It is one
+// string because the two queries that read an issue — the board's items and
+// one issue by number — must build the same ticket from it, and a field
+// present in one and missing from the other would make a ticket mean two
+// things depending on how it was asked for.
+const ghIssueFields = "id number title body url state stateReason closedAt updatedAt " +
+	"repository{nameWithOwner} " +
+	"labels(first:" + ghLabelPage + "){nodes{name}} " +
+	"assignees(first:" + ghAssigneePage + "){nodes{login}} " +
+	"parent{number repository{nameWithOwner}}"
+
+// The inner page sizes, as they appear in the document. They are literals
+// rather than variables because they are flow's own bounds and never a
+// caller's, and a literal is what makes [ghIssueFields] one constant string.
+const (
+	ghLabelPage     = "20"
+	ghAssigneePage  = "5"
+	ghIssueItemPage = "10"
+)
+
+// ghStatusValue is an item's value of the Status field. fieldValueByName
+// answers with an empty object for a field of another type, which reads as an
+// item with no column — the truthful answer for a board whose Status is not a
+// single select.
+const ghStatusValue = `fieldValueByName(name:"` + ghStatusFieldName + `"){` +
+	`...on ProjectV2ItemFieldSingleSelectValue{optionId name}}`
+
+// ghItemsQuery reads one page of the board's items, each with the issue behind
+// it and the column it sits in.
+func ghItemsQuery(ownerType string) string {
+	return "query($login:String!,$number:Int!,$first:Int!,$after:String){" +
+		ghOwnerField(ownerType) + "(login:$login){projectV2(number:$number){" +
+		"items(first:$first,after:$after){" +
+		"nodes{id updatedAt " + ghStatusValue + " content{...on Issue{" + ghIssueFields + "}}}" +
+		"pageInfo{hasNextPage endCursor}}}}}"
+}
+
+// ghIssueItemQuery reads one issue and the board items holding it: the
+// issue→item lookup a move needs, answered in the same document as the ticket
+// itself so that reading a ticket costs one query however it is used.
+const ghIssueItemQuery = "query($owner:String!,$name:String!,$number:Int!){" +
+	"repository(owner:$owner,name:$name){issue(number:$number){" + ghIssueFields +
+	" projectItems(first:" + ghIssueItemPage + "){" +
+	"nodes{id updatedAt " + ghStatusValue + " project{number}}}}}}"
+
+// ghMoveMutation sets one item's Status to one option.
+const ghMoveMutation = "mutation($project:ID!,$item:ID!,$field:ID!,$option:String!){" +
+	ghUpdateItemFieldOp + "(input:{projectId:$project,itemId:$item,fieldId:$field," +
+	"value:{singleSelectOptionId:$option}}){projectV2Item{id}}}"
+
+// ghItemFields is what both queries report about a board item: which item it
+// is, when it last changed, and the column it is in.
+type ghItemFields struct {
+	ID        string        `json:"id"`
+	UpdatedAt time.Time     `json:"updatedAt"`
+	Status    *ghItemStatus `json:"fieldValueByName"`
+}
+
+// optionID is the column the item sits in, empty when its Status is unset.
+func (f ghItemFields) optionID() string {
+	if f.Status == nil {
+		return ""
+	}
+	return f.Status.OptionID
+}
+
+// ghItemStatus is an item's single-select Status value.
+type ghItemStatus struct {
+	OptionID string `json:"optionId"`
+	Name     string `json:"name"`
+}
+
+// ghItem is one item of the board, with whatever it holds.
+type ghItem struct {
+	ghItemFields
+	// Content is the issue, pull request or draft the item is of. Only an
+	// issue is a ticket; anything else decodes with no number.
+	Content *ghIssue `json:"content"`
+}
+
+// ghIssueItem is one item as the issue→item lookup reports it: the same
+// fields, and which board it is on.
+type ghIssueItem struct {
+	ghItemFields
+	Project *ghItemProject `json:"project"`
+}
+
+// ghItemProject is the board an item belongs to, by the number flow records.
+type ghItemProject struct {
+	Number int `json:"number"`
+}
+
+// ghIssue is an issue as flow reads it.
+type ghIssue struct {
+	ID          string    `json:"id"`
+	Number      int       `json:"number"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	URL         string    `json:"url"`
+	State       string    `json:"state"`
+	StateReason string    `json:"stateReason"`
+	ClosedAt    time.Time `json:"closedAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	Repository  ghRepoRef `json:"repository"`
+	Labels      struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
+	Assignees struct {
+		Nodes []struct {
+			Login string `json:"login"`
+		} `json:"nodes"`
+	} `json:"assignees"`
+	Parent *ghIssueRef `json:"parent"`
+}
+
+// ghRepoRef is a repository as owner/name.
+type ghRepoRef struct {
+	NameWithOwner string `json:"nameWithOwner"`
+}
+
+// ghIssueRef is another issue referred to from this one: the sub-issue parent
+// the Definition of Ready reads (spec 04 §7).
+type ghIssueRef struct {
+	Number     int       `json:"number"`
+	Repository ghRepoRef `json:"repository"`
+}
+
+// ghIssueResult is the answer to [ghIssueItemQuery]. Both the repository and
+// the issue are null when there is no such thing, which is how GraphQL says
+// not found for a field that is allowed to be null.
+type ghIssueResult struct {
+	Repository *struct {
+		Issue *ghIssueWithItems `json:"issue"`
+	} `json:"repository"`
+}
+
+// issue returns the issue the lookup found, or nil.
+func (r ghIssueResult) issue() *ghIssueWithItems {
+	if r.Repository == nil || r.Repository.Issue == nil || r.Repository.Issue.Number <= 0 {
+		return nil
+	}
+	return r.Repository.Issue
+}
+
+// ghIssueWithItems is one issue and the board items holding it. The issue is
+// embedded rather than repeated: the lookup and the board's own items query
+// must build the same ticket out of the same fields.
+type ghIssueWithItems struct {
+	ghIssue
+	ProjectItems struct {
+		Nodes []ghIssueItem `json:"nodes"`
+	} `json:"projectItems"`
+}
+
+// on returns the item holding this issue on the board with that number, and
+// whether there is one. An issue may be on many boards; only one of them is
+// the board flow was pointed at.
+func (w ghIssueWithItems) on(number int) (ghItemFields, bool) {
+	for _, item := range w.ProjectItems.Nodes {
+		if item.Project != nil && item.Project.Number == number && item.ID != "" {
+			return item.ghItemFields, true
+		}
+	}
+	return ghItemFields{}, false
+}
+
+// ghItemsResult is the answer to [ghItemsQuery].
+type ghItemsResult struct {
+	User         *ghItemsHolder `json:"user"`
+	Organization *ghItemsHolder `json:"organization"`
+}
+
+// owner returns whichever owner the query asked for.
+func (r ghItemsResult) owner() ghItemsHolder {
+	switch {
+	case r.User != nil:
+		return *r.User
+	case r.Organization != nil:
+		return *r.Organization
+	default:
+		return ghItemsHolder{}
+	}
+}
+
+// ghItemsHolder is the owner's one board, as the items query sees it.
+type ghItemsHolder struct {
+	ProjectV2 *struct {
+		Items ghItemConnection `json:"items"`
+	} `json:"projectV2"`
+}
+
+// items returns the page of items, empty when there is no such board.
+func (h ghItemsHolder) items() ghItemConnection {
+	if h.ProjectV2 == nil {
+		return ghItemConnection{}
+	}
+	return h.ProjectV2.Items
+}
+
+// ghItemConnection is one page of a board's items.
+type ghItemConnection struct {
+	Nodes    []ghItem   `json:"nodes"`
+	PageInfo ghPageInfo `json:"pageInfo"`
+}
+
+// ghTicket builds a ticket from an issue and the board item holding it, where
+// here is the repository flow is configured for.
+//
+// The ticket's id is the issue's own node id. The item's id identifies where
+// the issue is pinned rather than what it is: it changes when somebody removes
+// the issue from the board and adds it again, and an issue on no board has
+// none at all. What the mutations need is resolved when they run.
+func ghTicket(issue ghIssue, item ghItemFields, here string) core.Ticket {
+	ticket := core.Ticket{
+		Key:       ghKey(issue.Repository.NameWithOwner, here, issue.Number),
+		ID:        issue.ID,
+		URL:       issue.URL,
+		Title:     issue.Title,
+		Body:      issue.Body,
+		Closed:    strings.EqualFold(issue.State, ghIssueClosed),
+		ClosedAt:  issue.ClosedAt,
+		UpdatedAt: issue.UpdatedAt,
+	}
+	if ticket.Closed {
+		ticket.CloseReason = ghCloseReason(issue.StateReason)
+	}
+	// The ticket last changed when either half of it did: editing the
+	// issue does not touch the item, and moving the item does not touch
+	// the issue, and a window that missed either would miss work.
+	if item.UpdatedAt.After(ticket.UpdatedAt) {
+		ticket.UpdatedAt = item.UpdatedAt
+	}
+	if option := item.optionID(); option != "" {
+		ticket.ColumnID = core.ColumnID(option)
+		ticket.Status = core.Status{ID: option, Name: item.Status.Name}
+	}
+	for _, label := range issue.Labels.Nodes {
+		if label.Name != "" {
+			ticket.Labels = append(ticket.Labels, label.Name)
+		}
+	}
+	for _, assignee := range issue.Assignees.Nodes {
+		if assignee.Login != "" {
+			ticket.Assignees = append(ticket.Assignees, assignee.Login)
+		}
+	}
+	if issue.Parent != nil && issue.Parent.Number > 0 {
+		ticket.Parent = ghKey(issue.Parent.Repository.NameWithOwner, here, issue.Parent.Number)
+	}
+	return ticket
+}
+
+// ghCloseReason is the close reason GitHub's state reason means. A reason flow
+// has no name for is no reason: spec 07 §6 reads only whether the work was
+// abandoned, and inventing a third answer would make a check say something the
+// tracker did not.
+func ghCloseReason(reason string) string {
+	switch strings.ToUpper(strings.TrimSpace(reason)) {
+	case ghReasonCompleted:
+		return core.ClosedCompleted
+	case ghReasonNotPlanned:
+		return core.ClosedNotPlanned
+	default:
+		return ""
+	}
+}
+
+// ghKey is the ticket key of an issue: "#7" in the repository flow is
+// configured for, and "owner/repo#7" anywhere else — the form GitHub itself
+// qualifies a reference with, and the only one the tracker can resolve later
+// without guessing which repository was meant (spec 11 §2).
+func ghKey(slug, here string, number int) string {
+	key := "#" + strconv.Itoa(number)
+	if slug != "" && !strings.EqualFold(slug, here) {
+		key = slug + key
+	}
+	return key
+}
+
+// ghParseKey splits a ticket key into the repository holding it and the issue
+// number, with here standing for the repository flow is configured for.
+//
+// Only the two forms [ghKey] writes are keys. A bare number is not: a tracker
+// that accepted one would resolve a key from somewhere else — a Jira key, a
+// commit subject, a pull request number — against its own board, and the
+// mistake would be silent.
+func ghParseKey(key, here string) (owner, name string, number int, err error) {
+	refuse := func(why string, args ...any) (string, string, int, error) {
+		return "", "", 0, core.Errorf(core.ErrValidation, "read %q as a ticket", key).
+			WithWhy(why, args...).
+			WithFix("write a ticket as #7, or as owner/repo#7 for an issue in another repository")
+	}
+	trimmed := strings.TrimSpace(key)
+	at := strings.Index(trimmed, "#")
+	if at < 0 || trimmed == "" {
+		return refuse("it has no issue number")
+	}
+	slug := trimmed[:at]
+	parsed, convErr := strconv.Atoi(trimmed[at+1:])
+	if convErr != nil || parsed <= 0 {
+		return refuse("%q is not an issue number", trimmed[at+1:])
+	}
+	if slug == "" {
+		if here == "" {
+			return refuse("it names no repository, and flow has not been told which one holds it")
+		}
+		slug = here
+	}
+	repoOwner, repoName, ok := strings.Cut(slug, "/")
+	if !ok || repoOwner == "" || repoName == "" || strings.Contains(repoName, "/") {
+		return refuse("%q does not name a repository as owner/name", slug)
+	}
+	return repoOwner, repoName, parsed, nil
+}
+
+// ghMoveResult is the answer to [ghMoveMutation]. Nothing is read from it: the
+// mutation either happened or came back as a GraphQL error, and the item's new
+// value is what the next observation reports. It is named so that the refusal
+// is decoded against a document rather than discarded.
+type ghMoveResult struct {
+	UpdateProjectV2ItemFieldValue struct {
+		ProjectV2Item struct {
+			ID string `json:"id"`
+		} `json:"projectV2Item"`
+	} `json:"updateProjectV2ItemFieldValue"`
 }

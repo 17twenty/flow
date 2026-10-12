@@ -71,9 +71,10 @@ func contractGitHubProjects(ownerType string) coretest.NewTracker {
 	}
 }
 
-// The part of the tracker contract plan item 3.8 lands: naming itself,
-// probing, discovery, references and observation. Items, moves and follow-ups
-// are 3.9 to 3.11, and the suite is run whole when they have landed (3.12).
+// The part of the tracker contract plan items 3.8 and 3.9 land: naming itself,
+// probing, discovery, references, observation, tickets and moves. Follow-ups,
+// comments and closing are 3.10 and 3.11, and the suite is run whole when they
+// have landed (3.12).
 //
 // Both owner kinds sit it. A person's projects and an organisation's are
 // reached through different fields of GitHub's schema and shown at different
@@ -89,6 +90,10 @@ func TestGitHubProjectsMeetsTheContractItHasLanded(t *testing.T) {
 				"nonsense is not a reference",
 				"an observation is canonical and stable",
 				"observing something that is not there is not an error",
+				"tickets by key, by column, and all of them",
+				"a ticket that is not there",
+				"a move is idempotent",
+				"linkage uses the forge's own link",
 			)
 		})
 	}
@@ -625,7 +630,7 @@ func TestGitHubProjectsEndpointsFollowTheAPIRoot(t *testing.T) {
 	}
 }
 
-// Everything 3.9 to 3.11 will land refuses meanwhile, naming what it wanted
+// Everything 3.10 and 3.11 will land refuses meanwhile, naming what it wanted
 // rather than failing blankly — the only stub spec 01 permits, and only until
 // its plan item lands.
 func TestGitHubProjectsRefusesWhatItsPlanItemsHaveNotLanded(t *testing.T) {
@@ -640,12 +645,6 @@ func TestGitHubProjectsRefusesWhatItsPlanItemsHaveNotLanded(t *testing.T) {
 			_, err := adapter.Apply(t.Context(), core.Change{What: core.ItemTrackerStatusOptions})
 			return err
 		}(),
-		"Ticket": func() error { _, err := adapter.Ticket(t.Context(), "#1"); return err }(),
-		"Tickets": func() error {
-			_, err := adapter.Tickets(t.Context(), core.TicketQuery{})
-			return err
-		}(),
-		"Move":           adapter.Move(t.Context(), "#1", "col"),
 		"CreateFollowUp": func() error { _, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{}); return err }(),
 		"FindFollowUp": func() error {
 			_, err := adapter.FindFollowUp(t.Context(), core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget"))
@@ -676,3 +675,319 @@ func fixOf(t *testing.T, err error) string {
 // ptr is the address of a value, for the fields a test sets to "this, and not
 // nothing".
 func ptr[T any](v T) *T { return &v }
+
+// A ticket key is "#7" in the repository flow is configured for and
+// "owner/repo#7" anywhere else, and the same adapter reads back both — a board
+// gathers issues from several repositories, and a key that lost which one it
+// came from would resolve against the wrong board next time.
+func TestGitHubProjectsQualifiesAKeyFromAnotherRepository(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.items = append(fake.items, &ghFakeItem{
+		id: "PVTI_900", number: 7, optionID: string(coretest.ColumnTodo),
+		repo:       "acme/other",
+		parentRepo: "acme/upstream",
+		updatedAt:  coretest.ContractNow,
+		ticket: core.Ticket{
+			ID: "I_900", Title: "Elsewhere", Parent: "#3",
+			UpdatedAt: coretest.ContractNow,
+		},
+	})
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	all, err := adapter.Tickets(t.Context(), core.TicketQuery{})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	var found *core.Ticket
+	for _, ticket := range all {
+		if ticket.ID == "I_900" {
+			found = &ticket
+		}
+	}
+	if found == nil {
+		t.Fatal("the issue from the other repository is not on the board flow read")
+	}
+	if found.Key != "acme/other#7" {
+		t.Errorf("Key = %q, want acme/other#7: an unqualified key would resolve against the wrong repository", found.Key)
+	}
+	if found.Parent != "acme/upstream#3" {
+		t.Errorf("Parent = %q, want acme/upstream#3", found.Parent)
+	}
+
+	// And the qualified key reads back as the same ticket.
+	again, err := adapter.Ticket(t.Context(), found.Key)
+	if err != nil {
+		t.Fatalf("Ticket(%s): %v", found.Key, err)
+	}
+	if again.ID != found.ID {
+		t.Errorf("Ticket(%s) = %s, want the ticket the board listed", found.Key, again.ID)
+	}
+}
+
+// An issue in the repository flow is configured for is written "#7" and not
+// qualified, however the provider spells the repository's name.
+func TestGitHubProjectsDoesNotQualifyItsOwnRepository(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.items[0].repo = strings.ToUpper(fake.repo)
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	ticket, err := adapter.Ticket(t.Context(), "#10")
+	if err != nil {
+		t.Fatalf("Ticket(#10): %v", err)
+	}
+	if ticket.Key != "#10" {
+		t.Errorf("Key = %q, want #10: a repository's name is not case-sensitive", ticket.Key)
+	}
+}
+
+// Only the two forms flow writes are keys. A bare number is not one: accepting
+// it would resolve a reference from somewhere else — a Jira key, a pull
+// request number — against this board, and the mistake would be silent.
+func TestGitHubProjectsRefusesSomethingThatIsNotAKey(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	for _, key := range []string{"", "10", "PROJ-10", "#0", "#-1", "#ten", "acme#10", "a/b/c#10", "#"} {
+		t.Run(key, func(t *testing.T) {
+			if _, err := adapter.Ticket(t.Context(), key); !errors.Is(err, core.ErrValidation) {
+				t.Fatalf("Ticket(%q) = %v, want it to wrap ErrValidation", key, err)
+			}
+		})
+	}
+}
+
+// Without a repository of its own, flow cannot say which repository "#7" is
+// in, and says so rather than guessing.
+func TestGitHubProjectsCannotReadABareKeyWithNoRepository(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Repo = "" })
+	_, err := adapter.Ticket(t.Context(), "#10")
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Ticket(#10) = %v, want it to wrap ErrValidation", err)
+	}
+	if !strings.Contains(fixOf(t, err), "owner/repo#7") {
+		t.Errorf("the refusal does not say how to write a key: %q", fixOf(t, err))
+	}
+}
+
+// A board holds drafts and pull requests as well as issues. They are not
+// tickets: there is no key to refer to them by and nothing a check can read.
+func TestGitHubProjectsSkipsAnItemThatIsNotAnIssue(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	want := len(fake.items)
+	fake.items = append(fake.items, &ghFakeItem{id: "PVTI_draft", draft: true, updatedAt: coretest.ContractNow})
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	all, err := adapter.Tickets(t.Context(), core.TicketQuery{})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	if len(all) != want {
+		t.Errorf("got %d tickets, want %d: a draft note is not a ticket", len(all), want)
+	}
+}
+
+// A ticket last changed when either half of it did. Editing the issue does not
+// touch the item and moving the item does not touch the issue, so a window
+// built on one of them alone would miss work.
+func TestGitHubProjectsTicketChangedWhenEitherHalfDid(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	moved := coretest.ContractNow.Add(-time.Minute)
+	fake.items[0].updatedAt = moved
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	ticket, err := adapter.Ticket(t.Context(), "#10")
+	if err != nil {
+		t.Fatalf("Ticket(#10): %v", err)
+	}
+	if !ticket.UpdatedAt.Equal(moved) {
+		t.Errorf("UpdatedAt = %s, want the item's %s: the board moved after the issue was last edited",
+			ticket.UpdatedAt, moved)
+	}
+	recent, err := adapter.Tickets(t.Context(), core.TicketQuery{UpdatedSince: coretest.ContractNow.Add(-2 * time.Minute)})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	if len(recent) != 1 || recent[0].Key != "#10" {
+		t.Errorf("the window returned %d tickets, want the one the board moved", len(recent))
+	}
+}
+
+// Why a ticket was closed is GitHub's state reason, and a reason flow has no
+// name for is no reason at all: spec 07 §6 reads only whether the work was
+// abandoned, and inventing a third answer would make a check say something the
+// tracker never said.
+func TestGitHubProjectsReadsWhyATicketWasClosed(t *testing.T) {
+	cases := map[string]string{
+		"COMPLETED":   core.ClosedCompleted,
+		"not_planned": core.ClosedNotPlanned,
+		"DUPLICATE":   "",
+		"":            "",
+	}
+	for reason, want := range cases {
+		t.Run(reason, func(t *testing.T) {
+			if got := ghCloseReason(reason); got != want {
+				t.Errorf("ghCloseReason(%q) = %q, want %q", reason, got, want)
+			}
+		})
+	}
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.items[1].ticket.CloseReason = core.ClosedNotPlanned
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	ticket, err := adapter.Ticket(t.Context(), "#11")
+	if err != nil {
+		t.Fatalf("Ticket(#11): %v", err)
+	}
+	if !ticket.Closed || ticket.CloseReason != core.ClosedNotPlanned || ticket.ClosedAt.IsZero() {
+		t.Errorf("the closed ticket reads as %+v", ticket)
+	}
+}
+
+// An open ticket has no close reason, whatever the provider reports: a reason
+// on an open issue is GitHub's own bookkeeping from the last time it was
+// closed, and reading it would make a reopened ticket look abandoned.
+func TestGitHubProjectsAnOpenTicketHasNoCloseReason(t *testing.T) {
+	issue := ghIssue{Number: 1, State: "OPEN", StateReason: ghReasonNotPlanned}
+	if ticket := ghTicket(issue, ghItemFields{}, "acme/widget"); ticket.CloseReason != "" {
+		t.Errorf("CloseReason = %q on an open ticket", ticket.CloseReason)
+	}
+}
+
+// Tickets by key says what is there. A key nobody holds is left out rather
+// than failing the whole query: a caller asking about several tickets is
+// asking which of them exist.
+func TestGitHubProjectsSkipsAKeyNobodyHolds(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	tickets, err := adapter.Tickets(t.Context(), core.TicketQuery{Keys: []string{"#10", "#4040", "#12"}})
+	if err != nil {
+		t.Fatalf("Tickets by key: %v", err)
+	}
+	if len(tickets) != 2 || tickets[0].Key != "#10" || tickets[1].Key != "#12" {
+		t.Errorf("Tickets by key = %v, want the two that are there, in the order asked", tickets)
+	}
+}
+
+// A limit caps what comes back, and the newest survive it: a caller asking for
+// the last five tickets wants the last five.
+func TestGitHubProjectsLimitsTheNewest(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	tickets, err := adapter.Tickets(t.Context(), core.TicketQuery{Limit: 2})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	if len(tickets) != 2 {
+		t.Fatalf("got %d tickets, want 2", len(tickets))
+	}
+	if tickets[0].UpdatedAt.Before(tickets[1].UpdatedAt) {
+		t.Errorf("the tickets are oldest first: %s then %s", tickets[0].UpdatedAt, tickets[1].UpdatedAt)
+	}
+	if tickets[0].Key != "#10" {
+		t.Errorf("the newest ticket is %s, want #10", tickets[0].Key)
+	}
+}
+
+// Before setup has resolved a board there is no board to read, and saying
+// which setting is missing is more use than a query about project zero.
+func TestGitHubProjectsCannotReadTicketsWithNoBoard(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Number = 0 })
+	if _, err := adapter.Tickets(t.Context(), core.TicketQuery{}); !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Tickets = %v, want it to wrap ErrValidation", err)
+	}
+	if err := adapter.Move(t.Context(), "#10", coretest.ColumnDone); !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Move = %v, want it to wrap ErrValidation", err)
+	}
+	if fake.asked() != 0 {
+		t.Errorf("the adapter sent %d queries about a board it has no number for", fake.asked())
+	}
+}
+
+// A column the board has not got is the configuration's to fix, and the
+// refusal says which columns it does have: the alternative is a mutation
+// GitHub refuses with an opaque id nobody can act on.
+func TestGitHubProjectsRefusesAColumnTheBoardHasNot(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	err := adapter.Move(t.Context(), "#10", coretest.ColumnReady)
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Move = %v, want it to wrap ErrValidation", err)
+	}
+	if !strings.Contains(fixOf(t, err), "In progress") {
+		t.Errorf("the refusal does not list the columns the board has: %q", fixOf(t, err))
+	}
+}
+
+// A move that would change nothing sends nothing. Spec 06 §4 counts a write as
+// a change that happened, and an item GitHub touched on every doctor run would
+// make every run report work it did not do.
+func TestGitHubProjectsMoveThatChangesNothingWritesNothing(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	before := fake.asked()
+	if err := adapter.Move(t.Context(), "#10", coretest.ColumnInProgress); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	for _, query := range fake.sent()[before:] {
+		if strings.HasPrefix(query, "mutation") {
+			t.Fatalf("a move to the column the ticket is already in sent %q", query)
+		}
+	}
+	if got := fake.itemIn(10); got != string(coretest.ColumnInProgress) {
+		t.Errorf("the item is in %q after a move that should have done nothing", got)
+	}
+}
+
+// Adding an issue to a board is a different act from moving it — the board's
+// own automations run on it — and a transition is not where that is decided.
+func TestGitHubProjectsWillNotMoveAnIssueOntoTheBoard(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.items = append(fake.items, &ghFakeItem{
+		id: "", number: 77, updatedAt: coretest.ContractNow,
+		ticket: core.Ticket{ID: "I_77", Title: "Not on the board", UpdatedAt: coretest.ContractNow},
+	})
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	ticket, err := adapter.Ticket(t.Context(), "#77")
+	if err != nil {
+		t.Fatalf("Ticket(#77): %v", err)
+	}
+	if ticket.ColumnID != "" || ticket.Status.ID != "" {
+		t.Errorf("an issue on no board is in column %q", ticket.ColumnID)
+	}
+	err = adapter.Move(t.Context(), "#77", coretest.ColumnDone)
+	if !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("Move = %v, want it to wrap ErrNotFound", err)
+	}
+	if fix := fixOf(t, err); !strings.Contains(fix, "add the issue") {
+		t.Errorf("the refusal does not say what is missing: %q", fix)
+	}
+}
+
+// A board with no Status field has no columns to move between, and says so
+// rather than refusing with an id nobody can look up.
+func TestGitHubProjectsCannotMoveOnABoardWithNoStatusField(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	delete(fake.options, 1)
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	err := adapter.Move(t.Context(), "#10", coretest.ColumnDone)
+	if !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("Move = %v, want it to wrap ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), ghStatusFieldName) {
+		t.Errorf("the refusal does not name the field the board is missing: %v", err)
+	}
+}
+
+// A move names the column, and a move with no column at all is the caller's
+// mistake rather than a write of the empty string.
+func TestGitHubProjectsRefusesAMoveToNowhere(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	if err := adapter.Move(t.Context(), "#10", ""); !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Move = %v, want it to wrap ErrValidation", err)
+	}
+	if fake.asked() != 0 {
+		t.Errorf("a move to nowhere sent %d queries", fake.asked())
+	}
+}

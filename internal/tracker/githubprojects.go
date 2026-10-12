@@ -378,10 +378,8 @@ func (g *GitHubProjects) Observe(ctx context.Context, what string) (core.Observa
 
 // project reads the board and its Status field in one query.
 func (g *GitHubProjects) project(ctx context.Context) (ghProject, error) {
-	if g.number == 0 {
-		return ghProject{}, core.Errorf(core.ErrValidation, "read the project of %s", g.owner).
-			WithWhy("no project number is set").
-			WithFix("set tracker.project to the number in the project's web address")
+	if err := g.numbered("read the project of %s", g.owner); err != nil {
+		return ghProject{}, err
 	}
 	data, err := core.GraphQL[ghProjectResult](ctx, g.client, g.request(), core.GraphQLQuery{
 		Query:     ghProjectQuery(g.ownerType),
@@ -403,19 +401,188 @@ func (g *GitHubProjects) Apply(ctx context.Context, c core.Change) (core.ApplyRe
 	return core.ApplyResult{}, notYet("change %s", c.What)
 }
 
-// Ticket returns one ticket by key. Plan item 3.9.
+// Ticket returns one ticket by key.
+//
+// A ticket is an issue, and its column is where this board holds it. An issue
+// nobody has put on the board is still a ticket — it has a key, a title and
+// acceptance criteria a check can read — and simply sits in no column, which
+// is what spec 04 §7 has to be able to say about one.
 func (g *GitHubProjects) Ticket(ctx context.Context, key string) (core.Ticket, error) {
-	return core.Ticket{}, notYet("read the ticket %s", key)
+	ticket, _, err := g.ticket(ctx, key)
+	return ticket, err
 }
 
-// Tickets returns the tickets matching a query. Plan item 3.9.
+// ticket reads one issue and the item holding it on this board, in one query:
+// the issue→item lookup a move needs is the same document the ticket is built
+// from, so reading a ticket costs one query however it is used.
+func (g *GitHubProjects) ticket(ctx context.Context, key string) (core.Ticket, ghItemFields, error) {
+	owner, name, number, err := ghParseKey(key, g.repo)
+	if err != nil {
+		return core.Ticket{}, ghItemFields{}, err
+	}
+	data, err := core.GraphQL[ghIssueResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghIssueItemQuery,
+		Variables: map[string]any{"owner": owner, "name": name, "number": number},
+	}, ghSentinel)
+	if err != nil {
+		return core.Ticket{}, ghItemFields{}, core.Explain(err, "read the ticket %s", key)
+	}
+	issue := data.issue()
+	if issue == nil {
+		return core.Ticket{}, ghItemFields{}, core.Errorf(core.ErrNotFound, "read the ticket %s", key).
+			WithWhy("%s/%s has no issue %d", owner, name, number)
+	}
+	item, _ := issue.on(g.number)
+	return ghTicket(issue.ghIssue, item, g.repo), item, nil
+}
+
+// Tickets returns the tickets matching a query.
+//
+// Keys are read one at a time, because an issue is addressed by its own
+// repository and number and two keys need not share a repository at all. A key
+// nobody holds is left out rather than failing the query: a caller asking
+// about several tickets is asking what is there, and one that has been deleted
+// is an answer rather than an error.
+//
+// Everything else is the board, read a page at a time. The column and the
+// window are applied here rather than asked of the provider: Projects v2 has
+// no server-side filter for either, and a filter flow applied to a page it had
+// already paid for costs nothing more.
 func (g *GitHubProjects) Tickets(ctx context.Context, q core.TicketQuery) ([]core.Ticket, error) {
-	return nil, notYet("read the tickets of %s", g.Slug())
+	if len(q.Keys) > 0 {
+		tickets := make([]core.Ticket, 0, len(q.Keys))
+		for _, key := range q.Keys {
+			ticket, err := g.Ticket(ctx, key)
+			switch {
+			case errors.Is(err, core.ErrNotFound):
+				continue
+			case err != nil:
+				return nil, err
+			}
+			tickets = append(tickets, ticket)
+		}
+		return tickets, nil
+	}
+	if err := g.numbered("read the tickets of %s", g.owner); err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"login": g.owner, "number": g.number, "first": ghItemPageSize}
+	var tickets []core.Ticket
+	for page := 0; page < core.MaxPages; page++ {
+		data, err := core.GraphQL[ghItemsResult](ctx, g.client, g.request(), core.GraphQLQuery{
+			Query:     ghItemsQuery(g.ownerType),
+			Variables: variables,
+		}, ghSentinel)
+		if err != nil {
+			return nil, core.Explain(err, "read the tickets of %s", g.Slug())
+		}
+		items := data.owner().items()
+		for _, item := range items.Nodes {
+			// A draft item or a pull request on the board is not a
+			// ticket: it has no key to refer to it by and nothing
+			// a check can read.
+			if item.Content == nil || item.Content.Number <= 0 {
+				continue
+			}
+			ticket := ghTicket(*item.Content, item.ghItemFields, g.repo)
+			if q.Column != "" && ticket.ColumnID != q.Column {
+				continue
+			}
+			if !q.UpdatedSince.IsZero() && ticket.UpdatedAt.Before(q.UpdatedSince) {
+				continue
+			}
+			tickets = append(tickets, ticket)
+		}
+		if !items.PageInfo.HasNextPage || items.PageInfo.EndCursor == "" {
+			slices.SortStableFunc(tickets, func(a, b core.Ticket) int {
+				return b.UpdatedAt.Compare(a.UpdatedAt)
+			})
+			if q.Limit > 0 && len(tickets) > q.Limit {
+				tickets = tickets[:q.Limit]
+			}
+			return tickets, nil
+		}
+		variables["after"] = items.PageInfo.EndCursor
+	}
+	return nil, core.Errorf(core.ErrUnavailable, "read the tickets of %s", g.Slug()).
+		WithWhy("the board offered more than %d pages of items", core.MaxPages).
+		WithFix("split the board: flow reads every item of it on every run")
 }
 
-// Move takes a ticket to another column. Plan item 3.9.
+// Move takes a ticket to another column.
+//
+// It reads before it writes, and a ticket already in that column is left
+// alone: a move that sent the mutation anyway would touch the item every time
+// doctor ran, and spec 06 §4 counts a write that changed nothing as a change
+// that happened.
+//
+// An issue that is not on the board is not moved onto it. Adding an issue to a
+// board is a different act with a different consequence — the board's
+// automations run on it — and a transition is not the place to decide that it
+// should happen.
 func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID) error {
-	return notYet("move %s to %s", key, to)
+	if to == "" {
+		return core.Errorf(core.ErrValidation, "move %s", key).
+			WithWhy("no column was named").
+			WithFix("name the column to move the ticket to")
+	}
+	if err := g.numbered("move %s", key); err != nil {
+		return err
+	}
+	project, err := g.project(ctx)
+	if err != nil {
+		return core.Explain(err, "move %s to %s", key, to)
+	}
+	switch {
+	case !project.Exists:
+		return core.Errorf(core.ErrNotFound, "move %s to %s", key, to).
+			WithWhy("%s is not there", g.Slug()).
+			WithFix("set tracker.project to the number in the project's web address")
+	case project.Status == nil:
+		return core.Errorf(core.ErrNotFound, "move %s to %s", key, to).
+			WithWhy("%s has no %s field, so it has no columns", g.Slug(), ghStatusFieldName)
+	}
+	if !project.Status.has(string(to)) {
+		return core.Errorf(core.ErrValidation, "move %s to %s", key, to).
+			WithWhy("%s has no such column", g.Slug()).
+			WithFix("the columns of %s are: %s", g.Slug(), strings.Join(project.Status.names(), ", "))
+	}
+	_, item, err := g.ticket(ctx, key)
+	if err != nil {
+		return err
+	}
+	if item.ID == "" {
+		return core.Errorf(core.ErrNotFound, "move %s to %s", key, to).
+			WithWhy("%s is not on %s", key, g.Slug()).
+			WithFix("add the issue to the project, which flow will not do on a transition's behalf")
+	}
+	if item.optionID() == string(to) {
+		return nil
+	}
+	if _, err := core.GraphQL[ghMoveResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query: ghMoveMutation,
+		Variables: map[string]any{
+			"project": project.ID,
+			"item":    item.ID,
+			"field":   project.Status.ID,
+			"option":  string(to),
+		},
+	}, ghSentinel); err != nil {
+		return core.Explain(err, "move %s to %s", key, to)
+	}
+	return nil
+}
+
+// numbered refuses an act that needs a board when no board number is set.
+// Setup runs before there is one, and saying which setting is missing is more
+// use than a query against project zero.
+func (g *GitHubProjects) numbered(format string, args ...any) error {
+	if g.number != 0 {
+		return nil
+	}
+	return core.Errorf(core.ErrValidation, format, args...).
+		WithWhy("no project number is set").
+		WithFix("set tracker.project to the number in the project's web address")
 }
 
 // CreateFollowUp files a ticket for work flow cannot do. Plan item 3.11.
@@ -443,8 +610,15 @@ func (g *GitHubProjects) Reopen(ctx context.Context, key string, reason string) 
 	return notYet("reopen %s", key)
 }
 
-// LinkedKeys returns the ticket keys a pull request is for. Plan item 3.9.
-func (g *GitHubProjects) LinkedKeys(pr core.PullRequest) []string { return nil }
+// LinkedKeys returns the ticket keys a pull request is for.
+//
+// GitHub has a structured link of its own — closingIssuesReferences, which the
+// forge adapter reads — so there is nothing for the tracker to infer. A pull
+// request that names no issue links to none: flow never applies a pattern to a
+// branch name or a title to guess one (P12, spec 04 §3).
+func (g *GitHubProjects) LinkedKeys(pr core.PullRequest) []string {
+	return slices.Clone(pr.ClosingIssues)
+}
 
 // request is the GraphQL request every query starts from: the endpoint, and
 // the headers the adapter puts on everything it sends.

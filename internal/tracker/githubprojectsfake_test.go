@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/core/coretest"
@@ -40,9 +42,46 @@ type ghProjectsFake struct {
 	refusalType    string
 	refusalMessage string
 
+	// repo is the repository the board's issues live in, and columns the
+	// display name of every column the fixture names — including those the
+	// Status field has no option for, which is a board somebody has moved
+	// on from rather than a board that cannot answer.
+	repo    string
+	columns map[string]string
+
 	mu      sync.Mutex
 	queries []string
 	paths   []string
+	// items are the board's items, and now the clock a mutation moves. An
+	// item's updatedAt changes when its field value does, which is how a
+	// move that should not have happened is caught.
+	items []*ghFakeItem
+	now   time.Time
+}
+
+// ghFakeItem is one item of the board: an issue, where it currently sits, and
+// when that last changed.
+type ghFakeItem struct {
+	id        string
+	number    int
+	optionID  string
+	updatedAt time.Time
+	ticket    core.Ticket
+	// repo is the repository the issue is in, empty for the board's own,
+	// and parentRepo the same for its parent. draft is an item holding
+	// something that is not an issue at all.
+	repo       string
+	parentRepo string
+	draft      bool
+}
+
+// in returns the repository an item's issue is in, which is the board's own
+// unless the item says otherwise.
+func (i *ghFakeItem) in(here string) string {
+	if i.repo != "" {
+		return i.repo
+	}
+	return here
 }
 
 // newGitHubProjectsServer stands the fake up over a fixture and returns it
@@ -55,8 +94,11 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 		owner:     ghFixtureOwner,
 		ownerType: OwnerUser,
 		options:   map[int][]ghStatusOption{},
+		columns:   map[string]string{},
+		repo:      ghFixtureOwner + "/widget",
 		pageSize:  2,
 		scopes:    ghScopesOf(fx.Permissions),
+		now:       coretest.ContractNow,
 	}
 	for i, candidate := range fx.Candidates[core.ItemTrackerProject] {
 		node := ghProjectNode{
@@ -71,6 +113,19 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 	for _, item := range fx.Observations[core.ItemTrackerStatusOptions].Items {
 		fake.options[1] = append(fake.options[1], ghStatusOption{ID: item.ID, Name: item.Name})
 	}
+	for id, name := range fx.Columns {
+		fake.columns[string(id)] = name
+	}
+	for _, ticket := range fx.Tickets {
+		number := ghFixtureNumber(t, ticket.Key)
+		fake.items = append(fake.items, &ghFakeItem{
+			id:        "PVTI_" + strconv.Itoa(number),
+			number:    number,
+			optionID:  string(ticket.ColumnID),
+			updatedAt: ticket.UpdatedAt,
+			ticket:    ticket,
+		})
+	}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	return fake, srv
@@ -80,6 +135,18 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 // fixture names no owner — it is about boards and tickets — so the GitHub
 // fake supplies one.
 const ghFixtureOwner = "acme"
+
+// ghFixtureNumber is the issue number a fixture ticket's key names. A fixture
+// key that is not one GitHub could have issued is the fixture's bug, not the
+// adapter's, so it fails the test rather than being skipped.
+func ghFixtureNumber(t *testing.T, key string) int {
+	t.Helper()
+	number, err := strconv.Atoi(strings.TrimPrefix(key, "#"))
+	if err != nil || number <= 0 {
+		t.Fatalf("the fixture ticket %q is not a GitHub issue key", key)
+	}
+	return number
+}
 
 // ghScopesOf reads the classic token scopes out of a fixture's permission
 // evidence, or nil when the credential announced none.
@@ -129,6 +196,17 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(query.Query, "mutation") {
+		f.mutate(w, query)
+		return
+	}
+	if strings.Contains(query.Query, "repository(owner:") {
+		f.writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{"repository": f.issueLookup(query.Variables)},
+		})
+		return
+	}
+
 	field := "user"
 	if strings.Contains(query.Query, "organization(login") {
 		field = "organization"
@@ -140,6 +218,10 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case strings.Contains(query.Query, "items(first:"):
+		f.writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{field: map[string]any{"projectV2": f.itemPage(query.Variables)}},
+		})
 	case strings.Contains(query.Query, "projectsV2("):
 		f.writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{field: map[string]any{"projectsV2": f.page(query.Variables)}},
@@ -273,4 +355,227 @@ func (f *ghProjectsFake) visited(path string) int {
 		}
 	}
 	return count
+}
+
+// itemPage renders one page of the board's items, each with the issue behind
+// it. It pages at the fake's own small size: an adapter that read the first
+// page and stopped would pass against a server that always answered in full.
+func (f *ghProjectsFake) itemPage(variables map[string]any) any {
+	if number, ok := variables["number"].(float64); !ok || int(number) != 1 {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	from := 0
+	if after, ok := variables["after"].(string); ok {
+		if n, err := strconv.Atoi(after); err == nil {
+			from = n
+		}
+	}
+	rest := f.items[min(from, len(f.items)):]
+	more := len(rest) > f.pageSize
+	if more {
+		rest = rest[:f.pageSize]
+	}
+	nodes := make([]any, 0, len(rest))
+	for _, item := range rest {
+		doc := f.itemJSON(item)
+		doc["content"] = f.issueJSON(item)
+		nodes = append(nodes, doc)
+	}
+	return map[string]any{"items": map[string]any{
+		"nodes": nodes,
+		"pageInfo": map[string]any{
+			"hasNextPage": more,
+			"endCursor":   strconv.Itoa(from + len(rest)),
+		},
+	}}
+}
+
+// issueLookup answers the issue→item query: one issue of one repository, and
+// the board items holding it. A repository the fake does not serve and an
+// issue nobody filed are both null, which is how GraphQL says not found.
+func (f *ghProjectsFake) issueLookup(variables map[string]any) any {
+	owner, _ := variables["owner"].(string)
+	name, _ := variables["name"].(string)
+	raw, ok := variables["number"].(float64)
+	if !ok {
+		return nil
+	}
+	slug := owner + "/" + name
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.serves(slug) {
+		return nil
+	}
+	for _, item := range f.items {
+		if item.number != int(raw) || !strings.EqualFold(item.in(f.repo), slug) {
+			continue
+		}
+		doc := f.issueJSON(item)
+		node := f.itemJSON(item)
+		node["project"] = map[string]any{"number": 1}
+		// The issue is on another board too, so that an adapter taking
+		// the first item it is handed is caught.
+		other := map[string]any{"id": "PVTI_other", "updatedAt": f.now.Format(time.RFC3339), "project": map[string]any{"number": 99}}
+		other["fieldValueByName"] = map[string]any{"optionId": "opt-elsewhere", "name": "Elsewhere"}
+		doc["projectItems"] = map[string]any{"nodes": []any{other, node}}
+		return map[string]any{"issue": doc}
+	}
+	return map[string]any{"issue": nil}
+}
+
+// serves reports whether the fake has a repository of that name at all. One it
+// has never heard of is a null repository, which is how GraphQL says that the
+// name in the query is nobody's.
+func (f *ghProjectsFake) serves(slug string) bool {
+	if strings.EqualFold(slug, f.repo) {
+		return true
+	}
+	return slices.ContainsFunc(f.items, func(i *ghFakeItem) bool {
+		return i.repo != "" && strings.EqualFold(i.repo, slug)
+	})
+}
+
+// mutate performs the one mutation flow sends: setting an item's Status.
+func (f *ghProjectsFake) mutate(w http.ResponseWriter, query core.GraphQLQuery) {
+	if !strings.Contains(query.Query, ghUpdateItemFieldOp) {
+		f.refuse(w, "NOT_IMPLEMENTED", "the fake knows no such mutation")
+		return
+	}
+	itemID, _ := query.Variables["item"].(string)
+	option, _ := query.Variables["option"].(string)
+	field, _ := query.Variables["field"].(string)
+	project, _ := query.Variables["project"].(string)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if field != ghFakeStatusFieldID {
+		f.refuse(w, "NOT_FOUND", "no field "+field)
+		return
+	}
+	if len(f.projects) == 0 || project != f.projects[0].ID {
+		f.refuse(w, "NOT_FOUND", "no project "+project)
+		return
+	}
+	if !slices.ContainsFunc(f.options[1], func(o ghStatusOption) bool { return o.ID == option }) {
+		f.refuse(w, "NOT_FOUND", "no option "+option)
+		return
+	}
+	for _, item := range f.items {
+		if item.id != itemID {
+			continue
+		}
+		f.now = f.now.Add(time.Minute)
+		item.optionID = option
+		item.updatedAt = f.now
+		f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			ghUpdateItemFieldOp: map[string]any{"projectV2Item": map[string]any{"id": item.id}},
+		}})
+		return
+	}
+	f.refuse(w, "NOT_FOUND", "no item "+itemID)
+}
+
+// ghFakeStatusFieldID is the id of the board's Status field, which the project
+// query reports and a move has to send back.
+const ghFakeStatusFieldID = "PVTSSF_status"
+
+// itemJSON renders the part of an item both queries ask for. The caller adds
+// whichever of content and project its own document named.
+func (f *ghProjectsFake) itemJSON(item *ghFakeItem) map[string]any {
+	doc := map[string]any{
+		"id":               item.id,
+		"updatedAt":        item.updatedAt.Format(time.RFC3339),
+		"fieldValueByName": nil,
+	}
+	if item.optionID != "" {
+		doc["fieldValueByName"] = map[string]any{
+			"optionId": item.optionID,
+			"name":     f.columns[item.optionID],
+		}
+	}
+	return doc
+}
+
+// issueJSON renders the issue behind an item.
+func (f *ghProjectsFake) issueJSON(item *ghFakeItem) map[string]any {
+	if item.draft {
+		// An item holding a draft or a pull request matches no inline
+		// fragment, and GraphQL answers with an empty object rather
+		// than with null.
+		return map[string]any{}
+	}
+	ticket := item.ticket
+	doc := map[string]any{
+		"id":          ticket.ID,
+		"number":      item.number,
+		"title":       ticket.Title,
+		"body":        ticket.Body,
+		"url":         ticket.URL,
+		"state":       "OPEN",
+		"stateReason": nil,
+		"closedAt":    nil,
+		"updatedAt":   ticket.UpdatedAt.Format(time.RFC3339),
+		"repository":  map[string]any{"nameWithOwner": item.in(f.repo)},
+		"labels":      ghNameNodes("name", ticket.Labels),
+		"assignees":   ghNameNodes("login", ticket.Assignees),
+		"parent":      nil,
+	}
+	if ticket.Closed {
+		doc["state"] = "CLOSED"
+		doc["closedAt"] = ticket.ClosedAt.Format(time.RFC3339)
+		switch ticket.CloseReason {
+		case core.ClosedNotPlanned:
+			doc["stateReason"] = "NOT_PLANNED"
+		default:
+			doc["stateReason"] = "COMPLETED"
+		}
+	}
+	if parent := strings.TrimPrefix(ticket.Parent, "#"); parent != "" {
+		if number, err := strconv.Atoi(parent); err == nil {
+			doc["parent"] = map[string]any{
+				"number":     number,
+				"repository": map[string]any{"nameWithOwner": ghOr(item.parentRepo, f.repo)},
+			}
+		}
+	}
+	return doc
+}
+
+// ghNameNodes renders a list of strings as a GraphQL connection of one field.
+func ghNameNodes(field string, values []string) map[string]any {
+	nodes := make([]any, 0, len(values))
+	for _, value := range values {
+		nodes = append(nodes, map[string]any{field: value})
+	}
+	return map[string]any{"nodes": nodes}
+}
+
+// itemIn returns the column an item is in, for a test to check the fake's own
+// state rather than the adapter's report of it.
+func (f *ghProjectsFake) itemIn(number int) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, item := range f.items {
+		if item.number == number {
+			return item.optionID
+		}
+	}
+	return ""
+}
+
+// ghOr is the first of two names that is set.
+func ghOr(first, second string) string {
+	if first != "" {
+		return first
+	}
+	return second
+}
+
+// sent returns the GraphQL documents the fake has been asked, in order.
+func (f *ghProjectsFake) sent() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.queries)
 }

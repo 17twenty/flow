@@ -178,3 +178,59 @@ reopen, pagination, error mapping.
   `Observe` returns an observation that does not exist and sends no query:
   spending a point to be told nothing is worse than knowing in advance, and
   spec 05 §4 turns the absence into the compensation or the attestation.
+- **§2 a ticket is an issue, and its column is where this board holds it (item
+  3.9).** An issue nobody has put on the board is still a ticket: it has a key,
+  a title and acceptance criteria, which is everything spec 04 §7 reads. It
+  simply sits in no column, and a tracker that refused to describe it at all
+  would make the Definition of Ready unable to say why the work is not ready.
+  An issue may be on several boards at once; only the item whose project is the
+  number flow was pointed at is this board's, and taking the first item handed
+  back would move somebody else's board.
+- **§2 a key is `#7` here and `owner/repo#7` elsewhere, and nothing else is a
+  key (item 3.9).** It is the form this section names and the form the forge
+  adapter already writes a closing reference in, so linkage needs no
+  translation. A bare number is refused: a tracker that accepted one would take
+  a Jira key, a pull request number or a commit subject's "42" and resolve it
+  against its own board, and the mistake would be silent. Without a
+  `forge.repo`, `#7` names no repository at all, and flow says so rather than
+  guessing.
+- **§2 a ticket's id is the issue's, not the board item's (item 3.9).** The
+  item id identifies where an issue is pinned rather than what it is: it
+  changes when somebody removes the issue from the board and adds it again, and
+  an issue on no board has none. `core.Ticket.ID` is the tracker's identifier
+  for the ticket, so it is the issue's node id, and the item id is resolved by
+  whichever mutation needs one.
+- **§2 a ticket changed when either half of it did (item 3.9).** Editing the
+  issue does not touch the project item, and moving the item does not touch the
+  issue. `UpdatedAt` is therefore the later of the two: a window built on
+  either alone would miss work — a ticket moved into review but not edited, or
+  one rewritten in place without moving.
+- **§2 a draft item is not a ticket (item 3.9).** A board holds draft notes and
+  pull requests as well as issues. They have no key to refer to them by and
+  nothing a check can read, and GitHub reports them as content matching no
+  inline fragment, so they are skipped rather than turned into keyless tickets
+  the engine would then have to special-case everywhere.
+- **§2 `Blocked` is never set by this adapter (item 3.9).** GitHub has no
+  blocked flag. Blocking is a label, and which label is `workflow.blocked.label`
+  — configuration, which an adapter may not see (spec 01 §2). The engine reads
+  the label against the ticket's own labels, so an adapter that guessed at
+  "blocked" would be a second, silent definition of the same thing.
+- **§2 a move reads before it writes (item 3.9).** A ticket already in the
+  column is left alone and no mutation is sent. Spec 06 §4 counts a write as a
+  change that happened, so a move that sent the mutation regardless would have
+  every daily doctor run report work it did not do — and would move the item's
+  `updatedAt`, which is half of when the ticket last changed.
+- **§2 a move refuses a column the board has not got, by name (item 3.9).** The
+  option id is an opaque `PVTSSFO_…`; GitHub's refusal quotes it back and
+  nobody can act on that. Flow checks the id against the board's own options
+  first and lists the column names instead.
+- **§2 flow will not add an issue to a board on a transition's behalf (item
+  3.9).** `Move` of an issue that is not an item of the board is `ErrNotFound`.
+  Adding it is a different act with a different consequence — the board's
+  built-in workflows run on what is added — and a transition that quietly
+  enrolled issues would reorganise a board nobody asked it to.
+- **§2 tickets by key are read one at a time, and a key nobody holds is left
+  out (item 3.9).** Two keys need not share a repository, so there is no one
+  query for an arbitrary set of them. A caller naming several tickets is asking
+  which of them are there, and one that has been deleted is an answer rather
+  than a failure of the whole query.
