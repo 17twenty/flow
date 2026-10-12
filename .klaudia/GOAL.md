@@ -184,24 +184,44 @@ for byte identical.
    `issue_closed` are `owner: native` and GitHub's built-ins are enabled.
    Backlog → Ready is nobody's: flow judges readiness, it never promotes.
    Stage B is what makes the middle of the board move.
-3. *Phase 5 is a quarter done.* 5.1 landed; 5.2 (deploys), 5.3 (tickets), 5.4
-   (native transitions actually fired), 5.5 (`--fix` catching up the
-   transitions flow owns), 5.6 (flag cleanup), 5.7 (`--report` and the pinned
-   health issue) and 5.8 (`--ci` annotations) remain. 5.7 is what the 14-day
-   proof is read from, and the streak cannot start until H.1 makes doctor exit
-   0, so the clock does not favour reordering it.
+3. *Phase 5 is a quarter done.* 5.1 and 5.3 landed; 5.2 (deploys), 5.4 (native
+   transitions actually fired), 5.5 (`--fix` catching up the transitions flow
+   owns), 5.6 (flag cleanup), 5.7 (`--report` and the pinned health issue) and
+   5.8 (`--ci` annotations) remain. 5.7 is what the 14-day proof is read from,
+   and the streak cannot start until H.1 makes doctor exit 0, so the clock
+   does not favour reordering it.
 4. *Phases 6–8:* the TUI, the remaining adapters, and the proof.
 
-**Single best next step:** plan item 5.3 — the `live.tickets.*` audits (#67,
-spec 07 §6). 5.1 asked the forge whether the work that merged was done the way
-the team agreed; 5.3 asks the board the same question from the other side —
-every ticket moved to Done in the window is linked to a merged pull request,
-every ticket in review has an open one, nothing has sat in progress untouched
-for a week, and everything in ready passes the Definition of Ready. It is the
-item the rest of the phase hangs off: 5.4 (native transitions actually fired)
-and 5.5 (doctor `--fix` catching up the ones flow owns) both depend on it, and
-unlike 5.2 it has something to say about this repository today, because
-`workflow.done_on` here is `merged` and there is no deployment source to audit
-yet. Everything it needs is already there: the tracker adapter pages items with
-their status and `updated_at`, `engine` already judges the Definition of Ready
-for `check pr`, and `audit` is the place to hang one lazy reading of the board.
+**The board half of the audit (item 5.3, just landed).** `live.tickets.*` asks
+the tracker the question `live.prs.*` asks the forge, from the far side: every
+ticket that reached Done had a merge behind it, work a team calls done is
+running where `done_on` is `deployed`, everything waiting for review has
+something to review, nothing in progress has gone quiet, and what is ready to
+start really is. The board is read once for all five and bucketed through
+`ColumnOf`, so a tracker's column ids stay its own business; each check finds
+its column through the transition that lands work there and skips when the
+workflow names none. Six mutants survived the first draft of the tests — the
+key folding, the evidence ordering, the two-merge rule, the no-merge
+exemption, the `done_on: deployed` column, and the undated tracker — and each
+one now has a test that kills it.
+
+Run live against this repository, it says something true and uncomfortable:
+59 of 59 tickets reached Done with no merge behind them, because in `direct`
+mode nothing opens a pull request. That is the finding, not a false positive,
+and it is precisely what Stage B settles. The check stays literal and its
+remediation points at `forge.protection`, the setup check that decides whether
+work may reach the trunk that way at all.
+
+**Single best next step:** plan item 5.4 — `live.transitions.native` (#68,
+specs 07 §6 and 04 §5). Every other check so far has audited people; this one
+audits the tracker's own automation, which is the half of the workflow flow
+deliberately does not perform. `flow plan` attests that GitHub's built-in
+"item closed → Done" workflows are enabled, but an attestation is a claim, and
+5.4 is what makes it checkable: for each `owner: native` transition, did
+tickets actually move within 15 minutes of the event? It is the natural next
+item because 5.3 just built the one reading of the board it needs — the
+tickets carry their status and `updated_at` already — and because 5.5, the
+`--fix` catch-up of the transitions flow owns, is listed as depending on it.
+On this repository it has something to say today: `pr_merged` and
+`issue_closed` are the two native transitions, and every one of the 59 Done
+tickets went through the second of them.
