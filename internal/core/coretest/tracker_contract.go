@@ -3,6 +3,7 @@ package coretest
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,7 @@ func TrackerContractCases() []TrackerContractCase {
 		{Name: "a move is idempotent", Run: trackerMove},
 		{Name: "a follow-up is filed once and found by its marker", Run: trackerFollowUp},
 		{Name: "a new follow-up carries its marker", Run: trackerNewFollowUp},
+		{Name: "flow rewrites its own ticket and nobody else's", Run: trackerUpdateFollowUp},
 		{Name: "a comment is written and edited in place", Run: trackerComment},
 		{Name: "a ticket is closed, and closing it again is no work", Run: trackerClose},
 		{Name: "a closed ticket is reopened", Run: trackerReopen},
@@ -454,6 +456,61 @@ func trackerNewFollowUp(t *testing.T, newTracker NewTracker) {
 	}
 	if found == nil || found.Key != filed.Key {
 		t.Errorf("flow could not find the ticket it had just filed")
+	}
+}
+
+// trackerUpdateFollowUp: the body of flow's own ticket is rewritten in place,
+// the marker survives the rewrite, and a ticket a person wrote is refused.
+func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
+	tracker := newTracker(t, ContractTracker())
+	marker := ContractFollowUpMarker()
+
+	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker, "Still not enforced, three days on."); err != nil {
+		t.Fatalf("UpdateFollowUp: %v", err)
+	}
+	after, err := tracker.Ticket(t.Context(), "#13")
+	if err != nil {
+		t.Fatalf("Ticket after the rewrite: %v", err)
+	}
+	if !strings.Contains(after.Body, "three days on") {
+		t.Errorf("the rewritten body is %q, which does not say what flow wrote", after.Body)
+	}
+	// Without the marker the next run would file a second ticket instead of
+	// finding this one (spec 11 §1).
+	if !core.HasMarker(after.Body, marker) {
+		t.Errorf("the rewrite dropped the marker: %q", after.Body)
+	}
+
+	// Rewriting it to what it already says is no work. The pinned health
+	// report is rewritten every morning (spec 07 §10), and a report that
+	// sent identical bytes would move the moment the issue last changed and
+	// make a quiet fortnight look like news every day.
+	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker, "Still not enforced, three days on."); err != nil {
+		t.Errorf("UpdateFollowUp with nothing to change: %v", err)
+	}
+	again, err := tracker.Ticket(t.Context(), "#13")
+	if err != nil {
+		t.Fatalf("Ticket after the second rewrite: %v", err)
+	}
+	if !again.UpdatedAt.Equal(after.UpdatedAt) {
+		t.Errorf("updated at %v then %v: rewriting a body to what it already says moved the date",
+			after.UpdatedAt, again.UpdatedAt)
+	}
+
+	// #12 is a person's ticket. flow edits only its own writing.
+	if err := tracker.UpdateFollowUp(t.Context(), "#12", marker, "flow was here"); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("rewriting a ticket flow did not open = %v, want ErrValidation", err)
+	}
+	theirs, err := tracker.Ticket(t.Context(), "#12")
+	if err != nil {
+		t.Fatalf("Ticket #12: %v", err)
+	}
+	if strings.Contains(theirs.Body, "flow was here") {
+		t.Errorf("flow rewrote somebody else's ticket anyway: %q", theirs.Body)
+	}
+
+	if err := tracker.UpdateFollowUp(t.Context(), "#4040", marker, "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("rewriting a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }
 

@@ -102,6 +102,12 @@ type Tracker interface {
 	// FindFollowUp returns the ticket carrying a marker, or nil when there is
 	// none. A marker naming fewer fields matches more tickets (spec 11 §1).
 	FindFollowUp(ctx context.Context, m Marker) (*Ticket, error)
+	// UpdateFollowUp rewrites the body of a ticket flow opened, keeping its
+	// marker. It is how the pinned health report stays one issue that is
+	// edited rather than a new one every morning (spec 07 §10). A ticket
+	// whose body does not carry the marker is somebody else's writing and is
+	// refused; rewriting a body that already says this is no work.
+	UpdateFollowUp(ctx context.Context, key string, m Marker, body string) error
 	// Comment writes a marked comment on a ticket.
 	Comment(ctx context.Context, key string, m Marker, body string) error
 	// Close closes a ticket, recording why, with one of the close reasons the

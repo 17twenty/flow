@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,6 +57,9 @@ func (c *DoctorCmd) Run(app *Context) error {
 	if err := c.settle(app, s, &report); err != nil {
 		return err
 	}
+	if err := c.publish(app, s, report); err != nil {
+		return err
+	}
 	if err := app.render(s, func(r ui.Renderer) (string, error) { return r.Report(report) }); err != nil {
 		return err
 	}
@@ -64,19 +68,65 @@ func (c *DoctorCmd) Run(app *Context) error {
 }
 
 // notYet refuses a flag whose plan item has not landed rather than parsing
-// it and doing nothing. `--report` is item 5.7, `--ci` item 5.8 and `--watch`
-// item 6.3; a flag that is accepted and ignored is worse than one that is
-// missing, because the run then looks like it did what was asked.
+// it and doing nothing. `--ci` is item 5.8 and `--watch` item 6.3; a flag
+// that is accepted and ignored is worse than one that is missing, because the
+// run then looks like it did what was asked.
 func (c *DoctorCmd) notYet(app *Context) error {
 	switch {
 	case c.CI:
 		return app.unimplemented("doctor --ci")
-	case c.Report != "":
-		return app.unimplemented("doctor --report")
 	case c.Watch:
 		return app.unimplemented("doctor --watch")
 	}
 	return nil
+}
+
+// publish puts the report where it will be read again: the file --report
+// names, and the one pinned issue flow keeps in the tracker (spec 07 §10).
+//
+// Neither is rendered here. The markdown is the UI's shape of the engine's
+// words, so the file, the issue and a future CI comment cannot disagree
+// about what the run found.
+func (c *DoctorCmd) publish(app *Context, s *session, report engine.Report) error {
+	if c.Report == "" && !c.Fix {
+		return nil
+	}
+	body, err := ui.New(ui.Options{Format: ui.FormatMarkdown}).Report(report)
+	if err != nil {
+		return err
+	}
+	if c.Report != "" {
+		if err := os.WriteFile(c.Report, []byte(body), 0o644); err != nil {
+			return fmt.Errorf("write the report to %s: %w", c.Report, err)
+		}
+	}
+	out := engine.PublishHealth(app.Ctx, engine.HealthInput{
+		Report:   report,
+		Rendered: body,
+		Config:   s.Config,
+		Tracker:  s.Adapters.Tracker,
+		Repo:     repoOf(s.Config),
+		Clock:    s.Clock,
+		Fix:      c.Fix,
+		Narrowed: len(c.Check) > 0,
+		Log:      app.Log,
+	})
+	if out.Err != nil {
+		// The report has already said what is wrong with the workflow. Not
+		// being able to file a copy of it is not a finding about the
+		// workflow, and must not become the run's verdict (spec 07 §4).
+		app.Log.Warn("doctor could not publish the health report", "error", out.Err)
+	}
+	return nil
+}
+
+// repoOf is the repository a report is about, empty when there is no
+// configuration to say.
+func repoOf(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Forge.Repo
 }
 
 // world is everything the checks are not asked to find out for themselves:

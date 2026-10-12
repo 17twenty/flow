@@ -627,3 +627,96 @@ func TestDoctorRemembersWhatItComparedWhereCheckDeployKeepsIt(t *testing.T) {
 		t.Fatalf("the audit kept nothing it compared: %v", err)
 	}
 }
+
+// A report nobody reads twice is a run nobody reads at all. `--report` writes
+// the markdown to a file for a CI job to attach, and a `--fix` run keeps the
+// same markdown in one pinned issue that it rewrites every morning (spec 07
+// §10) — which is what makes a fortnight of green days one page somebody can
+// open rather than fourteen notifications they have muted.
+func TestDoctorWritesTheReportWhereItWasAsked(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+	path := filepath.Join(t.TempDir(), "health.md")
+
+	code, _, stderr := execAt(t, dir, append([]string{"doctor", "--report", path}, owners()...)...)
+	if code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("--report wrote nothing to %s: %v", path, err)
+	}
+	// Markdown, not the terminal rendering: the file is for a web page.
+	for _, want := range []string{"## flow doctor", "| check | found |", "`config.syntax`"} {
+		if !strings.Contains(string(written), want) {
+			t.Errorf("the report does not contain %q:\n%s", want, written)
+		}
+	}
+}
+
+// Without --fix flow writes to the file it was given and to nothing else: the
+// tracker is somebody's project, and a preview that opened an issue would be
+// a preview that changed the world (spec 02 §2).
+func TestDoctorPreviewsTheReportWithoutFilingIt(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+	path := filepath.Join(t.TempDir(), "health.md")
+
+	execAt(t, dir, append([]string{"doctor", "--report", path}, owners()...)...)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("--report wrote nothing: %v", err)
+	}
+	found, err := world().tracker.FindFollowUp(t.Context(), engine.HealthMarker("acme/api"))
+	if err != nil {
+		t.Fatalf("look for the health issue: %v", err)
+	}
+	if found != nil {
+		t.Errorf("a run without --fix opened %s", found.Key)
+	}
+}
+
+// The pinned issue is one issue. A daily run that filed a new one every
+// morning would bury the record it exists to keep.
+func TestDoctorKeepsOneHealthIssueAndRewritesIt(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+
+	execAt(t, dir, append([]string{"doctor", "--fix"}, owners()...)...)
+	marker := engine.HealthMarker("acme/api")
+	ticket, err := world().tracker.FindFollowUp(t.Context(), marker)
+	if err != nil || ticket == nil {
+		t.Fatalf("no issue carries %v: %v", marker, err)
+	}
+	if !strings.Contains(ticket.Body, "### Daily runs") {
+		t.Errorf("the issue carries no run log:\n%s", ticket.Body)
+	}
+	if !strings.Contains(ticket.Body, "| check | found |") {
+		t.Errorf("the issue does not carry the report itself:\n%s", ticket.Body)
+	}
+
+	before := len(ticketsOf(t, world()))
+	execAt(t, dir, append([]string{"doctor", "--fix"}, owners()...)...)
+	if after := len(ticketsOf(t, world())); after != before {
+		t.Errorf("a second morning filed another issue: %d became %d", before, after)
+	}
+	again, err := world().tracker.FindFollowUp(t.Context(), marker)
+	if err != nil || again == nil {
+		t.Fatalf("the issue is no longer findable by its marker: %v", err)
+	}
+	if again.Key != ticket.Key {
+		t.Errorf("the second run wrote to %s, the first to %s", again.Key, ticket.Key)
+	}
+}
+
+// A run asked only about `config.*` saw a fraction of the workflow.
+// Publishing it would overwrite a whole morning's report with a partial one
+// and record a day in the streak that nobody audited.
+func TestDoctorDoesNotPublishARunThatOnlyLookedAtSomeOfIt(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+
+	execAt(t, dir, append([]string{"doctor", "--fix", "--check", "config.*"}, owners()...)...)
+	found, err := world().tracker.FindFollowUp(t.Context(), engine.HealthMarker("acme/api"))
+	if err != nil {
+		t.Fatalf("look for the health issue: %v", err)
+	}
+	if found != nil {
+		t.Errorf("a narrowed run published %s as if it were the morning report", found.Key)
+	}
+}

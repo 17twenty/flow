@@ -5,6 +5,9 @@ config_hash: sha256:7681db1769fd3e6665fec25495a81f4e042ed0e9608a61819a26c7afa831
 resolved:
   tracker.project: "2"
 observed:
+  deploys.records:
+    hash: sha256:a95603c2a923dc21c886e814a07d68d71c657ac3f1d1ef333e1965c06cf651a1
+    at: 2026-10-12T22:42:45Z
   forge.default_branch:
     hash: sha256:130df5095e47e6e2c56f9c91ad73a8b737f6ff9c8e8324706428f39b931452a8
     at: 2026-10-12T11:55:30Z

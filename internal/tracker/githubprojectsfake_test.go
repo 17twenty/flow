@@ -610,6 +610,8 @@ func (f *ghProjectsFake) mutate(w http.ResponseWriter, query core.GraphQLQuery) 
 		f.addComment(w, query)
 	case strings.Contains(query.Query, "updateIssueComment(input:"):
 		f.updateComment(w, query)
+	case strings.Contains(query.Query, "updateIssue(input:"):
+		f.updateIssue(w, query)
 	case strings.Contains(query.Query, "closeIssue(input:"), strings.Contains(query.Query, "reopenIssue(input:"):
 		f.setIssueState(w, query)
 	default:
@@ -1244,6 +1246,27 @@ func (f *ghProjectsFake) updateComment(w http.ResponseWriter, query core.GraphQL
 		}
 	}
 	f.refuse(w, "NOT_FOUND", "no comment "+id)
+}
+
+// updateIssue rewrites an issue's body, the way GitHub does, and moves the
+// moment it last changed. That movement is the whole hazard a rewrite of
+// identical bytes would cause, so the fake inflicts it.
+func (f *ghProjectsFake) updateIssue(w http.ResponseWriter, query core.GraphQLQuery) {
+	id, _ := query.Variables["issue"].(string)
+	body, _ := query.Variables["body"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := slices.IndexFunc(f.items, func(i *ghFakeItem) bool { return i.ticket.ID == id })
+	if at < 0 {
+		f.refuse(w, "NOT_FOUND", "no issue "+id)
+		return
+	}
+	f.now = f.now.Add(time.Minute)
+	f.items[at].ticket.Body = body
+	f.items[at].ticket.UpdatedAt = f.now
+	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"updateIssue": map[string]any{"issue": map[string]any{"id": id}},
+	}})
 }
 
 // setIssueState closes or reopens an issue, recording when and why. The clock

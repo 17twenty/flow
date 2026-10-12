@@ -210,7 +210,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - note: one check, `live.transitions.flow`, not one per event — `Transition` folds everything a ticket's work says into the single column it belongs in, and asking per event would run that fold once per event and count the same ticket as many times as it had work. The decision is delegated whole, so rules 1–5 of spec 04 §5 hold the catch-up without being restated: a native transition is not flow's to perform, a column the workflow cannot name is not flow's to move out of, and a ticket with work still open is not finished early. The same fifteen minutes the tracker's automation gets, measured from the *first* event that asked for the move, and the `deployed` event gets it through the deadline the ancestry comparison is made at. Alone among the live checks it reads the forge strictly: everything else only describes what it saw, and a half-read ticket under `--fix` is the one that moves work to Done too early. Live: 62/62 on this repository.
 - [ ] 5.6 live.flags.cleanup via git trailers — specs: 07 §6 — deps: 5.1, 1.11 (#70)
   - AC: scenario V05
-- [ ] 5.7 --report markdown and pinned health issue — specs: 07 §9–10 — deps: 5.1 (#71)
+- [x] 5.7 --report markdown and pinned health issue — specs: 07 §9–10 — deps: 5.1 (#71)
+  - note: engine/health.go publishes; cmd_doctor.go renders once through internal/ui and hands the same bytes to the --report file and to the issue, because a second markdown writer in the engine would be a second answer (spec 01 §2). "Updated in place" costs the history and the history is the point, so the issue carries its own log: each run reads back the table the last one wrote, adds today's row and keeps a month of them. A fourteen-day streak is therefore provable from a fresh clone — the issue is the only thing that remembers. One row per day with the last run of the day winning; a missing day or a row nobody can parse breaks the streak. Nothing is published without --fix and nothing at all from a --check-narrowed run, which saw a fraction of the workflow. A tracker that will not take a copy of the report is weather, not a verdict. core.Tracker gained UpdateFollowUp, the missing half of FindFollowUp: it refuses a body whose marker is not really there, and sends nothing when the bytes already match, so a quiet fortnight does not look like news every morning.
   - AC: one issue (marker flow:health) updated in place
 - [ ] 5.8 --ci annotations and --window — specs: 02 §2, 07 — deps: 5.1 (#72)
   - AC: GitHub annotations for fail/warn
@@ -265,5 +266,33 @@ Human-only steps use ids `H.<n>` (never seeded).
   flag it already was. An absent key reads as zero, which is why zero means
   the default of 90 rather than a threshold nothing can fall below, and why
   `config.semantics` refuses anything outside 1–100.
+
+- **The ruleset is promised `ci / test` and never asked for it** (raised by
+  `@17twenty` against follow-up #91). Spec 17 §1 and §5, `docs/cookbook.md` §5
+  and `.klaudia/GOAL.md` all say `flow apply` creates a `main` ruleset
+  requiring `flow/policy` **and `ci / test`**. `engine.forgeRequiredStatus`
+  wants only `policy.status_context`; the item is additive, so a context
+  already required survives, but a repository with no ruleset gets one that
+  `ci / test` is not required by. Cookbook §5 then tells the reader that
+  adding it by hand means flow has failed at its own job — so the two cannot
+  both stand. *Unsettled.* Either spec 03 §1 gains a key for the contexts a
+  team requires beyond flow's own (`forge.required_checks`, additive, so the
+  gate context is still flow's business and the build's is theirs), or the
+  four documents stop naming `ci / test` and the dogfood ruleset is a
+  two-context one a human attests. Defer until Phase 7 is in sight: the same
+  key decides what the GitLab and Gitea adapters are asked for.
+
+- **No per-forge recipe for requiring a status check** (raised by `@17twenty`
+  against follow-up #91). `docs/cookbook.md` is GitHub-shaped by design and
+  §5 deliberately excludes the ruleset, because `flow apply` makes it. But a
+  credential without admin — which is flow's own situation, and the reason
+  #90 and #91 are open — puts the step back in a human's hands with nowhere
+  that says how. Spec 10 carries the mapping (GitHub rulesets *or* classic
+  `POST …/protection/required_status_checks/contexts`; GitLab Ultimate
+  external status checks or commit status; Gitea branch protection) but a
+  spec is not a runbook. *Unsettled.* Owed: a cookbook section "when flow
+  cannot write the protection itself", one recipe per forge, written with
+  items 7.3 and 7.4 so each adapter's recipe is verified against the adapter
+  that implements it rather than guessed from the API docs.
 
 ## Notes

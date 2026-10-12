@@ -712,3 +712,49 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   (item 5.5).** A workflow that finishes tickets on deployment and cannot see
   deployments has a last column nothing can ever reach. Skipping quietly would
   report a board that is permanently one move short as correct.
+
+- **§10 the pinned issue is the record, and it carries its own log (item
+  5.7).** The section says the report is "updated in place", which costs the
+  history — and the history is the point, because spec 00 §3 asks for fourteen
+  consecutive green days. So the issue holds a table of daily runs that each
+  run reads back, adds today's row to, and writes out again. The streak is
+  therefore provable from a fresh clone, a lost lock and a CI runner that
+  keeps nothing: the issue is the only thing that remembers.
+- **§10 a month of rows is kept (item 5.7).** `HealthRetention` is 30. Long
+  enough to show a fortnight's streak and the week that preceded it, short
+  enough that the issue stays one screen.
+- **§10 one row per day, and the last run of the day wins (item 5.7).**
+  Doctor runs daily but a person may run it four times in an afternoon, and
+  four rows for Tuesday would make "fourteen consecutive days" mean four
+  afternoons. The day's verdict is the run that finished it, because the
+  afternoon's fix is what the team ended on.
+- **§10 a day with no run breaks the streak (item 5.7).** A fortnight with a
+  Sunday missing is thirteen days of evidence and one day of not having
+  looked, which is not the same as green. So is a row a person hand-edited
+  into something flow cannot parse: the row is dropped rather than guessed at,
+  and a dropped row is a gap like any other.
+- **§10 nothing is published without `--fix` (item 5.7).** Writing to somebody's
+  tracker is a change to the world, and spec 02 §2 keeps those behind `--fix`.
+  Not even the read happens: a preview has nothing to tell the reader that the
+  report already on their screen has not told them.
+- **§10 a narrowed run is not the morning report (item 5.7).** A run given
+  `--check 'config.*'` saw a fraction of the workflow. Publishing it would
+  overwrite a whole morning's report with a partial one and record a day in
+  the streak that nobody audited. `--report` still writes the file, because
+  that file is what the reader asked for by name.
+- **§10 failing to publish is not a finding (item 5.7).** The report has
+  already said what is wrong with the workflow. A tracker that will not take a
+  copy of it is weather, not a verdict, so it is logged and the run exits on
+  what it actually found (§4). Conversely a read that fails is never read as
+  "there is no issue yet" — that would file a second health issue every
+  morning the tracker had a bad minute.
+- **§9 the markdown is rendered once, by `internal/ui` (item 5.7).** The engine
+  does not render its own report: the shape a document takes on a web page
+  belongs to the UI (spec 01 §2), and a second markdown writer in the engine
+  would be a second answer. The root command renders once and hands the same
+  bytes to the `--report` file and to the issue, so the two cannot disagree
+  about what the run found.
+- **§10 the title and the marker name the repository (item 5.7).** One tracker
+  serves many repositories. `flow health: owner/name`, marker
+  `flow:health repo=owner/name`, so two repositories reporting into one
+  project keep separate streaks.

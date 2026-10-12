@@ -329,3 +329,22 @@ reopen, pagination, error mapping.
   That now also requires the declaration to offer no remedy: a capability that
   asks for an attestation is one with a real built-in workflow behind it that
   flow cannot see, which is precisely what `flow attest` exists for.
+
+- **§1 `UpdateFollowUp` is the other half of `FindFollowUp` (item 5.7).** The
+  interface could open a ticket and comment on one, but not rewrite one — so
+  the pinned health report of spec 07 §10 had no way to be "updated in place"
+  except by a new comment every morning, which is the notification stream the
+  pinned issue exists to replace. `UpdateFollowUp(ctx, key, marker, body)`
+  rewrites a body and keeps the marker.
+- **§1 a rewrite is refused unless the marker is really there (item 5.7).**
+  The adapter reads the ticket and checks the marker against what the body
+  actually says, not against what flow filed earlier: an issue number can be
+  reused in a fork and a person can edit a body. The one thing worse than
+  failing to publish a report is publishing it over somebody's bug report, so
+  a body without the marker is `ErrValidation` and is left alone.
+- **§1 rewriting a body to what it already says is no work (item 5.7).** Every
+  forge moves "last updated" on an edit. A daily report that sent identical
+  bytes would make a quiet fortnight look like news every morning, so the
+  adapter compares the marked body it is about to send against the one that is
+  there and sends nothing when they match. The contract suite asserts the date
+  did not move, which is the only way the difference is visible.
