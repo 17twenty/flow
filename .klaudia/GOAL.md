@@ -45,7 +45,7 @@ tests, dependencies limited to spec 01 §4.
 - [ ] `flow apply` created a `main` ruleset requiring `flow/policy` and `ci / test`, preserving pre-existing required contexts; native transitions attested.
 - [ ] `.github/workflows/flow.yml` landed via a PR that was itself gated by `flow/policy`; `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
 - [ ] At least one agent PR has been opened by `17twenty-flow-agent[bot]`, moved In progress → In review by `flow check pr`, approved by `@17twenty`, and auto-merged on a green gate.
-- [ ] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run; README demo section links the live Project, that issue and recent agent PRs, and states the current streak.
+- [ ] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run (**done** — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log); README demo section links the live Project, that issue and recent agent PRs, and states the current streak (plan item 8.2).
 - [ ] `flow doctor` on `17twenty/flow` exits 0 on 14 consecutive daily runs with the live-health expectations of spec 17 §7 met, while the loop keeps shipping.
 
 ## Verify
@@ -73,7 +73,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
-- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits and the `--fix` catch-up done (5.1–5.5); flag cleanup, report, health issue and `--ci` remain
+- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits, the `--fix` catch-up and the pinned health issue done (5.1–5.5, 5.7); flag cleanup (5.6) and `--ci` (5.8) remain
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
@@ -251,15 +251,61 @@ the two most overlap; taking the latest asking event rather than the earliest;
 and a half-read forge being acted on. Live on this repository the check reads
 62/62 — the board is right, and now flow can say so about its own half of it.
 
-**Single best next step:** plan item 5.7 — `--report` markdown and the pinned
-health issue (#71, spec 07 §9–10). Taken ahead of 5.6 (flag cleanup, #70) on
-purpose: 5.7 is the thing the acceptance criterion is literally read from —
-"`flow doctor` exits 0 for 14 consecutive daily runs" is a claim somebody has
-to be able to check, and until the daily run writes its verdict somewhere
-durable there is no record of a streak, only of the latest morning. It also
-closes the dogfood loop that the last five items have been filling in: eleven
-live checks now have something to say about this repository every day, and
-nothing yet carries what they said beyond the terminal it was printed in. 5.6
-is a single check with a well-understood shape (git trailers, a marker, a
-ticket created under `--fix` exactly as 5.5 now moves one) and loses nothing
-by going second.
+### Item 5.7 — the pinned health issue (#71, commit 11109e2)
+
+`flow doctor --report <file>` writes the run as GitHub-flavoured markdown, and
+a `--fix` run keeps the same markdown in one pinned issue it rewrites every
+morning. Live on this repository that issue is
+[#92](https://github.com/17twenty/flow/issues/92), filed and then rewritten in
+place by two consecutive runs.
+
+The reading that mattered: spec 07 §10 says "updated in place", which costs
+the history — and the history is the whole acceptance criterion, because spec
+00 §3 asks for fourteen *consecutive* green days and an issue showing only
+this morning proves one. So the issue carries its own log. Each run reads back
+the table the last one wrote, adds today's row and keeps a month of them. The
+streak is therefore provable from a fresh clone, a lost lock and a CI runner
+that keeps nothing: the issue is the only thing that remembers, which is what
+makes the final proof survive the machine it was produced on.
+
+Four rules make the log mean something. One row per day, the last run of the
+day winning, because a person may run doctor four times in an afternoon and
+four rows for Tuesday would make "fourteen days" mean four afternoons. A day
+with no run breaks the streak — a fortnight with a Sunday missing is thirteen
+days of evidence and one day of not having looked. A row a person hand-edited
+into something unparseable is dropped rather than guessed at, and a dropped
+row is a gap like any other. And a `--check`-narrowed run publishes nothing at
+all: it saw a fraction of the workflow, and recording it would put a day in
+the streak nobody audited.
+
+Two things it deliberately does not do. It does not render: the markdown comes
+from `internal/ui` and the same bytes go to the file and to the issue, because
+a second renderer in the engine would be a second answer (spec 01 §2). And it
+never fails the run — the report has already said what is wrong, and a tracker
+that will not take a copy of it is weather, not a verdict.
+
+`core.Tracker` gained `UpdateFollowUp`, the missing half of `FindFollowUp`. It
+re-reads the ticket and refuses a body whose marker is not really there (an
+issue number can be reused, a person can edit a body, and the one thing worse
+than failing to publish is publishing over somebody's bug report), and it
+sends nothing when the bytes already match, so a quiet fortnight does not look
+like news every morning. Nine mutants were tried; the only survivor was that
+last no-op, which bought a contract assertion that the "last updated" date did
+not move.
+
+Raised by `@17twenty` against follow-up #91 and recorded under **Spec issues**
+rather than fixed: the ruleset is promised `ci / test` in four documents and
+flow only ever asks for `flow/policy`; and there is no cookbook recipe for
+requiring a status check by hand when the credential lacks admin — which is
+flow's own situation and the reason #90 and #91 are open. Both are owed before
+Phase 7 settles the GitLab and Gitea adapters.
+
+**Single best next step:** plan item 5.8 — `--ci` annotations and `--window`
+(#72, specs 02 §2 and 07). It is the last thing standing between the daily run
+and the scheduled job that spec 07 §10 describes: `--ci --fix --report` is one
+command, and `--ci` is the only third of it still refused as unimplemented.
+Taken ahead of 5.6 (flag cleanup, #70) for the same reason 5.7 was — Stage C
+is a *scheduled* run, and a run that cannot annotate a CI job is a run whose
+findings stop at a log nobody opens. 5.6 is a single self-contained check
+(git trailers, a marker, a ticket filed under `--fix` exactly as 5.5 moves
+one) and loses nothing by going last in the phase.
