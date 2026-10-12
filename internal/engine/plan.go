@@ -12,8 +12,9 @@ import (
 	"github.com/17twenty/flow/internal/core"
 )
 
-// PlanVersion is the schema the plan's JSON declares (spec 05 §5). A reader
-// that does not know this string must refuse the file rather than guess.
+// PlanVersion is the schema the plan's JSON declares (spec 05 §5, spec 02 §3).
+// A reader that does not know this string must refuse the file rather than
+// guess.
 const PlanVersion = "flow.plan/v1"
 
 // Provider is one target's adapter as the planner needs it: who it is, what
@@ -64,8 +65,11 @@ type PlanInput struct {
 // (spec 06 §2). It is serialisable so that `flow apply --plan` can act on the
 // one a human read, and refuse it once the world has moved on.
 type Plan struct {
-	// Version is [PlanVersion].
-	Version string `json:"version"`
+	// Schema is [PlanVersion]. It is both the plan file's own declaration
+	// (spec 05 §5) and the `schema` every --json document carries
+	// (spec 02 §3): one string, so a plan printed to a terminal and a plan
+	// written to a file cannot disagree about what they are.
+	Schema string `json:"schema"`
 	// FlowVersion is the build that made it.
 	FlowVersion string `json:"flow_version,omitempty"`
 	// GeneratedAt is when it was made.
@@ -129,7 +133,7 @@ func NewPlan(in PlanInput) (Plan, error) {
 		return Plan{}, fmt.Errorf("plan: no configuration was supplied")
 	}
 	plan := Plan{
-		Version:     PlanVersion,
+		Schema:      PlanVersion,
 		FlowVersion: in.FlowVersion,
 		GeneratedAt: in.Now.UTC().Truncate(time.Second),
 		ConfigHash:  in.ConfigHash,
@@ -410,8 +414,8 @@ func (p Plan) ExitCode() int {
 // nobody approved (spec 06 §2–3).
 func (p Plan) StaleAgainst(fresh Plan) (string, bool) {
 	switch {
-	case p.Version != fresh.Version:
-		return fmt.Sprintf("the plan is %s and this build writes %s", p.Version, fresh.Version), true
+	case p.Schema != fresh.Schema:
+		return fmt.Sprintf("the plan is %s and this build writes %s", p.Schema, fresh.Schema), true
 	case p.ConfigHash != fresh.ConfigHash:
 		return "the configuration changed since the plan was made", true
 	case p.DesiredHash != fresh.DesiredHash:
@@ -449,8 +453,8 @@ func ParsePlan(data []byte) (Plan, error) {
 	if err := decoder.Decode(&plan); err != nil {
 		return Plan{}, fmt.Errorf("read the plan: %w", err)
 	}
-	if plan.Version != PlanVersion {
-		return Plan{}, fmt.Errorf("read the plan: it declares %q, and this build understands %q", plan.Version, PlanVersion)
+	if plan.Schema != PlanVersion {
+		return Plan{}, fmt.Errorf("read the plan: it declares %q, and this build understands %q", plan.Schema, PlanVersion)
 	}
 	return plan, nil
 }

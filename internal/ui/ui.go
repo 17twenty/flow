@@ -106,6 +106,30 @@ func (r Renderer) Report(report engine.Report) (string, error) {
 	}
 }
 
+// Applied renders what an apply did (spec 02 §3, spec 06 §3).
+func (r Renderer) Applied(applied engine.Applied) (string, error) {
+	switch r.format {
+	case FormatText:
+		return r.decorate(applied.Text()), nil
+	case FormatJSON:
+		return r.json(applied.JSON())
+	default:
+		return "", r.noRendering("an apply")
+	}
+}
+
+// Comparison renders two trackers side by side (spec 05 §6).
+func (r Renderer) Comparison(comparison engine.Comparison) (string, error) {
+	switch r.format {
+	case FormatText:
+		return r.decorate(comparison.Text()), nil
+	case FormatJSON:
+		return r.json(comparison.JSON())
+	default:
+		return "", r.noRendering("a comparison")
+	}
+}
+
 // json passes the engine's serialisation through untouched. A JSON document
 // is the one rendering with no presentation in it at all: colouring it would
 // break the parser the flag exists for, and translating its glyphs would
@@ -122,6 +146,17 @@ func (r Renderer) json(data []byte, err error) (string, error) {
 // somewhere a machine was waiting.
 func (r Renderer) unknownFormat() error {
 	return fmt.Errorf("%w: there is no %q rendering; flow writes text, markdown or json", core.ErrValidation, r.format)
+}
+
+// noRendering refuses a format this particular document has no shape for.
+//
+// Markdown belongs to the two documents somebody reads on a web page: the
+// plan a setup PR quotes and the doctor report `--report` writes (spec 02
+// §2). An apply and a comparison are read where they were asked for, so a
+// caller asking for markdown has made a mistake, and answering with the
+// terminal layout would put ANSI-shaped text in a comment.
+func (r Renderer) noRendering(what string) error {
+	return fmt.Errorf("%w: there is no %q rendering of %s; flow writes it as text or json", core.ErrValidation, r.format, what)
 }
 
 // Fprint writes rendered output to w, downsampling its colour to what the

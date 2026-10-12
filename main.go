@@ -75,14 +75,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 		defer cancel()
 	}
 
-	err = kctx.Run(&Context{
+	app := &Context{
 		Ctx:    runCtx,
 		CLI:    &cli,
 		Stdin:  stdin,
 		Stdout: stdout,
 		Stderr: stderr,
 		Log:    cli.newLogger(stderr),
-	})
+	}
+	err = kctx.Run(app)
 
 	// An interrupt outranks whatever error the command reported on its way out.
 	if sigCtx.Err() != nil {
@@ -99,7 +100,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 		printError(stderr, err)
 		return core.ExitCode(err)
 	}
-	return core.ExitOK
+	// A command that succeeded may still have left work for a human, which
+	// is exit 2 and not a failure (spec 02 §4). It has already said what, on
+	// stdout, in its own words.
+	return app.Code
 }
 
 // printError renders err as the what/why/fix lines of principle P10, with any

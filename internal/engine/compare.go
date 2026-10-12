@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ import (
 // way — as if nothing had been set up yet and every permission were held —
 // and the answer is about the providers rather than about the state one of
 // them happens to be in today.
+
+// ComparisonVersion is the schema the comparison's JSON declares (spec 02 §3).
+const ComparisonVersion = "flow.comparison/v1"
 
 // CompareInput is a workflow and the two declarations to judge it against.
 type CompareInput struct {
@@ -224,4 +228,58 @@ func (c Comparison) Summary() string {
 // are three bytes each and a table padded by length would stagger.
 func pad(s string, width int) string {
 	return s + strings.Repeat(" ", width-utf8.RuneCountInString(s))
+}
+
+// comparisonDoc is the comparison as `--json` publishes it (spec 02 §3). The
+// table's marker column is a rendering of `differs`, so the document carries
+// the fact rather than the mark.
+type comparisonDoc struct {
+	Schema      string             `json:"schema"`
+	Left        string             `json:"left"`
+	Right       string             `json:"right"`
+	DesiredHash string             `json:"desired_hash,omitempty"`
+	Rows        []comparisonRowDoc `json:"rows"`
+	Differences int                `json:"differences"`
+	Summary     string             `json:"summary"`
+}
+
+type comparisonRowDoc struct {
+	ID         string            `json:"id"`
+	Capability string            `json:"capability,omitempty"`
+	Differs    bool              `json:"differs"`
+	Left       comparisonCellDoc `json:"left"`
+	Right      comparisonCellDoc `json:"right"`
+}
+
+type comparisonCellDoc struct {
+	Outcome   Outcome `json:"outcome"`
+	Mechanism string  `json:"mechanism,omitempty"`
+	Why       string  `json:"why,omitempty"`
+}
+
+// JSON renders the comparison as the one document `--json` prints.
+func (c Comparison) JSON() ([]byte, error) {
+	doc := comparisonDoc{
+		Schema:      ComparisonVersion,
+		Left:        c.Left,
+		Right:       c.Right,
+		DesiredHash: c.DesiredHash,
+		Rows:        make([]comparisonRowDoc, 0, len(c.Rows)),
+		Differences: c.Differences(),
+		Summary:     c.Summary(),
+	}
+	for _, row := range c.Rows {
+		doc.Rows = append(doc.Rows, comparisonRowDoc{
+			ID:         row.ID,
+			Capability: row.Capability,
+			Differs:    row.Differs(),
+			Left:       comparisonCellDoc{Outcome: row.Left.Outcome, Mechanism: row.Left.Mechanism, Why: row.Left.Why},
+			Right:      comparisonCellDoc{Outcome: row.Right.Outcome, Mechanism: row.Right.Mechanism, Why: row.Right.Why},
+		})
+	}
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("render the comparison: %w", err)
+	}
+	return append(data, '\n'), nil
 }

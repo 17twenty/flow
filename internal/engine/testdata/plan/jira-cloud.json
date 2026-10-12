@@ -1,5 +1,5 @@
 {
-  "version": "flow.plan/v1",
+  "schema": "flow.plan/v1",
   "flow_version": "v0.3.0",
   "generated_at": "2026-03-01T12:00:00Z",
   "providers": {

@@ -18,7 +18,7 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 // for a failing one is wrong where it matters.
 func samplePlan() engine.Plan {
 	return engine.Plan{
-		Version:     engine.PlanVersion,
+		Schema:      engine.PlanVersion,
 		FlowVersion: "1.0.0",
 		GeneratedAt: time.Date(2026, 3, 1, 9, 30, 0, 0, time.UTC),
 		Providers: map[string]string{

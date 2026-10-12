@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -33,6 +34,24 @@ func Stale(loaded, fresh Plan) error {
 		return fmt.Errorf("%w: %s", ErrStale, why)
 	}
 	return nil
+}
+
+// Mutations are the changes apply would actually attempt: the ones belonging
+// to items the plan has flow making itself.
+//
+// A compensated, attested or unsupported item still lists what would have to
+// happen (spec 06 §2) because a human reading the plan is owed it. Counting
+// those as work would mean asking somebody to approve changes flow is not
+// going to make, and reporting an apply as having had something to do when it
+// did not.
+func (p Plan) Mutations() []core.Change {
+	var changes []core.Change
+	for _, item := range p.Items {
+		if item.Outcome == OutcomeNative {
+			changes = append(changes, item.Changes...)
+		}
+	}
+	return changes
 }
 
 // ApplyInput is a plan and the world to carry it out against.
@@ -62,8 +81,15 @@ type ApplyInput struct {
 
 // Applied is what became of a plan.
 type Applied struct {
+	// FlowVersion is the build that carried it out, and AppliedAt when.
+	FlowVersion string
+	AppliedAt   time.Time
 	// Items is one entry per planned item, in the order they were attempted.
 	Items []AppliedItem
+	// FollowUps are the tickets the run filed, nudged or closed for the work
+	// it could not do itself (spec 06 §3). They are set by [ApplyFollowUps],
+	// which the root calls once the providers have been dealt with.
+	FollowUps []FollowUpOutcome
 }
 
 // AppliedItem is what became of one planned item.
@@ -152,7 +178,10 @@ func Apply(ctx context.Context, in ApplyInput) (Applied, error) {
 	}
 
 	runner := &applier{in: in}
-	var applied Applied
+	applied := Applied{
+		FlowVersion: in.Plan.FlowVersion,
+		AppliedAt:   in.Clock.Now().UTC().Truncate(time.Second),
+	}
 	for _, item := range in.Plan.Items {
 		applied.Items = append(applied.Items, runner.item(ctx, item))
 	}

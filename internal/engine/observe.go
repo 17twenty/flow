@@ -240,7 +240,7 @@ func (o *observer) files(ctx context.Context, item DesiredItem, branch string) (
 			return core.Observation{}, err
 		}
 		found := core.Item{Name: wanted.Name}
-		if runs := flowCommands(content); len(runs) > 0 {
+		if runs := flowCommands(content, wanted.Field(FieldRuns)); len(runs) > 0 {
 			found = found.WithField(FieldRuns, strings.Join(runs, ", "))
 		}
 		items = append(items, found)
@@ -248,12 +248,20 @@ func (o *observer) files(ctx context.Context, item DesiredItem, branch string) (
 	return core.Observation{Exists: len(items) > 0, Items: items}, nil
 }
 
-// flowCommands reports which of flow's commands a file invokes, in the order
-// the desired state lists them so that the two can be compared as written.
-func flowCommands(content []byte) []string {
+// flowCommands reports which of the commands a file is wanted to run it
+// actually runs, in the order they were asked for so that the two can be
+// compared as written.
+//
+// Only the wanted commands are looked for, which is what makes the check the
+// one spec 06 §1 describes: that the workflow runs flow's commands, not that
+// it runs those and no others. A team whose CI also calls `flow check deploy`
+// has added a step of its own, and the template flow itself ships carries
+// both — reporting the extra one as a difference would have every plan
+// propose the same update for ever.
+func flowCommands(content []byte, wanted string) []string {
 	var found []string
-	for _, command := range []string{"flow check pr", "flow check deploy"} {
-		if strings.Contains(string(content), command) {
+	for _, command := range strings.Split(wanted, ", ") {
+		if command != "" && strings.Contains(string(content), command) {
 			found = append(found, command)
 		}
 	}

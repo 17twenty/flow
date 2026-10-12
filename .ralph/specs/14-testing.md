@@ -112,3 +112,30 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   means today. All three now answer 400 and 406, and all three count the
   `User-Agent`, which is how a repository's audit log says which tool acted.
   Deleting the header from an adapter fails most of its package.
+- **The CLI fakes are chosen by replacing the adapter builder, not by
+  threading a flag (item 4.2).** `fakes_flowtest.go` sets the package's
+  `newAdapters` variable in its `init`, so the only difference between a test
+  run and a real one is which function builds the providers. Every other part
+  of a command — kong parsing, configuration, the lock, rendering, the exit
+  code — is the shipped path. The file is not in a release build, so
+  `FLOW_TEST_FAKES` means nothing to the shipped binary, and a `!flowtest`
+  test asserts exactly that by watching a release build still ask for a
+  credential it was not given.
+- **Only the exact value `1` selects the fakes (item 4.2).** A variable
+  somebody exported empty, or set to a word that reads like yes, must not
+  quietly produce a fabricated world: the fakes answer every question
+  confidently, so a run that reached them by accident would look like a
+  passing one.
+- **The fake world is per working tree and outlives one command (item 4.2).**
+  Idempotence is the property these fakes exist to demonstrate, and providers
+  rebuilt from a fixture on every invocation would converge for ever and
+  prove nothing. The world is kept in a map keyed by the repository's path,
+  so a second command in the same process sees what the first one wrote and
+  two tests cannot see each other's board.
+- **The fake forge's trunk holds what the working tree holds (item 4.2).** A
+  fake whose default branch were always empty would have every run propose
+  the same files again, and an apply that can never converge is not something
+  scenario A04 can be written against. A repository in step with its remote
+  is the ordinary case — somebody ran `flow init` and pushed what it wrote —
+  so that is what the fake models, and a test wanting the proposal path
+  deletes the file from the working tree to get it.

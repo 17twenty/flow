@@ -89,7 +89,7 @@ func (i PlanItem) Headline() string {
 // and what the UI's styled and markdown renderings are arrangements of.
 func (p Plan) Text() string {
 	var out strings.Builder
-	out.WriteString(p.Version)
+	out.WriteString(p.Schema)
 	out.WriteString("\n")
 	for _, target := range []string{TargetForge, TargetTracker, TargetDeploys} {
 		if kind := p.Providers[target]; kind != "" {

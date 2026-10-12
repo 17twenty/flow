@@ -221,3 +221,29 @@ each successful mutation (atomic) and at the end. Summary.
   reading the result does not need to know which of the two it was. The
   retreat stops nothing else: the remaining changes of the item are attempted
   as usual, because one change a human owes does not make the others theirs.
+- **§1 the workflow is checked for the commands flow needs, not for the ones
+  it does not (item 4.2).** §1's check is that the file runs flow's commands,
+  so only the wanted commands are looked for in it. The template flow itself
+  ships carries `flow check deploy` as well as `flow check pr`, and a team
+  whose `done_on` is `merged` wants only the second — reporting the extra one
+  as a difference made every plan propose the same update for ever, against
+  the very file `flow init` had just written. Observation now answers the
+  question the desired item asked and no wider one, which is also what lets a
+  team add steps of its own without flow calling it drift.
+- **§3 a plan with nothing to do needs no approval (item 4.2).** There is
+  nothing to agree to, and an apply that has converged is worth running on a
+  timer without anybody having to promise in advance that it will find
+  nothing. Approval is asked for only when there are mutations to make, so
+  `--auto-approve` stays the flag that means "I have read a plan", rather
+  than the flag every scheduled run needs regardless.
+- **§3 apply re-plans even when it was given a plan (item 4.2).** The saved
+  plan is read, but the world is observed again first and the two are
+  compared: a plan is an approval for a world, and §3's staleness check has
+  nothing to compare against otherwise. The fresh plan is what makes
+  `--plan` safe rather than a way to replay an old decision.
+- **§2 `--only` names a capability and `--target` a provider (item 4.2).**
+  `--only` takes registry names such as `labels`, not plan item ids such as
+  `tracker.labels`: the question a person has is "what about labels", and
+  which target answers it is flow's problem. A filter naming nothing a
+  provider declares is refused, because a typo and a converged workflow would
+  otherwise print the same empty plan and the same exit 0.

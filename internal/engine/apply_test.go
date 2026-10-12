@@ -41,7 +41,7 @@ func (s *saver) last() []string {
 func applyTo(t *testing.T, w world, in engine.ApplyInput) (engine.Applied, *saver) {
 	t.Helper()
 	records := &saver{}
-	if in.Plan.Version == "" {
+	if in.Plan.Schema == "" {
 		in.Plan = planFor(t, w)
 	}
 	if in.Desired.Items == nil {
