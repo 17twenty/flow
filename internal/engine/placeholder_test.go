@@ -170,8 +170,19 @@ func TestResolveWithoutFixChangesNothing(t *testing.T) {
 	if len(got.Candidates) != 1 {
 		t.Fatalf("candidates = %v, want the one it would have taken", got.Candidates)
 	}
-	if !strings.Contains(strings.Join(got.Steps, "\n"), "Delivery") {
+	steps := strings.Join(got.Steps, "\n")
+	if !strings.Contains(steps, "Delivery") {
 		t.Errorf("steps = %q, want the candidate named so a human can act on it", got.Steps)
+	}
+
+	// One candidate is not a choice. Flow would have taken it, so what is
+	// missing is leave to write it down — not an id for somebody to retype.
+	remedy := got.Result().Remediation
+	if strings.Contains(steps+remedy.Command, "--set") {
+		t.Errorf("remedy = %q / %q, want leave to write down the only answer there is", remedy.Command, got.Steps)
+	}
+	if !strings.Contains(remedy.Command, "--fix") {
+		t.Errorf("remedy command = %q, want it to say how to take the one answer", remedy.Command)
 	}
 }
 

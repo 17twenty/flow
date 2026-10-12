@@ -421,3 +421,9 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   disagree. The summary line a person reads ends in `exit X`; something
   reading the document instead of the process's status deserves the same
   answer without re-deriving the verdict from twenty states.
+- **§1 one candidate is not a choice (item 4.5).** Where a discoverable
+  placeholder has exactly one candidate and `--fix` was not given, the check
+  still reports `input` — nothing may be written without leave — but the
+  remedy asks for the leave (`flow doctor --fix`) rather than for the answer
+  (`--set <path>=<value>`). Flow is holding the id; telling a person to go and
+  retype it puts a decision in front of them that has already been made.

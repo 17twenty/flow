@@ -417,9 +417,21 @@ func steps(in ResolveInput, p Placeholder) []string {
 	}
 }
 
-// chooseSteps is what to do when the tracker offered more than one answer and
-// there was nobody to ask.
+// chooseSteps is what to do when the tracker offered answers and flow was not
+// in a position to take one.
+//
+// One candidate is not a choice. Flow would have taken it and the only thing
+// missing is leave to write it down, so asking somebody to "pick the one"
+// puts a decision in front of them that has already been made — and tells
+// them to type an id flow is holding.
 func chooseSteps(p Placeholder, candidates []core.Candidate) []string {
+	if len(candidates) == 1 {
+		return []string{
+			fmt.Sprintf("%s has one possible answer, and flow would take it:", p.Path),
+			"  " + describe(candidates[0]),
+			"run flow doctor --fix to write it down",
+		}
+	}
 	chosen := make([]string, 0, len(candidates)+1)
 	chosen = append(chosen, fmt.Sprintf("%s has %d answers; pick the one this repository's work belongs on:", p.Path, len(candidates)))
 	for _, candidate := range candidates {
@@ -463,15 +475,22 @@ func (r Answer) Result() Result {
 		return Pass("%s is %s", r.Placeholder.Path, r.describe()).
 			Fix(Remediation{Kind: RemedyNone})
 	}
+	remediation := Remediation{
+		Kind:    RemedyInput,
+		Summary: "tell flow which one it is",
+		Command: "flow doctor --fix --set " + r.Placeholder.Path + "=<value>",
+		Steps:   r.Steps,
+	}
+	if len(r.Candidates) == 1 {
+		// Nothing is being asked of anybody: flow found one answer and was
+		// only told to look. The remedy is leave to write it down.
+		remediation.Summary = "let flow write down the only answer there is"
+		remediation.Command = "flow doctor --fix"
+	}
 	result := Result{
-		State:   StateInput,
-		Message: fmt.Sprintf("flow does not know what %s is", r.Placeholder.Path),
-		Remediation: Remediation{
-			Kind:    RemedyInput,
-			Summary: "tell flow which one it is",
-			Command: "flow doctor --fix --set " + r.Placeholder.Path + "=<value>",
-			Steps:   r.Steps,
-		},
+		State:       StateInput,
+		Message:     fmt.Sprintf("flow does not know what %s is", r.Placeholder.Path),
+		Remediation: remediation,
 	}
 	for _, candidate := range r.Candidates {
 		result = result.Saw(describe(candidate), candidate.URL)
