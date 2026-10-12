@@ -71,6 +71,7 @@ func Validate(cfg *Config, path string, registry core.Registry) error {
 	v.policy()
 	v.agents()
 	v.followUps()
+	v.health()
 
 	if len(v.problems) == 0 {
 		return nil
@@ -575,6 +576,17 @@ func (v *validator) followUps() {
 	}
 	if v.cfg.Attestation.DefaultTTL < 0 {
 		v.add("attestation.default_ttl is negative")
+	}
+}
+
+// health checks how strictly the live-health audit is graded. A share outside
+// one and a hundred per cent is not a threshold anybody meant: zero is how an
+// absent key reads and would mean nothing can ever fall below the line, and
+// anything above a hundred would fail a fortnight in which nothing went wrong.
+func (v *validator) health() {
+	below := v.cfg.Health.FailBelow
+	if below != 0 && (below < 1 || below > 100) {
+		v.add("health.fail_below is %d; it must be a percentage between 1 and 100", below)
 	}
 }
 

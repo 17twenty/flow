@@ -319,6 +319,16 @@ func TestValidate(t *testing.T) {
 			wantIn: "it must be between 20 and 200",
 		},
 		{
+			name:   "a health threshold that is not a percentage",
+			change: func(c *Config) { c.Health.FailBelow = 150 },
+			wantIn: "health.fail_below is 150",
+		},
+		{
+			name:   "a health threshold below one per cent",
+			change: func(c *Config) { c.Health.FailBelow = -1 },
+			wantIn: "a percentage between 1 and 100",
+		},
+		{
 			name:   "a commit type that is not a word",
 			change: func(c *Config) { c.Commits.Types = []string{"feat", "Fix!"} },
 			wantIn: "a type is lowercase letters",

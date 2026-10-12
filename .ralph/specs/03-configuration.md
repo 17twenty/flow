@@ -97,6 +97,9 @@ followups:
 
 attestation:
   default_ttl: 30d
+
+health:
+  fail_below: 90                  # doctor: a live check below this % fails rather than warns
 ```
 
 ### 1.1 Semantic validation (`flow doctor` check `config.semantics`)
@@ -423,3 +426,14 @@ gate, relaxed policy).
   team's handles, and `flow init` fills them in. A golden file per preset pins
   what each one decodes to, so changing a preset is a change somebody looked
   at.
+- **§1 `health.fail_below` is a whole number of per cent (item 5.1).** Spec 07
+  §6 names the threshold but §1 had nowhere to write it. It is an integer
+  because that is how a team says it out loud — "ninety per cent" — and
+  because `0.9` and `90` in the same key is a mistake nobody would catch.
+  Absent means 90; `config.semantics` refuses anything outside 1 to 100, since
+  zero is how an absent key reads and a threshold nothing can fall below is
+  not one anybody meant.
+- **§1 how far back the audit looks is not configuration (item 5.1).**
+  `health` holds how strictly the answer is graded, which is a property of the
+  team; `--window` stays a flag, because a daily job and somebody checking by
+  hand want different fortnights from the same repository on the same day.

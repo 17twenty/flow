@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/engine"
 	"github.com/17twenty/flow/internal/ui"
@@ -38,7 +39,7 @@ func (c *DoctorCmd) Run(app *Context) error {
 	if err != nil {
 		return err
 	}
-	registry, err := engine.SetupRegistry(setup)
+	registry, err := engine.DoctorRegistry(setup)
 	if err != nil {
 		return err
 	}
@@ -134,15 +135,16 @@ func (c *DoctorCmd) world(app *Context, s *session) (engine.SetupInput, error) {
 // from disagreeing about the same board (spec 06 §2).
 func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engine.Env {
 	env := &engine.Env{
-		Config:   s.Config,
-		Lock:     s.Lock,
-		Desired:  s.Desired,
-		Adapters: s.Adapters,
-		Clock:    s.Clock,
-		Window:   c.Window,
-		Fix:      c.Fix,
-		Set:      parseSet(c.Set),
-		Log:      app.Log,
+		Config:    s.Config,
+		Lock:      s.Lock,
+		Desired:   s.Desired,
+		Adapters:  s.Adapters,
+		Clock:     s.Clock,
+		Window:    c.Window,
+		FailBelow: failBelow(s.Config),
+		Fix:       c.Fix,
+		Set:       parseSet(c.Set),
+		Log:       app.Log,
 	}
 	if len(setup.Unavailable) > 0 || s.Config == nil {
 		return env
@@ -265,6 +267,15 @@ func (c *DoctorCmd) settle(app *Context, s *session, report *engine.Report) erro
 	// alive through a rewrite of the thing it was promised about.
 	s.Lock.ConfigHash = s.ConfigHash
 	return s.saveLock(s.Lock)
+}
+
+// failBelow is how strictly the live-health audit grades what it finds, as a
+// ratio. A configuration that did not say takes the engine's default.
+func failBelow(cfg *config.Config) float64 {
+	if cfg == nil {
+		return 0
+	}
+	return cfg.Health.Threshold()
 }
 
 // parseSet turns `--set name=value` into the map the engine takes.

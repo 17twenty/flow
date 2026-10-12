@@ -311,7 +311,7 @@ func prTicketLinked(s PolicySnapshot) Finding {
 		finding.OK = true
 		return finding
 	}
-	if kind, exempt := unlinkedType(s); exempt {
+	if kind, exempt := unlinkedType(s.Config, s.PR.Title); exempt {
 		finding.OK, finding.Skipped = true, true
 		finding.Message = fmt.Sprintf("a %q pull request may merge without a ticket", kind)
 		return finding
@@ -462,18 +462,16 @@ func agentHumanReview(s PolicySnapshot) Finding {
 		finding.Message = "the team does not require a human review of agent work"
 		return finding
 	}
-	if !agentAuthored(s) {
+	if !agentAuthored(s.Config, s.PR) {
 		finding.Skipped = true
 		finding.Message = "a person opened this"
 		return finding
 	}
-	for _, login := range s.PR.Approvals() {
-		if !isAgent(s.Config, login) {
-			finding.Evidence = append(finding.Evidence, Evidence{
-				Text: fmt.Sprintf("%s approved it", login),
-			})
-			return finding
-		}
+	if login, approved := humanApprover(s.Config, s.PR); approved {
+		finding.Evidence = append(finding.Evidence, Evidence{
+			Text: fmt.Sprintf("%s approved it", login),
+		})
+		return finding
 	}
 	finding.OK = false
 	finding.Message = "an agent opened this and no person has approved it"
@@ -633,12 +631,12 @@ func lintTitle(s PolicySnapshot, keep []string) []commits.Violation {
 
 // unlinkedType reports the title's type and whether it is one that may merge
 // without a ticket.
-func unlinkedType(s PolicySnapshot) (string, bool) {
-	kind := commits.Parse(s.PR.Title).Type
-	if kind == "" || s.Config == nil {
+func unlinkedType(cfg *config.Config, title string) (string, bool) {
+	kind := commits.Parse(title).Type
+	if kind == "" || cfg == nil {
 		return kind, false
 	}
-	return kind, slices.Contains(s.Config.Commits.UnlinkedTypes, kind)
+	return kind, slices.Contains(cfg.Commits.UnlinkedTypes, kind)
 }
 
 // linkFix is how this tracker wants a pull request linked. GitHub has a
@@ -797,21 +795,33 @@ func wipEvidence(items []WIPItem) []Evidence {
 }
 
 // agentAuthored reports whether a machine opened this pull request.
-func agentAuthored(s PolicySnapshot) bool {
-	if s.Config == nil {
+func agentAuthored(cfg *config.Config, pr core.PullRequest) bool {
+	if cfg == nil {
 		return false
 	}
-	if isAgent(s.Config, s.PR.Author) {
+	if isAgent(cfg, pr.Author) {
 		return true
 	}
-	for _, want := range s.Config.Agents.Labels {
-		for _, have := range s.PR.Labels {
+	for _, want := range cfg.Agents.Labels {
+		for _, have := range pr.Labels {
 			if strings.EqualFold(have, want) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// humanApprover is the first person who approved and is not themselves an
+// agent, and whether there was one. A rule satisfied by one robot nodding at
+// another is not a rule.
+func humanApprover(cfg *config.Config, pr core.PullRequest) (string, bool) {
+	for _, login := range pr.Approvals() {
+		if !isAgent(cfg, login) {
+			return login, true
+		}
+	}
+	return "", false
 }
 
 // isAgent reports whether a login is one of the configured agents.

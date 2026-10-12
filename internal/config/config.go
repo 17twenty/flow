@@ -189,6 +189,8 @@ type Config struct {
 	FollowUps FollowUps `yaml:"followups"`
 	// Attestation is how long a human's word stands for.
 	Attestation AttestationPolicy `yaml:"attestation"`
+	// Health is how strictly the live-health audit grades what it finds.
+	Health Health `yaml:"health,omitempty"`
 }
 
 // Auth names the environment variables a credential is read from. It never
@@ -400,6 +402,29 @@ type Owners struct {
 type AttestationPolicy struct {
 	// DefaultTTL is how long an attestation stands before it must be renewed.
 	DefaultTTL Duration `yaml:"default_ttl,omitempty"`
+}
+
+// DefaultFailBelow is the share a live-health check must reach before it fails
+// rather than warns, as a percentage (spec 07 §6).
+const DefaultFailBelow = 90
+
+// Health is how the live-health audit grades what it saw (spec 07 §6).
+//
+// The window it looks back over is not here: `--window` is a property of the
+// run, and a daily job and somebody checking by hand want different ones from
+// the same repository. How strictly the answer is graded is a property of the
+// team, so it is written down with the rest of what the team agreed to.
+type Health struct {
+	// FailBelow is the percentage of items a live check must see hold before
+	// it fails rather than warns. Zero means [DefaultFailBelow].
+	FailBelow int `yaml:"fail_below,omitempty"`
+}
+
+// Threshold is the share a live check must reach, as a ratio. An unset
+// FailBelow is zero here rather than [DefaultFailBelow]: the engine applies
+// the default, and two places knowing one number is how they come to disagree.
+func (h Health) Threshold() float64 {
+	return float64(h.FailBelow) / 100
 }
 
 // Column returns the column with the given id, and whether it exists.

@@ -267,6 +267,14 @@ func (r Result) Fix(remedy Remediation) Result {
 	return r
 }
 
+// Said returns a copy of the result with its message set. A live check grades
+// itself before it knows what to say — "all nine held" and "two of nine did
+// not" are different sentences — so the message arrives after the state.
+func (r Result) Said(format string, args ...any) Result {
+	r.Message = fmt.Sprintf(format, args...)
+	return r
+}
+
 // Saw returns a copy of the result with one more piece of evidence.
 func (r Result) Saw(text, url string) Result {
 	r.Evidence = append(slices.Clip(r.Evidence), Evidence{Text: text, URL: url})
@@ -342,6 +350,29 @@ func (e *Env) Now() time.Time {
 		return time.Time{}
 	}
 	return e.Clock.Now()
+}
+
+// Since is the start of the window the live-health audit is about. An Env
+// that was not told how far back to look takes [DefaultWindow], because a
+// window of zero would be read as "no bound" by every adapter and quietly
+// turn a fortnight's audit into the whole history of the repository.
+func (e *Env) Since() time.Time {
+	window := e.Window
+	if window <= 0 {
+		window = DefaultWindow
+	}
+	return e.Now().Add(-window)
+}
+
+// Threshold is the share of items a live check must see hold before it fails
+// rather than warns. An Env that was not told takes the configured default,
+// so that forgetting to set it cannot make the audit lenient: a zero would
+// mean nothing can ever fall below the line (spec 07 §6).
+func (e *Env) Threshold() float64 {
+	if e.FailBelow <= 0 {
+		return float64(config.DefaultFailBelow) / 100
+	}
+	return e.FailBelow
 }
 
 // Result returns what an earlier check found.

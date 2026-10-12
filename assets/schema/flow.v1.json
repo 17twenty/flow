@@ -333,6 +333,19 @@
       ],
       "additionalProperties": false
     },
+    "health": {
+      "description": "How strictly the live-health audit grades what it finds (spec 07 §6).",
+      "type": "object",
+      "properties": {
+        "fail_below": {
+          "description": "The percentage of items a live check must see hold before it fails rather than warns. Omitted means 90.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
     "policy": {
       "description": "How the pull request gate presents itself (spec 09).",
       "type": "object",

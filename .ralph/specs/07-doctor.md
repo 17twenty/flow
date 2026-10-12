@@ -464,3 +464,50 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   lock leaves the live tracker pointing at project zero, so the one run that
   found the answer was the one run that could not use it. The providers are
   rebuilt after resolution and before anything is asked.
+- **§6 the window is read once, lazily, for all four checks (item 5.1).**
+  `LiveChecks` returns a slice built together over one `audit`, so the
+  fortnight's pull requests and the trunk's commits are fetched at most once a
+  run. Four checks each asking the forge for the same fortnight would be four
+  times the rate limit and, worse, four slightly different fortnights. Lazily,
+  because `--check live.prs.conventional` must not pay for the pull requests it
+  is never going to read.
+- **§6 the window is about when work merged, not when it was touched
+  (item 5.1).** The query is by update time, because that is what every forge
+  indexes, but merging is not the last thing that can happen to a pull request
+  — a comment afterwards moves it too. So the window is applied a second time,
+  to `merged_at`, which is the date the audit is actually about.
+- **§6 a quiet fortnight is not ill health (item 5.1).** Nothing looked at is a
+  pass, and the check says "nothing merged in the window" rather than "all 0
+  merged pull requests named a ticket". A dashboard that cannot tell a quiet
+  fortnight from a healthy one is telling nobody anything.
+- **§6 a live check never offers to fix what it found (item 5.1).** A pull
+  request that merged ungated last week cannot be gated now. Every remediation
+  is `manual` and names the setup check that would stop the next one —
+  `forge.required_status`, `forge.protection`, `forge.merge_settings` — which
+  is also what keeps `--fix` to the five things §6 allows.
+- **§6 `live.prs.conventional` reads the trunk, not the pull request titles
+  (item 5.1).** The title is only the commit header when the merge was a
+  squash, and a merge that was not a squash is exactly the case where the
+  header the gate checked is not the one that landed. It lints through
+  `internal/commits`, so the commits git composed itself are exempt by the
+  same rule the hook uses rather than by a second copy of it.
+- **§6 `live.prs.reviewed` is critical whenever it runs (item 5.1).** A team
+  that has not asked for a human review is not audited for one — there is no
+  claim to hold them to, which is the answer the gate's `agent.human_review`
+  rule gives too — so `require_human_review` decides whether the check exists,
+  not whether it is critical. When it runs there is no warning band: one agent
+  merge in twenty with nobody's approval is a failure.
+- **§6 the audit and the gate read one definition of agent work (item 5.1).**
+  `agentAuthored`, `humanApprover` and `unlinkedType` are shared with spec 09's
+  rules rather than reimplemented. Two mechanisms answering the same question
+  in different code drift apart silently, and the drift would show up as a
+  report that disagrees with the gate about the same pull request.
+- **§6 with no tracker the forge's own closing references are the link
+  (item 5.1).** `LinkedKeys` is the tracker's, because only it knows its own
+  convention, but a run that could not reach the tracker still knows which
+  pull requests named an issue. Calling all of them unlinked would report the
+  team's fortnight as broken when it was flow that could not look.
+- **§6 the audit names things in its own order (item 5.1).** Merged pull
+  requests are sorted by number before they are counted, whatever order the
+  forge's index answered in. Item 5.7 edits this list into an issue in place,
+  and evidence that reshuffles between runs is noise in every diff of it.

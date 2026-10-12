@@ -41,8 +41,10 @@ type Schema struct {
 	Enum []string `json:"enum,omitempty"`
 	// Pattern constrains a string.
 	Pattern string `json:"pattern,omitempty"`
-	// Minimum constrains a number.
+	// Minimum constrains a number from below.
 	Minimum *int `json:"minimum,omitempty"`
+	// Maximum constrains it from above.
+	Maximum *int `json:"maximum,omitempty"`
 	// Items describes the elements of an array.
 	Items *Schema `json:"items,omitempty"`
 	// Properties describes the known keys of an object.
@@ -170,6 +172,10 @@ func ConfigSchema() *Schema {
 			"attestation": object("How long a human's word stands (spec 07 §8).", props{
 				"default_ttl": duration("How long an attestation stands before it must be renewed."),
 			}),
+
+			"health": object("How strictly the live-health audit grades what it finds (spec 07 §6).", props{
+				"fail_below": percentage("The percentage of items a live check must see hold before it fails rather than warns. Omitted means 90."),
+			}),
 		}, "version")
 
 	root.Version = "https://json-schema.org/draft/2020-12/schema"
@@ -241,6 +247,14 @@ func integer(description string) *Schema {
 func count(description string) *Schema {
 	zero := 0
 	return &Schema{Description: description, Type: "integer", Minimum: &zero}
+}
+
+// percentage builds a whole number of per cent, between one and a hundred.
+// Zero is excluded because it is how an absent key reads, and a threshold
+// nothing can fall below is not a threshold anybody meant to write.
+func percentage(description string) *Schema {
+	one, hundred := 1, 100
+	return &Schema{Description: description, Type: "integer", Minimum: &one, Maximum: &hundred}
 }
 
 // boolean builds a true or false.

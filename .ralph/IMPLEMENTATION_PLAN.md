@@ -193,8 +193,9 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 5 — Live health
 
-- [ ] 5.1 live.prs.* audits (linked, gated, conventional, reviewed) — specs: 07 §6 — deps: 4.5 (#65)
+- [x] 5.1 live.prs.* audits (linked, gated, conventional, reviewed) — specs: 07 §6 — deps: 4.5 (#65)
   - AC: scenarios V02; evidence links; thresholds and critical flags
+  - note: the four checks share one reading of the window, lazily, so a run narrowed with `--check` pays for nothing it will not look at and four checks are not four slightly different fortnights. A window nothing happened in is a pass that says "nothing merged" rather than "all 0 were fine". No live check offers a fix: last week's merge cannot be gated now, so each one points at the setup check that would stop the next one. `health.fail_below` settles the spec issue below.
 - [ ] 5.2 live.deploys.* (recent, lag) — specs: 07 §6, 13 — deps: 4.5, 3.6 (#66)
   - AC: scenario V01
 - [ ] 5.3 live.tickets.* audits — specs: 07 §6 — deps: 4.5 (#67)
@@ -252,11 +253,13 @@ Human-only steps use ids `H.<n>` (never seeded).
 ## Spec issues
 
 - **`fail_below` is named in spec 07 §6 but has no key in spec 03** (found by
-  item 2.8). The live-health threshold is the one number in §6 a team would
-  want to set, and `.flow.yaml` has nowhere to write it. Item 5.1 must either
-  add it to spec 03 §1 — `health: { fail_below: 0.9, window: 14d }` would be
-  the obvious shape, next to the `--window` flag that already exists — or
-  record that it is a flag only. Until then the engine takes it as a parameter
-  and the caller defaults it to 0.9.
+  item 2.8). *Settled by item 5.1:* spec 03 §1 now has
+  `health: { fail_below: 90 }`, a whole number of per cent, and the engine
+  takes it from there. `window` is not beside it: how far back to look is a
+  property of the run — a daily job and somebody checking by hand want
+  different fortnights from the same repository — so it stays the `--window`
+  flag it already was. An absent key reads as zero, which is why zero means
+  the default of 90 rather than a threshold nothing can fall below, and why
+  `config.semantics` refuses anything outside 1–100.
 
 ## Notes
