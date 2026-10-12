@@ -668,6 +668,16 @@ func TestPendingIsWhatStillNeedsAHuman(t *testing.T) {
 	if len(answers) != 5 {
 		t.Errorf("answers = %d, want Pending to have left its input alone", len(answers))
 	}
+
+	// Resolved is the opposite question, and doctor asks it for a different
+	// reason: not "is anybody owed anything" but "did this run learn
+	// something the providers were not built with".
+	if !engine.Resolved(answers) {
+		t.Error("Resolved says nothing was answered, but the only board there was was taken")
+	}
+	if engine.Resolved(still) {
+		t.Error("Resolved says the four unanswered owners are answers")
+	}
 }
 
 // TestAnswerBecomesADoctorResult: resolution is reported through the same

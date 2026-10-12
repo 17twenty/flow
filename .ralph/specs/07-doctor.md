@@ -444,3 +444,23 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   whose word it displaced and whether that word still stood. Two promises
   about one check would leave flow choosing between them with no rule to
   choose by.
+- **§5 a plan flow could not make is not a skip (live fix, after item 4.6).**
+  An empty plan and a plan that wants nothing are the same bytes, and the
+  second of those is a skip, so the first live run of doctor against flow's
+  own repository reported twenty checks as "this configuration does not ask
+  for it" and exited 0 having seen nothing. The failure to observe is carried
+  into `Env.PlanErr`, and every check that reads the plan reports it. The
+  checks that read it first — `forge.repo` and `tracker.project` — say what
+  went wrong, and everything behind them is blocked rather than told the same
+  thing five more times.
+- **§5 unless a placeholder is still pending.** A board nobody has identified
+  is why there is no plan, `tracker.project` already reports it as `input`,
+  and that already holds the run at exit 2. Repeating one unanswered question
+  as twenty red lines would bury it, so the plan error is carried only when
+  nothing is pending to explain it (scenario A05).
+- **§3 resolving an answer rebuilds the providers that needed it.** An adapter
+  is built from what flow knew when it connected, and for `github-projects`
+  that includes the board's number. `--fix` writing a discovered number to the
+  lock leaves the live tracker pointing at project zero, so the one run that
+  found the answer was the one run that could not use it. The providers are
+  rebuilt after resolution and before anything is asked.

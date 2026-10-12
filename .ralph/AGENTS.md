@@ -74,3 +74,5 @@ CURRENT MODE: direct
 - A reference fake world can make a whole family of items unreachable — the CLI fake tracker never observed `tracker.native.*` — so when a test expectation surprises you, compare the fake's behaviour against the real adapter before changing the test.
 - Mutating an *absence* means adding the line the code deliberately omits. `attest` not stamping the lock's `config_hash` had no test at all until the stamp was added and nothing failed.
 - Read files in small targeted slices (`sed -n`, `grep -n -A`). Large tool output gets elided, and an elided read is a guess.
+- Run the thing against the real repo as soon as it builds. The first live `flow doctor` found two bugs no test had reached: a report of twenty skips exiting 0, and `--fix` resolving the board's number into a lock the already-built adapter never re-read.
+- An empty result and "nothing was wanted" must not be the same value. A skip is a success, so any code path that turns "could not look" into an empty collection turns a blind run green.

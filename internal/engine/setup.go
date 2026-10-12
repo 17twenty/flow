@@ -677,6 +677,12 @@ func planned(id, title, category string, dependsOn ...string) Check {
 // something that used to hold and no longer does is drift rather than a plain
 // failure (spec 07 §7).
 func plannedResult(env *Env, id string) Result {
+	if env.PlanErr != nil {
+		// Not a skip. A check that does not apply to this configuration and
+		// a check flow was unable to make up its mind about are opposite
+		// answers, and only the first of them may let a run report success.
+		return Failed(env.PlanErr)
+	}
 	item, found := env.Plan.Find(id)
 	if !found {
 		return Skip("this configuration does not ask for it")

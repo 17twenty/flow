@@ -112,6 +112,18 @@ func (c *DoctorCmd) world(app *Context, s *session) (engine.SetupInput, error) {
 		return setup, err
 	}
 	setup.Placeholders = answers
+
+	// An adapter is built from what flow knew when it connected, and for
+	// github-projects that includes the board's number. Resolving the
+	// placeholder that holds it leaves the tracker pointing at nothing, so
+	// the providers are rebuilt before anything asks them a question — or
+	// the run that found the answer would be the one run that could not use
+	// it (spec 07 §3).
+	if c.Fix && engine.Resolved(answers) {
+		if err := s.connect(app); err != nil {
+			setup.Unavailable[engine.TargetTracker] = err
+		}
+	}
 	return setup, nil
 }
 
@@ -137,11 +149,20 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 	}
 	plan, err := s.plan(app, nil, nil)
 	if err != nil {
-		// Observing is the only part that can fail here, and a provider that
-		// would not answer is already the subject of its own check. The
-		// plan stays empty, every item reads as "nothing is there", and the
-		// report says so item by item rather than ending the run.
+		// Observing is the only part that can fail here. What must not
+		// happen is the run going quiet: an empty plan is indistinguishable
+		// from a plan that wants nothing, and that is a skip, so a doctor
+		// that could not see the providers at all would report every one of
+		// them as "this configuration does not ask for it" and exit 0.
+		//
+		// Unless something is still being asked. A placeholder nobody has
+		// answered is why there is no plan, the check for it already says so
+		// and already holds the run at exit 2, and repeating that one
+		// question as twenty failures would bury it (scenario A05).
 		app.Log.Warn("doctor could not look at the providers", "error", err)
+		if len(engine.Pending(setup.Placeholders)) == 0 {
+			env.PlanErr = err
+		}
 		return env
 	}
 	env.Plan = plan

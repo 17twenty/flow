@@ -157,6 +157,83 @@ func TestDoctorTakesTheOnlyBoardThereIs(t *testing.T) {
 	}
 }
 
+// TestDoctorUsesTheAnswerItJustFound is what the first live run of doctor on
+// flow's own repository caught, and it is the one thing scenario A05 does not
+// say out loud: the run that finds the board's number has to be able to use
+// it. The tracker is built from what flow knew when it connected, so a board
+// discovered afterwards leaves the adapter pointing at nothing, and the whole
+// plan is then unobservable — on the one run that had the answer.
+//
+// The property is that discovery is invisible in the result: a board flow was
+// told about and a board flow worked out must produce the same report. That
+// is worth more than naming the states, because the states of an unapplied
+// repository are a different scenario's business (A03) and would make this
+// test fail for a change it is not about.
+func TestDoctorUsesTheAnswerItJustFound(t *testing.T) {
+	told := fakeRepo(t)
+	worked := initRepo(t, "git@github.com:acme/api.git")
+	if code, _, stderr := exec(t, "-C", worked, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+		t.Fatalf("flow init exited %d: %s", code, stderr)
+	}
+	boards(worked, core.Candidate{ID: "2", Name: "flow", URL: "https://github.test/users/acme/projects/2"})
+
+	fix := append([]string{"--fix"}, owners()...)
+	discovered, discoveredCode := doctorJSON(t, worked, fix...)
+	configured, configuredCode := doctorJSON(t, told, fix...)
+
+	if discoveredCode != configuredCode {
+		t.Errorf("doctor exited %d where the board was discovered and %d where it was configured",
+			discoveredCode, configuredCode)
+	}
+	for _, checked := range configured.Checks {
+		got := discovered.checkState(t, checked.ID)
+		if got != checked.Result.State {
+			t.Errorf("%s is %q on the run that discovered the board and %q on the run that was told it: "+
+				"the providers were not rebuilt around the answer", checked.ID, got, checked.Result.State)
+		}
+	}
+}
+
+// TestDoctorWillNotCallAnUnseenProviderHealthy is the other half of that
+// finding, and the reason it went unnoticed for a run: a doctor that cannot
+// observe anything has an empty plan, and an empty plan is indistinguishable
+// from a plan that wants nothing — which is a skip, and a report full of
+// skips exits 0. "This configuration does not ask for it", said about twenty
+// things flow never looked at, is worse than no report at all.
+//
+// Project zero is how that state is reached here, as it is in production:
+// `GitHubProjects` refuses to query a board whose number is not set rather
+// than asking about project zero, and nothing is pending that would make the
+// refusal a question somebody still has to answer.
+func TestDoctorWillNotCallAnUnseenProviderHealthy(t *testing.T) {
+	dir := fakeRepo(t)
+	writeConfig(t, dir, strings.Replace(configOf(t, dir), `project: "2"`, `project: "0"`, 1))
+
+	doc, code := doctorJSON(t, dir, owners()...)
+
+	if code == core.ExitOK {
+		t.Fatalf("doctor exited 0 having observed nothing at all")
+	}
+	// The two checks that read the plan first say what went wrong, and
+	// everything behind them is not asked. What none of them may be is
+	// skipped: a check that does not apply and a check flow could not make
+	// up its mind about are opposite answers.
+	for _, id := range []string{engine.CheckForgeRepo, core.ItemTrackerProject} {
+		checked := doc.check(t, id)
+		if checked.Result.State != "error" {
+			t.Errorf("%s is %q, want error: flow never found out either way", id, checked.Result.State)
+		}
+		if !strings.Contains(checked.Result.Message, "no project number is set") {
+			t.Errorf("%s does not say why there was no plan: %q", id, checked.Result.Message)
+		}
+	}
+	for _, id := range []string{core.ItemForgeProtection, core.ItemTrackerStatusOptions, core.ItemTrackerLabels} {
+		if got := doc.checkState(t, id); got != "blocked" {
+			t.Errorf("%s is %q, want blocked: it stands behind a question flow could not answer", id, got)
+		}
+	}
+}
+
 // TestDoctorAsksWhichBoardWhenThereAreTwo is the second half of A05. Two
 // candidates is a question only a person can settle, so flow does not choose:
 // it reports `input`, says exactly how to answer, blocks everything that

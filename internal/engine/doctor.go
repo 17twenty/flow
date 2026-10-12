@@ -305,6 +305,14 @@ type Env struct {
 	// Plan is the plan made for this run, which is what the setup checks
 	// about a provider's state are reading.
 	Plan Plan
+	// PlanErr is why there is no plan, when a provider would not answer.
+	//
+	// It has to be carried rather than swallowed. An empty plan and a plan
+	// in which nothing is wanted look identical to a check reading it, and
+	// the second of those is a skip — so a run that could not see the
+	// providers at all would otherwise report every one of them as "this
+	// configuration does not ask for it" and exit 0.
+	PlanErr error
 	// Adapters are the providers. Any may be nil.
 	Adapters Adapters
 	// Clock is where the time comes from.

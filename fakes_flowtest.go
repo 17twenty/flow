@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -40,7 +41,37 @@ func fakeAdapters(a *Context, s *session) (engine.Adapters, error) {
 	if err != nil {
 		return engine.Adapters{}, err
 	}
-	return engine.Adapters{Forge: world.forge, Tracker: world.tracker, Deploys: world.deploys}, nil
+	adapters := engine.Adapters{Forge: world.forge, Tracker: world.tracker, Deploys: world.deploys}
+	if projectNumber(s.Config, s.Lock) == 0 {
+		adapters.Tracker = unnumberedTracker{Tracker: world.tracker}
+	}
+	return adapters, nil
+}
+
+// unnumberedTracker is a board whose number nobody has found yet.
+//
+// The reference fake answers about a project it holds in memory, so it does
+// not care whether anybody knows its number — but `GitHubProjects` is built
+// with that number, and the two questions it answers by querying the board
+// refuse without one. Without this, a fake could observe a board the real
+// adapter could not have reached, and the order flow resolves things in
+// would be untestable here. Everything else is left alone, because the real
+// adapter leaves it alone too: repository labels, the per-view settings it
+// declines to verify and the native workflows all answer without a number,
+// and so does discovery — finding the number is what a run in this state is
+// for.
+type unnumberedTracker struct{ core.Tracker }
+
+// Observe refuses the two questions that need a board, in the words the real
+// adapter refuses them in, and passes the rest through.
+func (t unnumberedTracker) Observe(ctx context.Context, what string) (core.Observation, error) {
+	switch what {
+	case core.ItemTrackerProject, core.ItemTrackerStatusOptions:
+		return core.Observation{}, core.Errorf(core.ErrValidation, "observe %s", what).
+			WithWhy("no project number is set").
+			WithFix("set tracker.project to the number in the project's web address")
+	}
+	return t.Tracker.Observe(ctx, what)
 }
 
 // fakeWorld is one repository's providers.

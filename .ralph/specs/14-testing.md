@@ -139,3 +139,14 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   is the ordinary case — somebody ran `flow init` and pushed what it wrote —
   so that is what the fake models, and a test wanting the proposal path
   deletes the file from the working tree to get it.
+- **§4 a fake may not answer what the real adapter would refuse (live fix,
+  after item 4.6).** `coretest.FakeTracker` holds its board in memory and so
+  does not care whether anybody knows its number, while `GitHubProjects`
+  refuses to query a board whose number is not set. The CLI fakes therefore
+  wrap it: with no number, `tracker.project` and `tracker.status_options` —
+  the two questions the real adapter answers by querying the board, and only
+  those — refuse in the same words. Everything else passes through, because
+  repository labels, the per-view settings the adapter declines to verify,
+  the native workflows and discovery all answer without a number there too.
+  Without the wrapper the order flow resolves things in was untestable, and
+  the bug that order hid shipped.

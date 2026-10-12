@@ -16,10 +16,15 @@ import (
 // fakes: a GitHub origin, `flow init` run over it, and the switch of
 // fakes_flowtest.go set. It is scenario A03's starting point — a repository
 // somebody has just configured and nobody has applied.
+//
+// The board's number is given, because A03 starts from a project flow can
+// read. A repository that does not know its board yet is a different
+// scenario — A05 — and the fakes model it faithfully enough that a plan
+// cannot be made there at all, so the tests about it call `init` themselves.
 func fakeRepo(t *testing.T) string {
 	t.Helper()
 	dir := initRepo(t, "git@github.com:acme/api.git")
-	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--project", "2", "--yes"); code != core.ExitOK {
 		t.Fatalf("flow init exited %d: %s", code, stderr)
 	}
 	t.Setenv(fakeEnv, "1")

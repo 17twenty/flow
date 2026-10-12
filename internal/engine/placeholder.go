@@ -510,3 +510,10 @@ func (r Answer) describe() string {
 func Pending(resolutions []Answer) []Answer {
 	return slices.DeleteFunc(slices.Clone(resolutions), func(r Answer) bool { return r.Resolved() })
 }
+
+// Resolved reports whether any of these answers is one flow now knows, which
+// is what tells a caller its providers were built against a configuration
+// that has since gained a value.
+func Resolved(resolutions []Answer) bool {
+	return slices.ContainsFunc(resolutions, func(r Answer) bool { return r.Resolved() })
+}
