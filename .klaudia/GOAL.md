@@ -80,8 +80,8 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 
 ### Status notes
 
-*(updated after plan item 5.5, the catch-up of the transitions flow owns,
-commit `adec9ef`, CI green)*
+*(updated after the follow-up rewrite that came out of running 5.7 against
+this repository, commit `6f5453f`, CI green)*
 
 **Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
 4.1–4.6) and Phase 5 is five items of eight (5.1–5.5), their issues closed and
@@ -299,6 +299,36 @@ flow only ever asks for `flow/policy`; and there is no cookbook recipe for
 requiring a status check by hand when the credential lacks admin — which is
 flow's own situation and the reason #90 and #91 are open. Both are owed before
 Phase 7 settles the GitLab and Gitea adapters.
+
+**What running it found (this run).** `flow doctor` was pointed at this
+repository and the report was correct and the tickets behind it were not.
+Issues #90 and #91 were both titled `flow: somebody with the access has to do
+it (17twenty/flow)` — the obstacle, not the work — so the trunk's protection
+and the status check a merge must pass were one line in the issue list, twice.
+Every item flow cannot perform shared that summary, by construction. The
+summary is now the check's own title with what is short appended, and the
+steps carry the planned change with its fields in sorted order: a refused item
+is the one outcome where flow knows the whole of a change and lacks only the
+permission to make it, so a ticket that withholds it asks a person to
+rediscover what flow already decided.
+
+That exposed a hole in the lifecycle. Spec 07 §4 had no way back from a ticket
+that was true when it was filed, so a build that learns to say something
+better leaves a stale ticket behind a correct report. An open follow-up whose
+title or body no longer matches what flow would write today is now rewritten
+in place, under `--fix` only, reading `refreshed`. It is not a nudge and does
+not touch `nudged_at` — a nudge asks somebody to act and is rationed to one a
+week, while correcting flow's own words costs the reader nothing and must not
+wait six days. `core.Tracker.UpdateFollowUp` takes the title as well as the
+body, and still sends nothing when both already say this. Live: #90 and #91
+now name their own work and carry their own steps, and a second `--fix` left
+`updated_at` where it was.
+
+Seven mutants, four of them in forty lines of new code that no test named at
+all — which is the lesson of the run, now in `AGENTS.md`: grep a new helper's
+name across `*_test.go` before calling the item done. The survivor worth
+having was the title-only rewrite, which no test could see because every
+existing test changed the title and the body together.
 
 **Single best next step:** plan item 5.8 — `--ci` annotations and `--window`
 (#72, specs 02 §2 and 07). It is the last thing standing between the daily run
