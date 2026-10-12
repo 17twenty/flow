@@ -73,18 +73,18 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
-- [ ] Phase 8 — Live health (plan Phase 5): PR/deploy/ticket/transition audits, report, health issue
+- [ ] Phase 8 — Live health (plan Phase 5): PR audits done (5.1); deploy/ticket/transition audits, report, health issue remain
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
 ### Status notes
 
-*(updated after the first live `flow doctor` run on this repository, commit
-`bd712ed`, CI green)*
+*(updated after plan item 5.1, the live-health audit of pull requests, commit
+`71f0c9c`, CI green)*
 
 **Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
-4.1–4.6), their issues closed and their phase parents (#6, #13, #27, #44)
+4.1–4.6) and Phase 5 has begun with 5.1, their issues closed and their phase parents (#6, #13, #27, #44)
 closed with them. Every command in spec 00 §5 is implemented; the only
 `ErrUnsupported` left in the shipped surface is three `doctor` flags whose own
 items are in Phases 5 and 6 (`--report` 5.7, `--ci` 5.8, `--watch` 6.3), which
@@ -107,7 +107,23 @@ are refused rather than parsed and ignored.
 - *Commands.* `init` (editing a preset byte-by-byte so comments and alignment
   survive), `plan` and `apply` over an idempotent fake world, `check pr`,
   `check deploy`, `doctor`'s setup half, and `attest`.
-- *The first live run (this run).* `flow doctor` was pointed at this
+- *The live-health audit of pull requests (this run, item 5.1).* The setup
+  checks prove the rules are switched on; these four prove they were obeyed.
+  Every pull request merged into the trunk inside `--window` is read for a
+  ticket it named, for a `flow/policy` success that was already there when it
+  merged, and for a person's approval if a machine wrote it; the trunk's own
+  history is read for the convention the team chose. The four share one lazy
+  reading of the window, so `--check` pays for nothing it will not look at and
+  four checks are not four slightly different fortnights. A quiet fortnight is
+  a pass that says "nothing merged", not "all 0 were fine". None of them
+  offers a fix — last week's ungated merge cannot be gated now — so each
+  points at the setup check that would stop the next one. The threshold spec
+  07 §6 names finally has a key, `health.fail_below`, a whole number of per
+  cent defaulting to 90, which settles the one open spec issue; `--window`
+  stays a flag, because a daily job and a person checking by hand want
+  different fortnights from the same repository. Live on this repository it
+  reads `live.prs.conventional 64/64`.
+- *The first live run (the run before).* `flow doctor` was pointed at this
   repository with the bot's own credential, and exited 0 having observed none
   of it. Two faults, one behind the other, and neither reachable from the
   fakes. `--fix` resolved the board's number into the lock but the tracker had
@@ -168,16 +184,24 @@ for byte identical.
    `issue_closed` are `owner: native` and GitHub's built-ins are enabled.
    Backlog → Ready is nobody's: flow judges readiness, it never promotes.
    Stage B is what makes the middle of the board move.
-3. *Phases 5–8:* live health, TUI, the remaining adapters, and the proof.
+3. *Phase 5 is a quarter done.* 5.1 landed; 5.2 (deploys), 5.3 (tickets), 5.4
+   (native transitions actually fired), 5.5 (`--fix` catching up the
+   transitions flow owns), 5.6 (flag cleanup), 5.7 (`--report` and the pinned
+   health issue) and 5.8 (`--ci` annotations) remain. 5.7 is what the 14-day
+   proof is read from, and the streak cannot start until H.1 makes doctor exit
+   0, so the clock does not favour reordering it.
+4. *Phases 6–8:* the TUI, the remaining adapters, and the proof.
 
-**Single best next step:** plan item 5.1 — the `live.prs.*` audits (#65, spec
-07 §6). Doctor's setup half answers "is the configuration what it should be";
-Phase 5 is the half that answers "and is the team actually working this way",
-which is the whole claim of the project and the thing the 14-day proof is
-measured on. 5.1 is the first and the one the rest hang off: every pull
-request merged inside `--window` is read for a linked ticket, a `flow/policy`
-status, a Conventional Commit title and a review, and each becomes a check
-registered alongside the setup ones. It needs nothing that is not already
-there — the forge adapter pages pull requests, the gate already judges one,
-and `engine.Check` already carries evidence and remediation — and it is what
-makes `--report` (5.7) and the pinned health issue have anything to say.
+**Single best next step:** plan item 5.3 — the `live.tickets.*` audits (#67,
+spec 07 §6). 5.1 asked the forge whether the work that merged was done the way
+the team agreed; 5.3 asks the board the same question from the other side —
+every ticket moved to Done in the window is linked to a merged pull request,
+every ticket in review has an open one, nothing has sat in progress untouched
+for a week, and everything in ready passes the Definition of Ready. It is the
+item the rest of the phase hangs off: 5.4 (native transitions actually fired)
+and 5.5 (doctor `--fix` catching up the ones flow owns) both depend on it, and
+unlike 5.2 it has something to say about this repository today, because
+`workflow.done_on` here is `merged` and there is no deployment source to audit
+yet. Everything it needs is already there: the tracker adapter pages items with
+their status and `updated_at`, `engine` already judges the Definition of Ready
+for `check pr`, and `audit` is the place to hang one lazy reading of the board.
