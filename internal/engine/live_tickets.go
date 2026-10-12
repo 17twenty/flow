@@ -1,0 +1,599 @@
+package engine
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/17twenty/flow/internal/config"
+	"github.com/17twenty/flow/internal/core"
+)
+
+// The live-health audit, board half (spec 07 §6). The pull-request checks ask
+// the forge whether the work that landed was done the way the team agreed;
+// these ask the board the same question from the other side.
+//
+// A board is read once per run and bucketed into flow's own column vocabulary,
+// never queried column by column. The tracker's column ids are its own — a
+// Projects status option id, a Jira column — and the mapping from those onto
+// `in_review` and `ready` is [ColumnOf]'s, through the lock, so that renaming
+// a column in the tracker does not change what doctor is asking about.
+//
+// Only the Done check has a window. The others are about the board as it
+// stands right now: a ticket that has sat in review without a pull request for
+// a month is not less wrong for having arrived there before the fortnight
+// began, and "in review since before the window" is not a thing a tracker will
+// tell you anyway.
+
+// The live-health checks about tickets (spec 07 §6).
+const (
+	// CheckLiveTicketsDoneMerged is whether the work that reached Done went
+	// through the trunk.
+	CheckLiveTicketsDoneMerged = "live.tickets.done_merged"
+	// CheckLiveTicketsDoneDeployed is whether work called done is running,
+	// for a team that says done means deployed.
+	CheckLiveTicketsDoneDeployed = "live.tickets.done_deployed"
+	// CheckLiveTicketsReviewHasPR is whether everything waiting for review
+	// has something to review.
+	CheckLiveTicketsReviewHasPR = "live.tickets.review_has_pr"
+	// CheckLiveTicketsProgressStale is whether anything in progress has
+	// stopped moving.
+	CheckLiveTicketsProgressStale = "live.tickets.progress_stale"
+	// CheckLiveTicketsReadyDoR is whether what is ready to start really is.
+	CheckLiveTicketsReadyDoR = "live.tickets.ready_dor"
+)
+
+// StaleAfter is how long a ticket may sit in progress with nothing happening
+// to it or to its pull requests before doctor mentions it, in working days
+// (spec 07 §6).
+const StaleAfter = 5
+
+// errNoTracker is what a board check reports when there is no tracker to ask.
+// Like [errNoForge] it cannot happen through doctor, where `auth.tracker`
+// fails first and blocks these checks.
+var errNoTracker = errors.New("there is no tracker adapter to ask")
+
+// errNoDeploys is the same for the deployment records.
+var errNoDeploys = errors.New("there is no deployment source to ask")
+
+// TicketChecks builds the board half of the audit, in report order. It shares
+// the [audit] the pull-request checks were built over, so that one run reads
+// the board once and the window once however many of them are selected.
+func (a *audit) ticketChecks() []Check {
+	return []Check{
+		a.ticketsDoneMerged(),
+		a.ticketsDoneDeployed(),
+		a.ticketsReviewHasPR(),
+		a.ticketsProgressStale(),
+		a.ticketsReadyDoR(),
+	}
+}
+
+// board is every item the tracker has, read once.
+//
+// The whole board rather than a query per column: four checks asking for four
+// columns would be four round trips for one answer, and the column a ticket is
+// in has to be translated out of the tracker's vocabulary here anyway.
+func (a *audit) board(ctx context.Context, env *Env) ([]core.Ticket, error) {
+	a.boardOnce.Do(func() {
+		if env.Adapters.Tracker == nil {
+			a.boardErr = errNoTracker
+			return
+		}
+		tickets, err := env.Adapters.Tracker.Tickets(ctx, core.TicketQuery{})
+		if err != nil {
+			a.boardErr = core.Explain(err, "read the board")
+			return
+		}
+		a.tickets = tickets
+	})
+	return a.tickets, a.boardErr
+}
+
+// inColumn is what sits in one of flow's configured columns, in key order so
+// that two runs of the same board produce the same report.
+func (a *audit) inColumn(ctx context.Context, env *Env, id string) ([]core.Ticket, error) {
+	board, err := a.board(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.Ticket
+	for _, ticket := range board {
+		if ColumnOf(env.Config, env.Lock, ticket) == id {
+			out = append(out, ticket)
+		}
+	}
+	slices.SortStableFunc(out, func(x, y core.Ticket) int { return cmp.Compare(x.Key, y.Key) })
+	return out, nil
+}
+
+// inFlight is the pull requests still open, read once.
+//
+// No window and no base branch: a pull request open for three months is the
+// most interesting one a board check can find, and bounding the query would
+// hide exactly the ticket that has been waiting longest.
+func (a *audit) inFlight(ctx context.Context, env *Env) ([]core.PullRequest, error) {
+	a.openOnce.Do(func() {
+		if env.Adapters.Forge == nil {
+			a.openErr = errNoForge
+			return
+		}
+		prs, err := env.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
+		if err != nil {
+			a.openErr = core.Explain(err, "read the open pull requests")
+			return
+		}
+		a.open = prs
+	})
+	return a.open, a.openErr
+}
+
+// ticketsDoneMerged asks whether the work that reached Done went through the
+// trunk.
+//
+// A ticket closed as not planned holds: spec 07 §6 exempts it, and abandoned
+// work having no merge behind it is the point of abandoning it rather than a
+// hole in the process.
+func (a *audit) ticketsDoneMerged() Check {
+	return Check{
+		ID:        CheckLiveTicketsDoneMerged,
+		Title:     "Every ticket that reached Done had a merge behind it",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := doneColumn(env.Config)
+			if !named {
+				return Skip("nothing in the workflow says which column work ends in")
+			}
+			done, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			prs, err := a.merged(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, prs)
+			since := env.Since()
+			var t tally
+			for _, ticket := range done {
+				if finished(ticket).Before(since) {
+					continue
+				}
+				if ticket.CloseReason == core.ClosedNotPlanned {
+					t.held()
+					continue
+				}
+				if len(work[ticketKey(ticket)]) > 0 {
+					t.held()
+					continue
+				}
+				t.broke(ticket.URL, "%s %s — no pull request merged in the window was for it", ticket.Key, ticket.Title)
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing reached %s in the window", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s that reached %s had work behind them",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+			}
+			return result.Said("%d of %d tickets reached %s with no merge behind them",
+				t.missed(), t.counts.Total, column.Name).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "the merge should be what moves a ticket to " + column.Name + ", not a hand on the board",
+					Steps: []string{
+						"check tracker.native.pr_merged in this report: the tracker's own automation is what moves a ticket when its work merges",
+						linkFix(env.Config),
+						"check forge.protection in this report: work pushed straight to the trunk finishes a ticket with no pull request to point at",
+						"work that was dropped rather than finished should be closed as not planned, which this check exempts",
+					},
+				})
+		},
+	}
+}
+
+// ticketsDoneDeployed asks whether work a team calls done is actually running.
+//
+// It exists only for `done_on: deployed`. For everybody else the question is
+// already answered by the merge, and asking it anyway would report a repository
+// with no deployments at all as unhealthy for not having them.
+func (a *audit) ticketsDoneDeployed() Check {
+	return Check{
+		ID:        CheckLiveTicketsDoneDeployed,
+		Title:     "Work called done is running",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			if watched, why := WatchesDeployments(env.Config); !watched {
+				return Skip("%s", why)
+			}
+			if env.Adapters.Deploys == nil {
+				return Failed(errNoDeploys)
+			}
+			column, named := doneColumn(env.Config)
+			if !named {
+				return Skip("nothing in the workflow says which column work ends in")
+			}
+			where := env.Config.Deploys.Environment
+			running, err := a.deployedSHA(ctx, env, where)
+			if err != nil {
+				return Failed(err)
+			}
+			if running == "" {
+				return Result{State: StateFail}.
+					Said("nothing is recorded as deployed to %s, so no ticket can be shown to be running", where).
+					Fix(Remediation{
+						Kind:    RemedyManual,
+						Summary: "flow reads deployment records to decide what is running; there are none",
+						Steps: []string{
+							"check deploys.source in this report: it says which records flow is reading and where from",
+							"a workflow whose done_on is deployed but which records no deployments can never finish a ticket",
+						},
+					})
+			}
+			done, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			prs, err := a.merged(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, prs)
+			since := env.Since()
+			var t tally
+			for _, ticket := range done {
+				if finished(ticket).Before(since) || ticket.CloseReason == core.ClosedNotPlanned {
+					continue
+				}
+				theirs := work[ticketKey(ticket)]
+				if len(theirs) == 0 {
+					// Whether a ticket has a merge at all is done_merged's
+					// question, and counting it here too would report one
+					// mistake as two.
+					continue
+				}
+				behind, err := notRunning(ctx, env.Adapters.Forge, theirs, running)
+				if err != nil {
+					return Failed(err)
+				}
+				if behind == 0 {
+					t.held()
+					continue
+				}
+				t.broke(ticket.URL, "%s %s — %d of its %d %s is not in %s yet",
+					ticket.Key, ticket.Title, behind, len(theirs), plural(len(theirs), "merge"), shortSHA(running))
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing reached %s in the window", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s in %s are running in %s",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, where)
+			}
+			return result.Said("%d of %d tickets in %s are not running in %s",
+				t.missed(), t.counts.Total, column.Name, where).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "a ticket reached " + column.Name + " before its work was deployed",
+					Steps: []string{
+						"check tracker.native.deployed in this report: nothing but a deployment should move a ticket to " + column.Name,
+						"check live.deploys.lag: work that merged and never shipped is the same problem seen from the other end",
+					},
+				})
+		},
+	}
+}
+
+// ticketsReviewHasPR asks whether everything waiting for review has something
+// to review. A draft does not count: offering it for review is the act the
+// column is named after.
+func (a *audit) ticketsReviewHasPR() Check {
+	return Check{
+		ID:        CheckLiveTicketsReviewHasPR,
+		Title:     "Everything waiting for review has something to review",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := columnFor(env.Config, config.EventPRReadyForReview)
+			if !named {
+				return Skip("nothing in the workflow says which column work waits for review in")
+			}
+			waiting, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			open, err := a.inFlight(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, open)
+			var t tally
+			for _, ticket := range waiting {
+				theirs := work[ticketKey(ticket)]
+				switch {
+				case len(theirs) == 0:
+					t.broke(ticket.URL, "%s %s — nothing open is for it", ticket.Key, ticket.Title)
+				case !slices.ContainsFunc(theirs, func(pr core.PullRequest) bool { return !pr.Draft }):
+					t.broke(ticket.URL, "%s %s — everything open for it is still a draft", ticket.Key, ticket.Title)
+				default:
+					t.held()
+				}
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing is in %s", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s in %s have a pull request open for review",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+			}
+			return result.Said("%d of %d tickets in %s have nothing to review",
+				t.missed(), t.counts.Total, column.Name).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "a ticket in " + column.Name + " is asking for somebody's time; it should say what to look at",
+					Steps: []string{
+						"check tracker.native.pr_ready_for_review in this report: marking a pull request ready is what should move a ticket here",
+						"move anything with no pull request back to the column it is really in",
+					},
+				})
+		},
+	}
+}
+
+// ticketsProgressStale asks whether anything in progress has stopped moving.
+//
+// It only ever warns. Work goes quiet for reasons flow cannot see — leave,
+// an incident, a dependency on somebody else — and a check that failed a
+// repository for one of them would teach the team that a red doctor means
+// nothing. What it is for is the stand-up question: is this still in flight?
+func (a *audit) ticketsProgressStale() Check {
+	return Check{
+		ID:        CheckLiveTicketsProgressStale,
+		Title:     "Nothing in progress has gone quiet",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := columnFor(env.Config, config.EventPROpenedDraft)
+			if !named {
+				return Skip("nothing in the workflow says which column work is in progress in")
+			}
+			started, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			open, err := a.inFlight(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, open)
+			cutoff := workingDaysBefore(env.Now(), StaleAfter)
+			var t tally
+			for _, ticket := range started {
+				last := ticket.UpdatedAt
+				for _, pr := range work[ticketKey(ticket)] {
+					if pr.UpdatedAt.After(last) {
+						last = pr.UpdatedAt
+					}
+				}
+				if last.IsZero() {
+					// A tracker that will not say when an item last moved
+					// cannot be asked whether it has stopped moving, and
+					// guessing would make the answer depend on the adapter.
+					continue
+				}
+				if !last.Before(cutoff) {
+					t.held()
+					continue
+				}
+				t.broke(ticket.URL, "%s %s — nothing has happened to it or its pull requests since %s",
+					ticket.Key, ticket.Title, day(last))
+			}
+			result := t.gradeWarning(env)
+			switch {
+			case t.counts.Total == 0 && len(started) == 0:
+				return result.Said("nothing is in %s", column.Name)
+			case t.counts.Total == 0:
+				return result.Said("nothing in %s has a date to judge it by", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s in %s have moved within %d working days",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, StaleAfter)
+			}
+			return result.Said("%d of %d tickets in %s have not moved in %d working days",
+				t.missed(), t.counts.Total, column.Name, StaleAfter).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "ask whoever has these whether they are really still in flight",
+					Steps: []string{
+						"work that is waiting on somebody else is not in progress; move it back or say what it is blocked on",
+						"check the WIP limit on " + column.Name + ": a column holding more than the team can carry is how work goes quiet",
+					},
+				})
+		},
+	}
+}
+
+// ticketsReadyDoR asks whether what the board says is ready to start really is.
+//
+// The column is found by its gate rather than by its id, because the gate is
+// what makes it the ready column: a team that renamed it has not stopped
+// meaning it, and a team that gates no column on the Definition of Ready has
+// not asked this question of their board at all.
+func (a *audit) ticketsReadyDoR() Check {
+	return Check{
+		ID:        CheckLiveTicketsReadyDoR,
+		Title:     "What is ready to start really is ready",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := readyColumn(env.Config)
+			if !named {
+				return Skip("no column is gated on the Definition of Ready")
+			}
+			if len(env.Config.DefinitionOfReady.Rules) == 0 {
+				return Skip("the team has not written a Definition of Ready")
+			}
+			ready, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			var t tally
+			for _, ticket := range ready {
+				judged := Judge(ticket, env.Config)
+				if judged.Ready() {
+					t.held()
+					continue
+				}
+				t.broke(ticket.URL, "%s %s — %s", ticket.Key, ticket.Title,
+					strings.Join(judged.Reasons(), "; "))
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing is in %s", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s in %s meet the Definition of Ready",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+			}
+			return result.Said("%d of %d tickets in %s do not meet the Definition of Ready",
+				t.missed(), t.counts.Total, column.Name).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "finish these before anybody starts them, or take them out of " + column.Name,
+					Steps: []string{
+						"the gate refuses a pull request for a ticket that is not ready; these will be refused when somebody picks them up",
+						"check tracker.issue_forms in this report: a form that asks for acceptance criteria is how they come in ready",
+					},
+				})
+		},
+	}
+}
+
+// deployedSHA is the newest commit recorded as successfully deployed to the
+// environment, or empty when nothing is. It is not cached on the audit: only
+// one check asks, and caching a thing one caller reads is how a field comes to
+// be stale.
+func (a *audit) deployedSHA(ctx context.Context, env *Env, where string) (string, error) {
+	records, err := env.Adapters.Deploys.Deployments(ctx, core.DeployQuery{Environment: where})
+	if err != nil {
+		return "", core.Explain(err, "read the deployments of %s", where)
+	}
+	var newest core.Deployment
+	for _, record := range records {
+		if !record.Succeeded() {
+			continue
+		}
+		if newest.SHA == "" || record.CreatedAt.After(newest.CreatedAt) {
+			newest = record
+		}
+	}
+	return newest.SHA, nil
+}
+
+// notRunning is how many of a ticket's merges the deployed commit does not
+// contain. Spec 04 §5 rule 4: a ticket is done when all of its work is, so one
+// merge left behind is enough to say the ticket is not running.
+func notRunning(ctx context.Context, comparer core.Comparer, prs []core.PullRequest, deployed string) (int, error) {
+	behind := 0
+	for _, pr := range prs {
+		running, err := deployedWith(ctx, comparer, pr, deployed)
+		if err != nil {
+			return 0, err
+		}
+		if !running {
+			behind++
+		}
+	}
+	return behind, nil
+}
+
+// doneColumn is where work ends, which is wherever the event that finishes it
+// takes a ticket. A team whose `done_on` is `deployed` finishes on the
+// deployment; everybody else finishes on the merge. Closing the issue is the
+// last fallback, for a workflow that drives the board from the tracker.
+func doneColumn(cfg *config.Config) (config.Column, bool) {
+	if cfg == nil {
+		return config.Column{}, false
+	}
+	if cfg.Workflow.DoneOn == config.DoneOnDeployed {
+		if column, found := columnFor(cfg, config.EventDeployed); found {
+			return column, true
+		}
+	}
+	if column, found := columnFor(cfg, config.EventPRMerged); found {
+		return column, true
+	}
+	return columnFor(cfg, config.EventIssueClosed)
+}
+
+// readyColumn is the column gated on the Definition of Ready.
+func readyColumn(cfg *config.Config) (config.Column, bool) {
+	if cfg == nil {
+		return config.Column{}, false
+	}
+	for _, column := range cfg.Workflow.Columns {
+		if column.Gate == config.GateDefinitionOfReady {
+			return column, true
+		}
+	}
+	return config.Column{}, false
+}
+
+// finished is when a ticket's work ended, as nearly as a tracker will say.
+// The close is the moment the audit is about; a tracker that records no close
+// date, or a board whose Done column holds items still open, leaves the last
+// edit as the only thing there is.
+func finished(ticket core.Ticket) time.Time {
+	if !ticket.ClosedAt.IsZero() {
+		return ticket.ClosedAt
+	}
+	return ticket.UpdatedAt
+}
+
+// prsByTicket indexes pull requests by the tickets they are for, so that a
+// board check can ask about a ticket's work without a query per ticket.
+func prsByTicket(env *Env, prs []core.PullRequest) map[string][]core.PullRequest {
+	index := make(map[string][]core.PullRequest)
+	for _, pr := range prs {
+		for _, key := range linkedKeys(env, pr) {
+			if id := normalKey(key); id != "" {
+				index[id] = append(index[id], pr)
+			}
+		}
+	}
+	return index
+}
+
+// ticketKey and normalKey are the one spelling of a key both sides of the
+// index agree on. Trackers differ on the case of their own keys — Jira writes
+// PROJ-12 and accepts proj-12 — and an index that did not fold them would
+// report a ticket as having no work because somebody typed it in lower case.
+func ticketKey(ticket core.Ticket) string { return normalKey(ticket.Key) }
+
+func normalKey(key string) string { return strings.ToLower(strings.TrimSpace(key)) }
+
+// workingDaysBefore walks back n working days from now.
+//
+// Saturday and Sunday are the weekend, in whatever zone the clock is in. flow
+// does not know a team's calendar and will not ask for one: the furthest this
+// can be wrong is the two days of a different weekend, and the only check that
+// reads it warns.
+func workingDaysBefore(now time.Time, n int) time.Time {
+	cutoff := now
+	for left := n; left > 0; {
+		cutoff = cutoff.AddDate(0, 0, -1)
+		switch cutoff.Weekday() {
+		case time.Saturday, time.Sunday:
+		default:
+			left--
+		}
+	}
+	return cutoff
+}

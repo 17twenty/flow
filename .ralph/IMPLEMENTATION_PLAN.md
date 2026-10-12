@@ -198,8 +198,9 @@ Human-only steps use ids `H.<n>` (never seeded).
   - note: the four checks share one reading of the window, lazily, so a run narrowed with `--check` pays for nothing it will not look at and four checks are not four slightly different fortnights. A window nothing happened in is a pass that says "nothing merged" rather than "all 0 were fine". No live check offers a fix: last week's merge cannot be gated now, so each one points at the setup check that would stop the next one. `health.fail_below` settles the spec issue below.
 - [ ] 5.2 live.deploys.* (recent, lag) — specs: 07 §6, 13 — deps: 4.5, 3.6 (#66)
   - AC: scenario V01
-- [ ] 5.3 live.tickets.* audits — specs: 07 §6 — deps: 4.5 (#67)
+- [x] 5.3 live.tickets.* audits — specs: 07 §6 — deps: 4.5 (#67)
   - AC: done_merged, done_deployed, review_has_pr, progress_stale, ready_dor
+  - note: the board is read once for all five and bucketed through `ColumnOf`, so the tracker's own column ids stay its business. Each check finds its column by the transition that lands work there, and skips when the workflow names none. Only Done has a window; a ticket's date is its close, falling back to its last edit because a Done column holds items the tracker still calls open. `progress_stale` warns and never fails, counts working days, and does not ask the question of a tracker that records no update time. `done_merged` stays the literal question — work pushed straight to the trunk fails it, which is what Stage B settles — and points at `forge.protection`.
 - [ ] 5.4 live.transitions.native verification — specs: 07 §6, 04 §5 — deps: 5.3 (#68)
   - AC: scenario V03
 - [ ] 5.5 Catch-up of missed flow-owned transitions in doctor --fix — specs: 07 §6 — deps: 5.3, 2.14 (#69)

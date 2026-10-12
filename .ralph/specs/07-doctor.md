@@ -511,3 +511,74 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   requests are sorted by number before they are counted, whatever order the
   forge's index answered in. Item 5.7 edits this list into an issue in place,
   and evidence that reshuffles between runs is noise in every diff of it.
+- **§6 the board is read once and bucketed, never queried column by column
+  (item 5.3).** Five checks each asking the tracker for one column would be
+  five walks of a board that pages, and the column a ticket is in has to be
+  translated out of the tracker's own vocabulary anyway. One `Tickets` call
+  feeds all five, and `ColumnOf` maps a Projects option id or a Jira column
+  onto flow's `in_review` and `ready` through the lock, so renaming a column
+  in the tracker does not change which question doctor is asking.
+- **§6 a column flow cannot name is not audited (item 5.3).** Every ticket
+  check finds its column through the transition that lands work there —
+  `pr_ready_for_review` for review, `pr_opened_draft` for in progress, the
+  Definition of Ready gate for ready — rather than by matching an id. A
+  workflow that never says where review happens has no review column, and
+  skipping is the honest answer: judging the whole board instead would report
+  every ticket on it as missing a pull request.
+- **§6 only the Done check has a window (item 5.3).** The other three are
+  about the board as it stands. A ticket that has sat in review with nothing
+  to review for a month is not less wrong for having arrived before the
+  fortnight began, and "in review since before the window" is not a thing a
+  tracker will tell you.
+- **§6 a ticket's Done date is its close, falling back to its last edit
+  (item 5.3).** A Done column holds everything a team has ever finished, so
+  without a date the check would judge last year's work against this
+  fortnight's merges. A board column is a view and not the issue's state,
+  though, so Done also holds items the tracker still calls open and which have
+  no close date at all: the last edit is the only thing there is, and
+  exempting them would let the whole check be dodged by never closing
+  anything.
+- **§6 the two sides of the link are folded to one spelling (item 5.3).**
+  Trackers differ on the case of their own keys — Jira writes `PROJ-12` on the
+  board and accepts `proj-12` in a branch — so the index from ticket to pull
+  request is built on a folded key. Without it a ticket with a merge behind it
+  is reported as having none because somebody typed it in lower case.
+- **§6 `done_merged` stays the literal question, and the remedy names the way
+  out (item 5.3).** Work pushed straight to the trunk closes a ticket with no
+  pull request to point at, and that is the finding rather than a false one:
+  whether work *may* reach the trunk that way is `forge.protection`'s
+  question, asked once of the repository, so the remediation points there.
+  flow's own repository in `direct` mode fails this check, which is what
+  spec 17 §5 Stage B exists to settle.
+- **§6 `done_deployed` says nothing about a ticket with no merge at all
+  (item 5.3).** That is `done_merged`'s question, and counting it twice would
+  report one hand on the board as two failures, so a team fixing it would see
+  only half the number move. A ticket that does have merges is running only
+  when all of them are (spec 04 §5 rule 4): one half of a two-part change left
+  behind on the trunk is exactly the state "done" is claiming is over.
+- **§6 `progress_stale` warns and never fails (item 5.3).** Work goes quiet
+  for reasons flow cannot see — leave, an incident, a dependency on somebody
+  else — and a check that failed a repository for one of them is a check
+  somebody turns off. Its bound is in working days, with Saturday and Sunday
+  as the weekend in whatever zone the clock is in: flow does not know a team's
+  calendar and will not ask for one, and the furthest this can be wrong is the
+  two days of a different weekend, in the one check whose worst outcome is a
+  warning.
+- **§6 a pull request moving is the ticket moving (item 5.3).** The ticket
+  itself is often untouched for a week while its branch is reviewed twice a
+  day, so staleness reads the later of the two. A tracker that records no
+  update time at all is not asked the question — the zero date would report
+  every ticket on such a board as years stale — and a column of nothing but
+  those says it has no date to judge by rather than claiming to be empty.
+- **§6 the ready column is the one gated on the Definition of Ready
+  (item 5.3).** The gate is what makes it the ready column: a team that
+  renamed theirs has not stopped meaning it, and a team that gates no column
+  on readiness has not asked the question of their board at all. The check
+  uses the same `Judge` the gate does, so a board full of work that will be
+  refused when somebody picks it up is the same failure found a day earlier,
+  in the same words.
+- **§6 the board is named in flow's own order (item 5.3).** Tickets are sorted
+  by key before they are counted, whatever order the tracker answered in, for
+  the reason item 5.1 sorted pull requests by number: item 5.7 edits this
+  evidence into an issue in place, and a list that reshuffles between runs is
+  noise in every diff of it.

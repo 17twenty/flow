@@ -27,11 +27,31 @@ var liveNow = time.Date(2025, 3, 4, 9, 0, 0, 0, time.UTC)
 func daysAgo(days int) time.Time { return liveNow.AddDate(0, 0, -days) }
 
 // liveConfig is a team working the way flow describes: conventional commits,
-// a machine contributor, and a person who has to approve its work.
+// a machine contributor, a person who has to approve its work, and a board
+// with the four columns spec 07 §6's ticket checks ask about.
 func liveConfig() *config.Config {
 	cfg := setupConfig()
 	cfg.Commits = config.Commits{Convention: "conventional", UnlinkedTypes: []string{"chore"}}
 	cfg.Agents = config.Agents{Authors: []string{"flow-bot"}, RequireHumanReview: true}
+	cfg.Workflow = config.Workflow{
+		DoneOn: config.DoneOnMerged,
+		Columns: []config.Column{
+			{ID: "backlog", Name: "Backlog", Category: config.CategoryTodo},
+			{ID: "ready", Name: "Ready", Category: config.CategoryTodo, Gate: config.GateDefinitionOfReady},
+			{ID: "in_progress", Name: "In progress", Category: config.CategoryInProgress},
+			{ID: "in_review", Name: "In review", Category: config.CategoryInProgress},
+			{ID: "done", Name: "Done", Category: config.CategoryDone},
+		},
+		Transitions: map[string]config.Transition{
+			config.EventPROpenedDraft:    {Owner: config.OwnerFlow, To: "in_progress"},
+			config.EventPRReadyForReview: {Owner: config.OwnerFlow, To: "in_review"},
+			config.EventPRMerged:         {Owner: config.OwnerNative, To: "done"},
+			config.EventIssueClosed:      {Owner: config.OwnerNative, To: "done"},
+		},
+	}
+	cfg.DefinitionOfReady = config.DefinitionOfReady{
+		Rules: []string{config.DoRAcceptanceCriteria, config.DoRNotBlocked},
+	}
 	return cfg
 }
 
@@ -93,6 +113,7 @@ func liveRun(t *testing.T, env *engine.Env, only []string) engine.Report {
 	t.Helper()
 	checks := append([]engine.Check{
 		answering(engine.CheckForgeRepo, engine.CategoryForge, engine.Pass("the repository is there")),
+		answering(engine.CheckAuthTracker, engine.CategoryAuth, engine.Pass("the tracker credential is good")),
 	}, engine.LiveChecks()...)
 	return doctorRun(t, env, only, checks...)
 }
@@ -136,22 +157,34 @@ func evidenceMentions(t *testing.T, got engine.Result, want string) {
 	t.Errorf("no evidence mentions %q: %+v", want, got.Evidence)
 }
 
+// liveCheckIDs is every check spec 07 §6 names in the two families that
+// exist: the pull requests that merged, and the board they came off.
+func liveCheckIDs() []string {
+	return []string{
+		engine.CheckLivePRsLinked,
+		engine.CheckLivePRsGated,
+		engine.CheckLivePRsConventional,
+		engine.CheckLivePRsReviewed,
+		engine.CheckLiveTicketsDoneMerged,
+		engine.CheckLiveTicketsDoneDeployed,
+		engine.CheckLiveTicketsReviewHasPR,
+		engine.CheckLiveTicketsProgressStale,
+		engine.CheckLiveTicketsReadyDoR,
+	}
+}
+
 // TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt holds the properties of the
-// list itself: every check §6 names about pull requests is there once, under
-// the live category, and none of them is asked before flow knows the
-// repository is reachable.
+// list itself: every check §6 names is there once, under the live category,
+// and none of them is asked before flow knows it can reach what it is about
+// to interrogate.
 func TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt(t *testing.T) {
 	in := engine.SetupInput{Config: setupConfig(), Local: setupLocal()}
 	registry, err := engine.DoctorRegistry(in)
 	if err != nil {
 		t.Fatalf("the doctor registry does not build: %v", err)
 	}
-	for _, id := range []string{
-		engine.CheckLivePRsLinked,
-		engine.CheckLivePRsGated,
-		engine.CheckLivePRsConventional,
-		engine.CheckLivePRsReviewed,
-	} {
+	reachable := []string{engine.CheckForgeRepo, engine.CheckAuthTracker}
+	for _, id := range liveCheckIDs() {
 		check, ok := registry.Find(id)
 		if !ok {
 			t.Fatalf("the registry has no %s", id)
@@ -159,9 +192,13 @@ func TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt(t *testing.T) {
 		if check.Category != engine.CategoryLive {
 			t.Errorf("%s is in category %q, want %q", id, check.Category, engine.CategoryLive)
 		}
-		if !slices.Contains(check.DependsOn, engine.CheckForgeRepo) {
-			t.Errorf("%s does not wait for %s, so it would ask a forge nobody has reached",
-				id, engine.CheckForgeRepo)
+		if len(check.DependsOn) == 0 {
+			t.Errorf("%s waits for nothing, so it would ask a provider nobody has reached", id)
+		}
+		for _, on := range check.DependsOn {
+			if !slices.Contains(reachable, on) {
+				t.Errorf("%s waits for %s, which is not one of the checks that prove a provider answers", id, on)
+			}
 		}
 	}
 }
@@ -172,13 +209,13 @@ func TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt(t *testing.T) {
 // the daily run.
 func TestAQuietFortnightIsNotIllHealth(t *testing.T) {
 	env, _ := liveEnv(t, liveConfig(), coretest.ForgeFixture{})
-	for _, id := range []string{
-		engine.CheckLivePRsLinked,
-		engine.CheckLivePRsGated,
-		engine.CheckLivePRsConventional,
-		engine.CheckLivePRsReviewed,
-	} {
+	answered := 0
+	for _, id := range liveCheckIDs() {
 		result := liveResult(t, env, id)
+		if result.State == engine.StateSkip {
+			continue
+		}
+		answered++
 		if result.State != engine.StatePass {
 			t.Errorf("%s is %q on an empty window, want pass: %s", id, result.State, result.Message)
 		}
@@ -188,6 +225,10 @@ func TestAQuietFortnightIsNotIllHealth(t *testing.T) {
 		if strings.Contains(result.Message, "all 0") {
 			t.Errorf("%s says %q, which reads as health rather than silence", id, result.Message)
 		}
+	}
+	if want := len(liveCheckIDs()) - 1; answered != want {
+		t.Errorf("%d live checks had an opinion about a quiet fortnight, want %d: only "+
+			"live.tickets.done_deployed does not apply to a team whose work is done when it merges", answered, want)
 	}
 }
 
@@ -543,9 +584,11 @@ func TestTheWindowIsNamedInOneOrderHoweverTheForgeAnswers(t *testing.T) {
 }
 
 // TestTheWindowIsReadOnceForEveryCheckThatNeedsIt is why [engine.LiveChecks]
-// returns a slice built together. Four checks asking the forge for the same
-// fortnight would be four times the rate limit and four slightly different
-// fortnights.
+// returns a slice built together. Nine checks asking the providers the same
+// questions would be nine times the rate limit and nine slightly different
+// fortnights. There are exactly three questions: the trunk, the merges in the
+// window, and what is still open — and the board, which boardEnv's own test
+// counts.
 func TestTheWindowIsReadOnceForEveryCheckThatNeedsIt(t *testing.T) {
 	prs := []core.PullRequest{landedPR(1, "feat(api): add the thing", daysAgo(1))}
 	env, forge := liveEnv(t, liveConfig(), coretest.ForgeFixture{
@@ -555,8 +598,8 @@ func TestTheWindowIsReadOnceForEveryCheckThatNeedsIt(t *testing.T) {
 
 	liveRun(t, env, nil)
 
-	if got := forge.Calls("PullRequests"); got != 1 {
-		t.Errorf("the window was read %d times, want 1", got)
+	if got := forge.Calls("PullRequests"); got != 2 {
+		t.Errorf("the pull requests were read %d times, want 2: the window's merges and what is open", got)
 	}
 	if got := forge.Calls("Repo"); got != 1 {
 		t.Errorf("the repository was read %d times, want 1", got)

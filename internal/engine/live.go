@@ -63,12 +63,12 @@ const DefaultWindow = 14 * 24 * time.Hour
 // questions rather than four round trips.
 func LiveChecks() []Check {
 	a := &audit{}
-	return []Check{
+	return append([]Check{
 		a.prsLinked(),
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
-	}
+	}, a.ticketChecks()...)
 }
 
 // errNoForge is what a live check reports when it is asked to look at a forge
@@ -92,6 +92,14 @@ type audit struct {
 	logOnce sync.Once
 	log     []core.Commit
 	logErr  error
+
+	openOnce sync.Once
+	open     []core.PullRequest
+	openErr  error
+
+	boardOnce sync.Once
+	tickets   []core.Ticket
+	boardErr  error
 }
 
 // trunk is the branch the workflow is about, which is the repository's own
@@ -430,4 +438,15 @@ func (t *tally) grade(env *Env, critical bool) Result {
 		Evidence: t.evidence,
 		Counts:   &counts,
 	}
+}
+
+// gradeWarning is grade for a check spec 07 §6 marks "warn only": the count
+// still decides whether anything is wrong, and nothing it finds is ever worse
+// than a warning. A check that could fail is one somebody turns off.
+func (t *tally) gradeWarning(env *Env) Result {
+	result := t.grade(env, false)
+	if result.State == StateFail {
+		result.State = StateWarn
+	}
+	return result
 }
