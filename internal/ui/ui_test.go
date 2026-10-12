@@ -492,3 +492,69 @@ func TestPolicyHasNoMarkdownRendering(t *testing.T) {
 		}
 	}
 }
+
+// sampleDeploy is a deployment that finished one ticket and left another
+// waiting for the rest of its work.
+func sampleDeploy() engine.Deploy {
+	return engine.Deploy{
+		SHA:         "c0ffee0000000000000000000000000000000c0f",
+		Environment: "production",
+		Watched:     true,
+		Confirmed:   true,
+		PRs:         []engine.DeployedPR{{Number: 7, MergeSHA: "c0ffee0000000000000000000000000000000c0f"}},
+		Moves: []engine.TicketMove{
+			{Key: "#42", From: "in_review", To: "done", Event: "deployed"},
+		},
+	}
+}
+
+// TestDeployIsDecoratedNotRelaidOut holds the deployment's rendering to the
+// same rule as every other one: colour off is the engine's own words, byte for
+// byte.
+func TestDeployIsDecoratedNotRelaidOut(t *testing.T) {
+	deploy := sampleDeploy()
+	plain, err := ui.New(ui.Options{}).Deploy(deploy)
+	if err != nil {
+		t.Fatalf("render the deployment: %v", err)
+	}
+	if plain != deploy.Text() {
+		t.Errorf("the plain rendering is not the engine's:\n--- got\n%s\n--- want\n%s", plain, deploy.Text())
+	}
+	coloured, err := ui.New(ui.Options{Colour: true, Dark: true}).Deploy(deploy)
+	if err != nil {
+		t.Fatalf("render the deployment in colour: %v", err)
+	}
+	if !strings.Contains(coloured, "\x1b[") {
+		t.Error("the coloured rendering carries no escape sequences")
+	}
+	if !strings.Contains(coloured, "#42") {
+		t.Errorf("colouring lost the ticket that moved:\n%s", coloured)
+	}
+}
+
+// TestDeployJSONIsTheEnginesOwn keeps the --json document parseable.
+func TestDeployJSONIsTheEnginesOwn(t *testing.T) {
+	deploy := sampleDeploy()
+	rendered, err := ui.New(ui.Options{Format: ui.FormatJSON, Colour: true, ASCII: true}).Deploy(deploy)
+	if err != nil {
+		t.Fatalf("render the deployment: %v", err)
+	}
+	plain, err := deploy.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered != string(plain) {
+		t.Errorf("the JSON document is not the engine's:\n--- got\n%s\n--- want\n%s", rendered, plain)
+	}
+}
+
+// TestDeployHasNoMarkdownRendering is spec 12 again: a deployment is reported
+// to a terminal and to a parser, and nothing posts it anywhere that would want
+// a table.
+func TestDeployHasNoMarkdownRendering(t *testing.T) {
+	for _, format := range []ui.Format{ui.FormatMarkdown, "html"} {
+		if _, err := ui.New(ui.Options{Format: format}).Deploy(sampleDeploy()); !errors.Is(err, core.ErrValidation) {
+			t.Errorf("rendering a deployment as %s gave %v", format, err)
+		}
+	}
+}

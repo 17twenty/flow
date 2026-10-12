@@ -225,3 +225,24 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   state this section already has a fallback for. The alternative, asking
   anyway and reporting an empty answer, would be indistinguishable from a pull
   request that really closes nothing.
+- **§6 the environment is matched without regard to case, and then reported by
+  the configured name (item 4.4).** The name arrives from whatever started the
+  run and the configured one was typed by a person, so `Production` and
+  `production` are one environment. Having decided which environment a
+  deployment is in, flow uses the workflow's own spelling for every question
+  it asks afterwards and for what it reports, so a capital letter changes
+  neither the outcome nor the document.
+- **§6 the walk for merges is bounded by `deploys.max_lag` (item 4.4).** A
+  deployment could in principle be running any merge in the repository's
+  history. Walking all of it on every deployment would turn one CI job into a
+  full audit, so the run looks back as far as the lag the team agreed to and
+  no further: a merge that took longer than its own objective to reach the
+  environment is something doctor reports and catches up (spec 07 §6). A
+  workflow that set no objective gets no bound, because flow has no number of
+  its own to put there.
+- **§6 only tickets linked to a merge this deployment is running are
+  considered (item 4.4).** The board holds work the deployment has nothing to
+  do with, and asking the tracker about all of it would be the same full audit
+  by another route. Open pull requests are still read, because §5 rule 4 needs
+  to see a ticket's unfinished work before calling it done — but they are
+  evidence about those tickets, not candidates of their own.

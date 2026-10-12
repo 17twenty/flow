@@ -147,6 +147,18 @@ func (r Renderer) Policy(gate engine.Gate) (string, error) {
 	}
 }
 
+// Deploy renders what a deployment finished (spec 02 §2, spec 13).
+func (r Renderer) Deploy(deploy engine.Deploy) (string, error) {
+	switch r.format {
+	case FormatText:
+		return r.decorate(deploy.Text()), nil
+	case FormatJSON:
+		return r.json(deploy.JSON())
+	default:
+		return "", r.noRendering("a deployment")
+	}
+}
+
 // json passes the engine's serialisation through untouched. A JSON document
 // is the one rendering with no presentation in it at all: colouring it would
 // break the parser the flag exists for, and translating its glyphs would

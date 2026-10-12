@@ -68,3 +68,7 @@ Render functions are pure and golden-tested; models tested via `Update`.
   gate produces already exists: it is the comment the engine writes on the
   pull request, so that the same bytes go out whoever runs flow. A second one
   here would be a second answer to a settled question. Text and JSON only.
+- **§1 a deployment has no markdown rendering (item 4.4).** `check deploy`
+  reports to a terminal and to a parser, and posts nothing anywhere that would
+  want a table. Asking for `--format markdown` is `ErrValidation`, as it is
+  for the gate.

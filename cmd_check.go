@@ -1,11 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/17twenty/flow/internal/commits"
@@ -140,8 +142,93 @@ type CheckDeployCmd struct {
 	DryRun      bool   `name:"dry-run" help:"Evaluate and print; change nothing."`
 }
 
-// Run implements the check deploy command.
-func (c *CheckDeployCmd) Run(app *Context) error { return app.unimplemented("check deploy") }
+// Run implements the check deploy command. The first question is whether this
+// repository treats a deployment as a status at all, because for most of them
+// the answer is no and answering it costs nothing: only a workflow that
+// finishes work on deployment needs a credential, a comparison or a board.
+func (c *CheckDeployCmd) Run(app *Context) error {
+	s, err := app.open()
+	if err != nil {
+		return err
+	}
+	watched, _ := engine.WatchesDeployments(s.Config)
+	sha, environment, err := eventDeployment(os.Getenv("GITHUB_EVENT_PATH"))
+	if err != nil && watched {
+		return err
+	}
+	in := engine.DeployInput{
+		SHA:         cmp.Or(c.SHA, sha),
+		Environment: cmp.Or(c.Environment, environment),
+		Config:      s.Config,
+		Lock:        s.Lock,
+		Now:         s.Clock.Now(),
+		DryRun:      c.DryRun,
+	}
+	if watched {
+		if err := s.connect(app); err != nil {
+			return err
+		}
+		in.Adapters = s.Adapters
+		if in.Adapters.Forge != nil {
+			if in.Ancestry, err = ancestry(in.Adapters.Forge); err != nil {
+				return err
+			}
+		}
+	}
+
+	deploy, err := engine.RunDeploy(app.Ctx, in)
+	if err != nil {
+		return err
+	}
+	return app.render(s, func(r ui.Renderer) (string, error) { return r.Deploy(deploy) })
+}
+
+// eventDeployment reads the deployment out of the CI event payload. GitHub's
+// `deployment_status` event names the commit on the deployment and the
+// environment on both of them, the status being the one whose arrival started
+// this run, so it is the one believed.
+func eventDeployment(path string) (sha, environment string, err error) {
+	if path == "" {
+		return "", "", nil
+	}
+	needs := core.Errorf(core.ErrNeedsInput, "find the deployment to react to").
+		WithFix("pass --sha and --environment with the deployment to react to")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", needs.WithWhy("the event payload at %s could not be read: %v", path, err)
+	}
+	var event struct {
+		Deployment *struct {
+			SHA         string `json:"sha"`
+			Environment string `json:"environment"`
+		} `json:"deployment"`
+		DeploymentStatus *struct {
+			Environment string `json:"environment"`
+		} `json:"deployment_status"`
+	}
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return "", "", needs.WithWhy("the event payload at %s is not JSON: %v", path, err)
+	}
+	if event.Deployment != nil {
+		sha, environment = event.Deployment.SHA, event.Deployment.Environment
+	}
+	if event.DeploymentStatus != nil && event.DeploymentStatus.Environment != "" {
+		environment = event.DeploymentStatus.Environment
+	}
+	return sha, environment, nil
+}
+
+// ancestry remembers which merges a commit contains, this run and the next
+// (spec 13 §3). A machine with nowhere to keep the answers remembers them for
+// the run only: the cache saves requests, and a deployment is not worth
+// refusing over a cache directory.
+func ancestry(from core.Comparer) (core.Comparer, error) {
+	dir, err := core.CacheDir()
+	if err != nil {
+		return core.NewAncestry(from, "")
+	}
+	return core.NewAncestry(from, filepath.Join(dir, "ancestry"))
+}
 
 // CheckCommitCmd lints a single commit message (spec 08). It backs the optional
 // commit-msg hook.

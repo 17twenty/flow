@@ -185,3 +185,14 @@ Secrets never printed.
   `GITHUB_SERVER_URL`, `GITHUB_REPOSITORY` and `GITHUB_RUN_ID` are taken
   together: with any of them missing the status gets no target URL, because a
   status pointing at the wrong page is worse than one pointing nowhere.
+- **§2 `check deploy` prefers its flags to the event payload (item 4.4).** The
+  payload is whatever event happened to start the run and a flag was typed on
+  purpose, so `--sha` and `--environment` win. Somebody re-running a job by
+  hand is correcting it, and a stale `GITHUB_EVENT_PATH` left in the
+  environment must not quietly decide what they just said.
+- **§2 a workflow that does not track deployments needs no credential, and no
+  payload either (item 4.4).** `workflow.done_on: merged` is the default, so
+  for most repositories `check deploy` has nothing to do; it discovers that
+  from configuration alone, before resolving a token or reading the event. A
+  payload it could not read is therefore not an error in that case — the
+  complaint is only worth making to somebody who was relying on the answer.

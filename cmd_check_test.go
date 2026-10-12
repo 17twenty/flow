@@ -408,3 +408,107 @@ func TestCIRunURLNeedsEveryPart(t *testing.T) {
 		}
 	}
 }
+
+// TestEventDeploymentReadsWhatGitHubWrote is how `check deploy` learns what
+// went out in CI. The `deployment_status` event names the commit on the
+// deployment and the environment on both; the status is the one whose arrival
+// started the run, so it is the one believed.
+func TestEventDeploymentReadsWhatGitHubWrote(t *testing.T) {
+	tests := []struct {
+		name            string
+		body            string
+		wantSHA, wantIn string
+	}{
+		{
+			name:    "a deployment status",
+			body:    `{"deployment":{"sha":"abc123","environment":"production"},"deployment_status":{"environment":"production","state":"success"}}`,
+			wantSHA: "abc123", wantIn: "production",
+		},
+		{
+			name:    "a status that renamed the environment",
+			body:    `{"deployment":{"sha":"abc123","environment":"production"},"deployment_status":{"environment":"production-eu"}}`,
+			wantSHA: "abc123", wantIn: "production-eu",
+		},
+		{
+			name:    "a deployment on its own",
+			body:    `{"deployment":{"sha":"abc123","environment":"staging"}}`,
+			wantSHA: "abc123", wantIn: "staging",
+		},
+		{name: "an event about something else", body: `{"number":4,"pull_request":{"number":4}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sha, environment, err := eventDeployment(writeMsg(t, tt.body))
+			if err != nil {
+				t.Fatalf("eventDeployment: %v", err)
+			}
+			if sha != tt.wantSHA || environment != tt.wantIn {
+				t.Fatalf("eventDeployment = %q, %q, want %q, %q", sha, environment, tt.wantSHA, tt.wantIn)
+			}
+		})
+	}
+}
+
+// TestEventDeploymentSaysWhenItCannotRead separates "no payload" from "a
+// payload flow could not read": the first is how most runs start and the
+// second is a mistake somebody has to fix.
+func TestEventDeploymentSaysWhenItCannotRead(t *testing.T) {
+	if sha, environment, err := eventDeployment(""); sha != "" || environment != "" || err != nil {
+		t.Fatalf("eventDeployment(\"\") = %q, %q, %v, want nothing and no error", sha, environment, err)
+	}
+	for name, path := range map[string]string{
+		"a path that is not there":   filepath.Join(t.TempDir(), "absent.json"),
+		"a payload that is not JSON": writeMsg(t, "deployment_status: success\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := eventDeployment(path); !errors.Is(err, core.ErrNeedsInput) {
+				t.Fatalf("eventDeployment returned %v, want ErrNeedsInput", err)
+			}
+		})
+	}
+}
+
+// TestCheckDeployCostsNothingWhenDoneMeansMerged is spec 04 §6's common case
+// through the whole command. The default workflow proves deployment as lag
+// rather than tracking it as a column, so the run must succeed in a
+// repository with no credential at all: a CI job that demanded a token only
+// to discover it had nothing to do would make every repository pay for a
+// feature it had turned off.
+func TestCheckDeployCostsNothingWhenDoneMeansMerged(t *testing.T) {
+	dir := initRepo(t, "git@github.com:acme/api.git")
+	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+		t.Fatalf("flow init exited %d: %s", code, stderr)
+	}
+	for _, name := range []string{"GITHUB_TOKEN", "FLOW_PROJECT_TOKEN", "GITHUB_EVENT_PATH"} {
+		t.Setenv(name, "")
+	}
+
+	code, stdout, stderr := exec(t, "-C", dir, "check", "deploy", "--sha", "abc123")
+	if code != core.ExitOK {
+		t.Fatalf("check deploy exited %d, want %d (stderr: %s)", code, core.ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "nothing to do: workflow.done_on is merged") {
+		t.Fatalf("stdout = %q, want it to say why there was nothing to do", stdout)
+	}
+}
+
+// TestCheckDeployIgnoresABrokenPayloadItDoesNotNeed is the same case with the
+// event unreadable. A workflow that does not track deployments has nothing to
+// read the payload for, so a payload it could not read is not a reason to
+// turn the job red: the complaint is only worth making to somebody who was
+// relying on the answer.
+func TestCheckDeployIgnoresABrokenPayloadItDoesNotNeed(t *testing.T) {
+	dir := initRepo(t, "git@github.com:acme/api.git")
+	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+		t.Fatalf("flow init exited %d: %s", code, stderr)
+	}
+	t.Setenv("GITHUB_EVENT_PATH", filepath.Join(t.TempDir(), "never-written.json"))
+
+	code, stdout, stderr := exec(t, "-C", dir, "check", "deploy")
+	if code != core.ExitOK {
+		t.Fatalf("check deploy exited %d, want %d (stderr: %s)", code, core.ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "nothing to do: workflow.done_on is merged") {
+		t.Fatalf("stdout = %q, want it to say why there was nothing to do", stdout)
+	}
+}

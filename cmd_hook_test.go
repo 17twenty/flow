@@ -33,6 +33,10 @@ func hookRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Anything flow caches between runs belongs to the test too: a suite
+	// that wrote into the machine's own cache directory would leave state
+	// behind it and read state it did not write (spec 14).
+	t.Setenv(core.CacheDirEnv, filepath.Join(t.TempDir(), "cache"))
 	gitIn(t, dir, "init", "--quiet", "--initial-branch=main")
 	return dir
 }

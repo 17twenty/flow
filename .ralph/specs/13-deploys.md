@@ -80,3 +80,20 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   `assets/capabilities/deploys.yaml` is named `deploys`, not after a provider:
   a deployment record says the same thing whichever forge holds it, and what
   flow may do with one — read it, never write it — does not change either.
+- **§1 the record is the evidence, and the event is only a prompt (item 4.4).**
+  `check deploy` is started by a CI event or by a person typing `--sha`, and
+  neither of those is a deployment: both are claims about one. So the first
+  thing the run does with a commit and an environment is ask the deployment
+  source whether a successful record for that pair exists, and a run that
+  cannot find one moves nothing and says so. This makes the answer the same
+  whoever started the job, and makes a failed or half-finished deployment
+  answer no for free.
+- **§3 a merge with no merge commit is not running (item 4.4).** A forge may
+  report a pull request as merged without saying what the merge produced.
+  There is then nothing to compare the deployed commit with, so flow claims
+  nothing and asks nothing — the alternative, treating "merged recently"
+  as "merged into this", would finish work on somebody else's deployment.
+- **§3 the ancestry cache is worth less than the deployment (item 4.4).** A
+  machine with nowhere to keep the answers between runs gets an uncached
+  `core.Ancestry`, not an error. The cache saves requests; a deployment is
+  not worth refusing over a cache directory that could not be created.
