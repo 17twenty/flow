@@ -17,7 +17,7 @@ the pinned health issue, and recent PRs as proof.
 | Done | `done_on: merged` (native "PR merged → Done", "Item closed → Done") |
 | Deploy signal | GitHub Deployment `production` recorded by `release.yml` for every merge to `main` |
 | Deploy SLO | `max_lag: 2h`, `max_age: 7d` |
-| Builder | Ralph loop acting as a distinct identity (GitHub App bot `17twenty-flow-agent[bot]`) |
+| Builder | Ralph loop acting as a distinct identity (machine user `flow-bot-gh`) |
 | Human | `@17twenty`: shapes issues, reviews and approves agent PRs, owns follow-ups |
 
 The agent MUST use a different GitHub identity from the human: a PR author cannot
@@ -92,7 +92,7 @@ commits:
   unlinked_types: [ci, build, docs]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
-agents:  { authors: ['17twenty-flow-agent[bot]'], labels: [agent], require_human_review: true }
+agents:  { authors: ['flow-bot-gh'], labels: [agent], require_human_review: true }
 followups:
   labels: [flow-followup]
   owners: { default: '@17twenty', tracker_admin: '@17twenty', forge_admin: '@17twenty', platform: '@17twenty' }
@@ -105,10 +105,10 @@ followups:
    PR title/body.
 2. Create user Project "flow" from the Kanban template; set workflows per §3.
 3. Create labels: `agent`, `blocked`, `incident`, `flow-followup`, `phase`.
-4. Create the GitHub App `17twenty-flow-agent` (contents RW, pull requests RW,
-   issues RW, metadata R), install on the repo; store its credentials where the
-   loop host can mint installation tokens.
-5. Create classic PAT with `project` scope → repo secret `FLOW_PROJECT_TOKEN`.
+4. Create the machine user `flow-bot-gh`; invite it as a repo collaborator with
+   Write; add it to the Project as a WRITER. Its classic PAT (`repo`, `project`,
+   `workflow`) is the loop's only credential. See `docs/cookbook.md`.
+5. Store that PAT as repo secret `FLOW_PROJECT_TOKEN`.
 6. Copy `dogfood/*` into the repo (except `flow.yml`, which needs the binary —
    add it in Stage B). Commit to `main` (unprotected at this point).
 7. Run `bootstrap/seed-issues.sh 17twenty/flow <project-number>`.
@@ -242,3 +242,59 @@ Each iteration, as the agent identity:
   Consequence for whoever picks this up: the identity decision is still owed,
   and it is owed *before* Stage C, not before Stage B. `agent.human_review`
   and `live.prs.reviewed` remain unsatisfiable until it is made.
+
+- **§1 the identity question is settled: the builder is the machine user
+  `flow-bot-gh`.** This supersedes the unresolved consequence of the two
+  Decisions above. A second GitHub account now exists, is a repo collaborator
+  with Write and a WRITER on the Project, and holds one classic PAT (`repo`,
+  `project`, `workflow`). The agent authors commits and pull requests as that
+  account; `@17twenty` reviews and approves them. `agent.human_review` and
+  `live.prs.reviewed` are therefore satisfiable, and `agents.authors` in §4
+  becomes `['flow-bot-gh']`.
+
+  The forge-neutrality argument that deferred the GitHub App still stands and
+  is what rules the App out permanently for v1: a machine user with a token is
+  the lowest common denominator — GitHub, GitLab, Gitea and Bitbucket all have
+  it — whereas an App is GitHub-shaped. Nothing about this choice reaches the
+  adapter boundary: `forge.github` still sees a token in an env var.
+
+- **§1 the machine user gets no SSH key; the token is the push credential.**
+  The deploy key used during Phases 0–3 is revoked. A deploy key is bound to
+  one repository and cannot call an API, so it could push but never open the
+  pull request that Stage B is about — two credentials for one identity, one
+  of which did half the job. The same token now authenticates git-over-HTTPS
+  and REST/GraphQL alike, which is the shape a forge-neutral agent needs:
+  `https://x-access-token:$TOKEN@host/owner/repo` works unchanged on GitLab
+  and Gitea.
+
+  Gotcha recorded because it cost real time twice, in two different forms:
+  **on this host, SSH wins by default and does it silently.** `~/.ssh/config`
+  sets `IdentityFile` for `github.com`, which beats `IdentitiesOnly=yes`
+  (hence the `-F /dev/null` the deploy key needed), and `git config --global`
+  carries `url.git@github.com:.insteadOf https://github.com/`, which rewrites
+  an HTTPS remote back to SSH *after* the credential helper has been chosen.
+  Both failure modes push successfully as the wrong identity and report
+  nothing. The repo therefore pins `origin` to
+  `https://x-access-token@github.com/17twenty/flow.git` — the userinfo prefix
+  means `insteadOf` no longer matches — and sets `core.sshCommand` to a
+  command that exits non-zero, so an accidental SSH push fails loudly instead
+  of impersonating the human. Verify the credential rather than trusting it:
+  compare `git credential fill` output against the token file.
+
+- **§5 Stage B is unblocked, and waits only on `flow check pr`.** The previous
+  Decision deferred Stage B to immediately before Stage C because no second
+  identity existed. That reason is gone. The remaining preconditions are the
+  ones the spec always named: plan item 4.3 (`flow check pr`) and the ruleset
+  created by `flow apply`. The loop stays in `direct` mode until 4.3 lands and
+  switches to `pr` mode then, which restores the original intent — agent pull
+  requests exercised against live reviews for the whole of Phases 5–6, rather
+  than for the few days before the acceptance window.
+
+- **§3 the Project's collaborator list is separate from the repository's.**
+  Adding `flow-bot-gh` to the repo granted it nothing on the user-owned
+  Project: `projectV2(number: 2)` resolved to `null` for its token, which
+  reads as "no such project" rather than "not allowed" and is easy to
+  misdiagnose as a wrong project number. User-owned Projects v2 carry their
+  own access list, set with the `updateProjectV2Collaborators` mutation (or
+  Project → Settings → Manage access). This is a Stage A step; `docs/cookbook.md`
+  carries the recipe.

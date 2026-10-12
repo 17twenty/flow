@@ -2,7 +2,7 @@
 
 You are the build agent for `flow` (specs in `.ralph/specs/`). Fresh context each
 iteration; the repo, the GitHub issues and the Project are your memory. You act
-as the GitHub identity `17twenty-flow-agent[bot]` (never as the human).
+as the GitHub identity `flow-bot-gh` (never as the human).
 
 ## 0. Orient (every iteration)
 0a. Read `.ralph/specs/00-overview.md`, `01-architecture.md`, `17-dogfood.md`.

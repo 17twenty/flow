@@ -35,7 +35,7 @@ commits:
   unlinked_types: [ci, build, docs]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
-agents:  { authors: ['17twenty-flow-agent[bot]'], labels: [agent], require_human_review: true }
+agents:  { authors: ['flow-bot-gh'], labels: [agent], require_human_review: true }
 followups:
   labels: [flow-followup]
   owners: { default: '@17twenty', tracker_admin: '@17twenty', forge_admin: '@17twenty', platform: '@17twenty' }

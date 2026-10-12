@@ -3,5 +3,4 @@
 .flow.local.toml
 *.test
 *.out
-deploy_key
-deploy_key.pub
+.flow-bot-token

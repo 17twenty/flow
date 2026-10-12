@@ -1,13 +1,14 @@
 # AGENTS.md — operational guide (< 150 lines)
 
 CURRENT MODE: direct
-<!-- Stage B deferred to the end of v1; the switch to `pr` happens immediately before Stage C (specs/17-dogfood.md §5 Decisions). -->
+<!-- Stage B is unblocked by the `flow-bot-gh` identity but still needs `flow check pr` (item 4.3) and the ruleset; the switch to `pr` happens then (specs/17-dogfood.md §5 Decisions). -->
 
 ## Identity
-- Auth: classic PAT (`GH_TOKEN`) for the API. The GitHub App is deferred — flow must stay forge-neutral (specs/17-dogfood.md Decisions).
-- Push: the repo deploy key, wired as `core.sshCommand`. It needs `-F /dev/null`, because `~/.ssh/config` sets `IdentityFile` for github.com and would otherwise win. `ssh -T` must answer `Hi 17twenty/flow!`, not `Hi 17twenty!`.
-- Author commits as `17twenty-flow-agent[bot]`: `git -c user.name=... -c user.email=...`. Authorship is independent of the push credential.
-- Never approve PRs. API-created objects carry @17twenty, so `agent.human_review` is unsatisfiable; a deploy key does not fix this (it cannot call the API). Resolve before Stage C.
+- The agent is the machine user **`flow-bot-gh`** (id 341252896), a repo collaborator with `push` and a WRITER on the Project. The human is `@17twenty`. See `docs/cookbook.md`.
+- One credential for everything: its classic PAT in `.flow-bot-token` (gitignored, `PAT_TOKEN=`). API *and* git push. No SSH key — a token over HTTPS is what every forge offers (specs/17-dogfood.md Decisions).
+- `git config --global` has `url.git@github.com:.insteadOf https://github.com/`, which silently rewrites an HTTPS remote back to SSH and pushes as the human. `origin` is therefore `https://x-access-token@github.com/...` (no prefix match, no rewrite) and `core.sshCommand` is a command that fails loudly. Check with `git ls-remote --get-url origin`.
+- Author commits as `Flow Bot <341252896+flow-bot-gh@users.noreply.github.com>`: `git -c user.name=... -c user.email=...`. The noreply form is what makes GitHub attribute the commit to the account.
+- Never approve PRs — `@17twenty` does that. The agent authors, the human reviews: `agent.human_review` is now satisfiable.
 
 ## Toolchain
 - Go: the version in `go.mod` (CI uses `go-version-file`). Bump `go.mod` to upgrade; never let CI drift to `stable`.
@@ -60,3 +61,5 @@ CURRENT MODE: direct
 - `core.Client.Do` returns `nil, err` on a failing status, so an adapter that needs GitHub's per-error `code` must read the body before writing the error.
 - `engine.AppliedChange` has a named field `Change`: it is `change.Change.Item.Name`.
 - macOS's case-insensitive filesystem masks cache-key casing bugs. Assert the key, not the file.
+- GraphQL payloads go to `curl -d @file`, never `-d "$(jq ...)"`. An inline command substitution produced a parse error pointing at valid syntax; the identical query from a file succeeded. The bug was the shell, so debugging the query was the wrong layer.
+- A user-owned Project v2 has its own collaborator list, separate from the repo's. A token without access gets `projectV2: null` — "not found", not "forbidden" — which reads like a wrong project number.

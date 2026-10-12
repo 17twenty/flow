@@ -3,7 +3,7 @@
 #   AGENT_CMD="claude -p" ./loop.sh            # build (mode from .ralph/AGENTS.md)
 #   MODE=plan AGENT_CMD="claude -p" ./loop.sh  # one planning pass
 #   MAX=20 …                                   # cap iterations
-# Requirements: gh authenticated as the agent identity (GH_TOKEN=<app installation token>).
+# Requirements: GH_TOKEN=<the flow-bot-gh PAT> (see docs/cookbook.md).
 # Run sandboxed with scoped, non-production credentials.
 set -euo pipefail
 AGENT_CMD="${AGENT_CMD:?set AGENT_CMD}"; MAX="${MAX:-0}"; RALPH=".ralph"
