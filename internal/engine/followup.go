@@ -56,6 +56,9 @@ const (
 	FollowUpNudged = "nudged"
 	// FollowUpWaiting means the ticket is open and it is not time to chase.
 	FollowUpWaiting = "waiting"
+	// FollowUpRefreshed means the ticket was rewritten because what flow has
+	// to say about the work has changed since it was filed.
+	FollowUpRefreshed = "refreshed"
 	// FollowUpVerified means flow saw the work done, said so and closed it.
 	FollowUpVerified = "verified"
 	// FollowUpWithdrawn means the work stopped being needed, which flow said
@@ -188,6 +191,33 @@ func (in FollowUpInput) file(ctx context.Context, out FollowUpOutcome, marker co
 	return out
 }
 
+// refresh rewrites an open follow-up when the ticket no longer says what flow
+// would say about the work today.
+//
+// It is not a nudge. A nudge is a comment that asks somebody to act and is
+// rationed to one a week (spec 07 §4); this is flow correcting its own
+// writing, which costs the reader nothing and must not wait for the clock —
+// a ticket that is wrong for six days is wrong for the six days somebody
+// might have read it. The tracker is asked only when the text really differs,
+// so a daily run over a steady finding writes nothing.
+func (in FollowUpInput) refresh(ctx context.Context, ticket core.Ticket) (bool, error) {
+	marker := FollowUpMarker(in.Check.ID, in.Repo)
+	title := FollowUpTitle(in.Check, in.Result, in.Repo)
+	body := core.MarkBody(FollowUpBody(in.Check, in.Result), marker, true)
+	if title == ticket.Title && body == ticket.Body {
+		return false, nil
+	}
+	if !in.Fix {
+		return false, nil
+	}
+	if err := in.Tracker.UpdateFollowUp(ctx, ticket.Key, marker, title, body); err != nil {
+		return false, err
+	}
+	in.Log.Info("flow brought a follow-up up to date",
+		"check", in.Check.ID, "ticket", ticket.Key)
+	return true, nil
+}
+
 // chase is the ticket that exists and whose work is still outstanding: nudge
 // it if it has been long enough, reopen it if somebody closed it anyway.
 func (in FollowUpInput) chase(ctx context.Context, out FollowUpOutcome, ticket core.Ticket) FollowUpOutcome {
@@ -219,6 +249,17 @@ func (in FollowUpInput) chase(ctx context.Context, out FollowUpOutcome, ticket c
 		return out
 	}
 
+	// What flow has to say about the work can change after the ticket is
+	// filed: a new release knows steps the old one did not, and a summary
+	// that has improved is a title somebody can tell apart in the issue list
+	// (spec 07 §4). A follow-up is flow's own writing, so flow keeps it
+	// current rather than leaving a stale ticket behind a correct report.
+	refreshed, err := in.refresh(ctx, ticket)
+	if err != nil {
+		out.Err = err
+		return out
+	}
+
 	if _, known := in.recorded(); !known {
 		// Flow found a ticket it had no memory of: a lock that lost the
 		// record to a bad merge, or a fresh clone of a branch that never had
@@ -233,6 +274,9 @@ func (in FollowUpInput) chase(ctx context.Context, out FollowUpOutcome, ticket c
 	}
 	if !in.due() {
 		out.Action = FollowUpWaiting
+		if refreshed {
+			out.Action = FollowUpRefreshed
+		}
 		return out
 	}
 	if !in.Fix {

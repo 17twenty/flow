@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -503,9 +504,13 @@ func credentialSteps(auth config.Auth) []string {
 // "its default branch is not what the workflow expects" as two red lines
 // would describe one problem twice.
 func (in SetupInput) forgeRepo() Check {
+	// Bound once: the title names the work in the follow-up this check
+	// can raise, so a copy of it beside the Run closure would be a second
+	// answer to the same question.
+	title := "The repository is there, and its trunk is the workflow's"
 	return Check{
 		ID:        CheckForgeRepo,
-		Title:     "The repository is there, and its trunk is the workflow's",
+		Title:     title,
 		Category:  CategoryForge,
 		DependsOn: []string{CheckAuthForge, CheckLocalGit},
 		Run: func(ctx context.Context, env *Env) Result {
@@ -520,7 +525,7 @@ func (in SetupInput) forgeRepo() Check {
 						Summary: "check forge.repo names a repository the credential can see",
 					})
 			}
-			result := plannedResult(env, core.ItemForgeDefaultBranch)
+			result := plannedResult(env, core.ItemForgeDefaultBranch, title)
 			if result.State == StateSkip {
 				// Nothing in the configuration asks for a particular trunk,
 				// so reachability was the whole question.
@@ -539,9 +544,13 @@ func (in SetupInput) forgeRepo() Check {
 // (spec 07 §3). Every other tracker check depends on this one, so an
 // unanswered board blocks them rather than failing them twenty times over.
 func (in SetupInput) trackerProject() Check {
+	// Bound once: the title names the work in the follow-up this check
+	// can raise, so a copy of it beside the Run closure would be a second
+	// answer to the same question.
+	title := "The board is identified"
 	return Check{
 		ID:        core.ItemTrackerProject,
-		Title:     "The board is identified",
+		Title:     title,
 		Category:  CategoryTracker,
 		DependsOn: []string{CheckAuthTracker},
 		Run: func(_ context.Context, env *Env) Result {
@@ -552,10 +561,10 @@ func (in SetupInput) trackerProject() Check {
 				if !answer.Resolved() {
 					return answer.Result()
 				}
-				return plannedResult(env, core.ItemTrackerProject).
+				return plannedResult(env, core.ItemTrackerProject, title).
 					Saw(fmt.Sprintf("%s was %s this run", answer.Placeholder.Path, answer.How), "")
 			}
-			return plannedResult(env, core.ItemTrackerProject)
+			return plannedResult(env, core.ItemTrackerProject, title)
 		},
 	}
 }
@@ -569,16 +578,20 @@ func (in SetupInput) trackerProject() Check {
 // `done_on: deployed` would skip the readability check for exactly the
 // repositories whose live-health audit depends on it, flow's own among them.
 func (in SetupInput) deploysSource() Check {
+	// Bound once: the title names the work in the follow-up this check
+	// can raise, so a copy of it beside the Run closure would be a second
+	// answer to the same question.
+	title := "Flow can read the deployment history"
 	return Check{
 		ID:        CheckDeploysSource,
-		Title:     "Flow can read the deployment history",
+		Title:     title,
 		Category:  CategoryDeploys,
 		DependsOn: []string{CheckAuthForge},
 		Run: func(_ context.Context, env *Env) Result {
 			if reads, why := ReadsDeployments(env.Config); !reads {
 				return Skip("%s", why)
 			}
-			return plannedResult(env, core.ItemDeploysRecords)
+			return plannedResult(env, core.ItemDeploysRecords, title)
 		},
 	}
 }
@@ -681,7 +694,7 @@ func planned(id, title, category string, dependsOn ...string) Check {
 		Title:     title,
 		Category:  category,
 		DependsOn: dependsOn,
-		Run:       func(_ context.Context, env *Env) Result { return plannedResult(env, id) },
+		Run:       func(_ context.Context, env *Env) Result { return plannedResult(env, id, title) },
 	}
 }
 
@@ -689,7 +702,7 @@ func planned(id, title, category string, dependsOn ...string) Check {
 // up against flow's memory: a human's word may settle it (spec 07 §8), and
 // something that used to hold and no longer does is drift rather than a plain
 // failure (spec 07 §7).
-func plannedResult(env *Env, id string) Result {
+func plannedResult(env *Env, id, title string) Result {
 	if env.PlanErr != nil {
 		// Not a skip. A check that does not apply to this configuration and
 		// a check flow was unable to make up its mind about are opposite
@@ -700,7 +713,7 @@ func plannedResult(env *Env, id string) Result {
 	if !found {
 		return Skip("this configuration does not ask for it")
 	}
-	result := outcomeResult(item)
+	result := outcomeResult(item, title)
 	result.ObservedHash = item.ObservedHash
 
 	result = Attest(AttestInput{
@@ -722,6 +735,59 @@ func plannedResult(env *Env, id string) Result {
 	})
 }
 
+// followUpSummary is the line the ticket is titled after (spec 07 §4).
+//
+// It has to name the work. Every item flow cannot perform used to summarise
+// as "somebody with the access has to do it", which made every such ticket in
+// a repository identical in the issue list — two of them on flow's own repo,
+// and no way to tell from the title which was the trunk's protection and
+// which was the status check a merge must pass.
+func followUpSummary(item PlanItem, title string) string {
+	what := strings.TrimSpace(title)
+	if what == "" {
+		what = item.ID
+	}
+	if len(item.Missing) == 0 {
+		return what + " — somebody else has to do it"
+	}
+	return fmt.Sprintf("%s — needs %s", what, joinWords(item.Missing))
+}
+
+// followUpSteps is the "exact steps" spec 07 §4 asks a follow-up to carry.
+//
+// Flow planned this change and was refused, so it knows the whole of it: the
+// permission that was missing, and every field it would have set. Writing
+// "flow has no steps to offer for this one" when all of that is in hand is
+// the ticket telling a person to go and rediscover it.
+func followUpSteps(item PlanItem) []string {
+	steps := make([]string, 0, len(item.Changes)+1)
+	if len(item.Missing) > 0 {
+		steps = append(steps, fmt.Sprintf(
+			"ask somebody whose %s credential has %s to make the change below, or give flow one",
+			item.Target, joinWords(item.Missing)))
+	}
+	for _, change := range item.Changes {
+		steps = append(steps, changeInstruction(change))
+	}
+	return steps
+}
+
+// changeInstruction is one change written out in full, fields and all. The
+// report's one-line form is deliberately terse; a person about to reproduce
+// the change by hand needs the values, not a summary of them.
+func changeInstruction(change core.Change) string {
+	line := describeChange(change)
+	if len(change.Item.Fields) == 0 {
+		return line
+	}
+	names := slices.Sorted(maps.Keys(change.Item.Fields))
+	pairs := make([]string, 0, len(names))
+	for _, name := range names {
+		pairs = append(pairs, name+"="+change.Item.Fields[name])
+	}
+	return line + ", with " + strings.Join(pairs, ", ")
+}
+
 // outcomeResult is the mapping from what apply would do to what doctor says
 // (spec 05 §4, spec 07 §2).
 //
@@ -731,7 +797,7 @@ func plannedResult(env *Env, id string) Result {
 // the provider cannot do it, nobody can make it, and a red mark every morning
 // for a thing with no remedy is how a team learns to stop reading the report.
 // The line still says so, so `--format json` carries it either way.
-func outcomeResult(item PlanItem) Result {
+func outcomeResult(item PlanItem, title string) Result {
 	switch item.Outcome {
 	case OutcomeNoop:
 		return Pass("%s", item.Why)
@@ -759,9 +825,17 @@ func outcomeResult(item PlanItem) Result {
 		if len(item.Missing) > 0 {
 			result = result.Saw("the credential is missing "+joinWords(item.Missing), "")
 		}
+		// The same evidence a native outcome carries. Flow knows exactly what
+		// it would have done; the only thing it lacks is permission to do it,
+		// and a ticket that withholds the change asks a person to work out
+		// for themselves what flow already decided.
+		for _, change := range item.Changes {
+			result = result.Saw(describeChange(change), "")
+		}
 		return result.Fix(Remediation{
 			Kind:    RemedyFollowUp,
-			Summary: "somebody with the access has to do it",
+			Summary: followUpSummary(item, title),
+			Steps:   followUpSteps(item),
 		})
 
 	case OutcomeAttest:

@@ -337,9 +337,9 @@ func (t *FakeTracker) FindFollowUp(ctx context.Context, m core.Marker) (*core.Ti
 	return &found, nil
 }
 
-// UpdateFollowUp rewrites the body of a ticket flow opened, keeping its
-// marker.
-func (t *FakeTracker) UpdateFollowUp(ctx context.Context, key string, m core.Marker, body string) error {
+// UpdateFollowUp rewrites the title and body of a ticket flow opened, keeping
+// its marker.
+func (t *FakeTracker) UpdateFollowUp(ctx context.Context, key string, m core.Marker, title, body string) error {
 	if err := t.enter(ctx, "UpdateFollowUp"); err != nil {
 		return err
 	}
@@ -355,9 +355,10 @@ func (t *FakeTracker) UpdateFollowUp(ctx context.Context, key string, m core.Mar
 			WithFix("leave it alone, or give flow its own ticket to keep")
 	}
 	marked := core.MarkBody(body, m, true)
-	if marked == t.tickets[at].Body {
+	if marked == t.tickets[at].Body && title == t.tickets[at].Title {
 		return nil
 	}
+	t.tickets[at].Title = title
 	t.tickets[at].Body = marked
 	t.tickets[at].UpdatedAt = t.clock.Now()
 	return nil

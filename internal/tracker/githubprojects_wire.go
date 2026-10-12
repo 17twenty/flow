@@ -961,8 +961,8 @@ const (
 	ghCloseIssueMutation = "mutation($issue:ID!,$reason:IssueClosedStateReason!){" +
 		"closeIssue(input:{issueId:$issue,stateReason:$reason}){issue{id}}}"
 	ghReopenIssueMutation = "mutation($issue:ID!){reopenIssue(input:{issueId:$issue}){issue{id}}}"
-	ghUpdateIssueMutation = "mutation($issue:ID!,$body:String!){" +
-		"updateIssue(input:{id:$issue,body:$body}){issue{id}}}"
+	ghUpdateIssueMutation = "mutation($issue:ID!,$title:String!,$body:String!){" +
+		"updateIssue(input:{id:$issue,title:$title,body:$body}){issue{id}}}"
 )
 
 // ghMutationResult is the answer to a mutation whose result flow does not

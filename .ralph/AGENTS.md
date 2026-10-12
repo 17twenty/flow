@@ -76,3 +76,5 @@ CURRENT MODE: direct
 - Read files in small targeted slices (`sed -n`, `grep -n -A`). Large tool output gets elided, and an elided read is a guess.
 - Run the thing against the real repo as soon as it builds. The first live `flow doctor` found two bugs no test had reached: a report of twenty skips exiting 0, and `--fix` resolving the board's number into a lock the already-built adapter never re-read.
 - An empty result and "nothing was wanted" must not be the same value. A skip is a success, so any code path that turns "could not look" into an empty collection turns a blind run green.
+- Grep every new helper's name across `*_test.go` before calling an item done. `followUpSummary`, `followUpSteps` and `changeInstruction` appeared in no test at all, so four mutants were waiting in forty lines of new code.
+- A title and a body are two fields, and a test that changes both proves nothing about either. Make one change at a time: the title-only rewrite was the mutant that survived.

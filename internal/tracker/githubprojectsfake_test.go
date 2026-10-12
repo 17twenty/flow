@@ -1253,6 +1253,7 @@ func (f *ghProjectsFake) updateComment(w http.ResponseWriter, query core.GraphQL
 // identical bytes would cause, so the fake inflicts it.
 func (f *ghProjectsFake) updateIssue(w http.ResponseWriter, query core.GraphQLQuery) {
 	id, _ := query.Variables["issue"].(string)
+	title, _ := query.Variables["title"].(string)
 	body, _ := query.Variables["body"].(string)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1262,6 +1263,7 @@ func (f *ghProjectsFake) updateIssue(w http.ResponseWriter, query core.GraphQLQu
 		return
 	}
 	f.now = f.now.Add(time.Minute)
+	f.items[at].ticket.Title = title
 	f.items[at].ticket.Body = body
 	f.items[at].ticket.UpdatedAt = f.now
 	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{

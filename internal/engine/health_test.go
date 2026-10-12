@@ -465,6 +465,7 @@ func TestAHandEditedLogDoesNotBecomeTomorrowsTruth(t *testing.T) {
 	w := newHealthWorld(t)
 	out := w.publish(t, greenReport(), true)
 	if err := w.tracker.UpdateFollowUp(t.Context(), out.Ticket.Key, engine.HealthMarker("acme/widget"),
+		engine.HealthTitle("acme/widget"),
 		"| 2026-03-02 | 0 | 0 | 0 | 0 |\n| 2026-03-01 | 0 | 0 | 0 | 0 |\n"); err != nil {
 		t.Fatalf("UpdateFollowUp: %v", err)
 	}

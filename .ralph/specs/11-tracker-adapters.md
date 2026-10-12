@@ -348,3 +348,10 @@ reopen, pagination, error mapping.
   adapter compares the marked body it is about to send against the one that is
   there and sends nothing when they match. The contract suite asserts the date
   did not move, which is the only way the difference is visible.
+- **§1 `UpdateFollowUp` rewrites the title as well as the body (item 3.11,
+  revisited).** A ticket's title is not something its body decides: a summary
+  can improve while every word of the body stays, and the title is the whole
+  of what a person reads in an issue list. The adapter sends both, refuses
+  both when the marker is absent, and still sends nothing when both already
+  say this — so the "no work" rule now compares the title too, and the
+  contract suite asserts that a change to the title alone takes effect.

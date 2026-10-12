@@ -765,3 +765,90 @@ func TestAnUnknownOutcomeIsAnError(t *testing.T) {
 		t.Errorf("the error does not name the outcome it did not understand: %s", result.Message)
 	}
 }
+
+// A refused item is the one case where flow knows the whole of a change and
+// is only short of permission to make it. The ticket it raises is therefore
+// the one ticket that can carry the change in full — and it has to, because
+// "somebody with the access has to do it" was the summary of every refused
+// item in a repository, which made two such tickets indistinguishable in the
+// issue list (spec 07 §4).
+func TestARefusedItemHandsOverEverythingFlowKnows(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Missing: []string{"admin"},
+		Changes: []core.Change{{
+			Op:   core.ChangeCreate,
+			What: "ruleset",
+			Item: core.Item{
+				ID:     core.ItemForgeProtection,
+				Name:   "flow",
+				Fields: map[string]string{"required_approvals": "1", "branch": "main"},
+			},
+		}},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	wantState(t, result, engine.StateFail)
+	// The summary titles the ticket. It has to name this item's work and the
+	// access that is short, or two of them read the same.
+	if !strings.Contains(result.Remediation.Summary, "The trunk is protected") {
+		t.Errorf("the summary does not name the work: %q", result.Remediation.Summary)
+	}
+	if !strings.Contains(result.Remediation.Summary, "admin") {
+		t.Errorf("the summary does not say what access is short: %q", result.Remediation.Summary)
+	}
+	steps := strings.Join(result.Remediation.Steps, "\n")
+	if !strings.Contains(steps, "admin") {
+		t.Errorf("no step asks for the access that was refused:\n%s", steps)
+	}
+	// The change, fields and all. A person reproducing it by hand needs the
+	// values, not a summary of them.
+	if !strings.Contains(steps, `create ruleset "flow"`) {
+		t.Errorf("the steps do not carry the change flow planned:\n%s", steps)
+	}
+	if !strings.Contains(steps, "branch=main") || !strings.Contains(steps, "required_approvals=1") {
+		t.Errorf("the steps do not carry the fields flow would have set:\n%s", steps)
+	}
+	// Fields are sorted, so the same refusal reads the same every morning and
+	// the ticket is not rewritten by map order alone.
+	if !strings.Contains(steps, "with branch=main, required_approvals=1") {
+		t.Errorf("the fields are not in a settled order:\n%s", steps)
+	}
+	if !hasEvidence(result, `create ruleset "flow"`) {
+		t.Errorf("the report itself does not show the change:\n%+v", result.Evidence)
+	}
+}
+
+// A refused item with nothing to show is still a ticket somebody has to be
+// able to tell apart, so the summary names the work even when flow has no
+// permission token and no change to offer.
+func TestARefusedItemWithNothingToShowStillNamesTheWork(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	if !strings.Contains(result.Remediation.Summary, "The trunk is protected") {
+		t.Errorf("the summary does not name the work: %q", result.Remediation.Summary)
+	}
+}
+
+// hasEvidence reports whether any evidence line says this.
+func hasEvidence(result engine.Result, want string) bool {
+	for _, evidence := range result.Evidence {
+		if strings.Contains(evidence.Text, want) {
+			return true
+		}
+	}
+	return false
+}

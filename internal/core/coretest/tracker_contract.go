@@ -465,7 +465,8 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	tracker := newTracker(t, ContractTracker())
 	marker := ContractFollowUpMarker()
 
-	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker, "Still not enforced, three days on."); err != nil {
+	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+		"flow: the trunk is still unprotected", "Still not enforced, three days on."); err != nil {
 		t.Fatalf("UpdateFollowUp: %v", err)
 	}
 	after, err := tracker.Ticket(t.Context(), "#13")
@@ -474,6 +475,12 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	}
 	if !strings.Contains(after.Body, "three days on") {
 		t.Errorf("the rewritten body is %q, which does not say what flow wrote", after.Body)
+	}
+	// The title travels with the body. A follow-up filed before flow could
+	// say what the work was is titled after a summary that has since
+	// improved, and a stale title is what a person reads in the issue list.
+	if after.Title != "flow: the trunk is still unprotected" {
+		t.Errorf("the title is %q, which is not what flow rewrote it to", after.Title)
 	}
 	// Without the marker the next run would file a second ticket instead of
 	// finding this one (spec 11 §1).
@@ -485,7 +492,8 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	// report is rewritten every morning (spec 07 §10), and a report that
 	// sent identical bytes would move the moment the issue last changed and
 	// make a quiet fortnight look like news every day.
-	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker, "Still not enforced, three days on."); err != nil {
+	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+		"flow: the trunk is still unprotected", "Still not enforced, three days on."); err != nil {
 		t.Errorf("UpdateFollowUp with nothing to change: %v", err)
 	}
 	again, err := tracker.Ticket(t.Context(), "#13")
@@ -497,8 +505,23 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 			after.UpdatedAt, again.UpdatedAt)
 	}
 
+	// The title is not a thing the body decides. A summary can improve
+	// without a word of the body changing, and the title is the whole of
+	// what a person reads in the issue list.
+	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+		"flow: the trunk takes anything anyone pushes", "Still not enforced, three days on."); err != nil {
+		t.Fatalf("UpdateFollowUp with only the title to change: %v", err)
+	}
+	retitled, err := tracker.Ticket(t.Context(), "#13")
+	if err != nil {
+		t.Fatalf("Ticket after the retitle: %v", err)
+	}
+	if retitled.Title != "flow: the trunk takes anything anyone pushes" {
+		t.Errorf("the title is %q: a rewrite that only changed the title did nothing", retitled.Title)
+	}
+
 	// #12 is a person's ticket. flow edits only its own writing.
-	if err := tracker.UpdateFollowUp(t.Context(), "#12", marker, "flow was here"); !errors.Is(err, core.ErrValidation) {
+	if err := tracker.UpdateFollowUp(t.Context(), "#12", marker, "flow took over", "flow was here"); !errors.Is(err, core.ErrValidation) {
 		t.Errorf("rewriting a ticket flow did not open = %v, want ErrValidation", err)
 	}
 	theirs, err := tracker.Ticket(t.Context(), "#12")
@@ -508,8 +531,11 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	if strings.Contains(theirs.Body, "flow was here") {
 		t.Errorf("flow rewrote somebody else's ticket anyway: %q", theirs.Body)
 	}
+	if theirs.Title == "flow took over" {
+		t.Errorf("flow retitled somebody else's ticket anyway: %q", theirs.Title)
+	}
 
-	if err := tracker.UpdateFollowUp(t.Context(), "#4040", marker, "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.UpdateFollowUp(t.Context(), "#4040", marker, "nobody", "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("rewriting a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }

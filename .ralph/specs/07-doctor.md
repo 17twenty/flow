@@ -758,3 +758,29 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   serves many repositories. `flow health: owner/name`, marker
   `flow:health repo=owner/name`, so two repositories reporting into one
   project keep separate streaks.
+- **§4 the summary names the work, not the obstacle (item 2.10, revisited).**
+  Every refused item summarised as "somebody with the access has to do it",
+  so two follow-ups on one repository were the same line in the issue list —
+  on flow's own repo, the trunk's protection and the status check a merge
+  must pass, indistinguishable without opening either. The summary is now the
+  check's own title with what is short appended: `<title> — needs admin`.
+  Nothing else titles a follow-up, so the check title is the one place the
+  work is named.
+- **§4 "exact steps" means the change, fields and all (item 2.10, revisited).**
+  A refused item is the one outcome where flow planned the whole change and
+  was stopped only by permission. Writing "flow has no steps to offer for
+  this one" when every field is in hand asks a person to rediscover what flow
+  already decided, so the steps are the missing permission followed by each
+  planned change with its fields in sorted order, and the report carries the
+  same changes as evidence. Sorted, because a ticket rewritten by map order
+  alone would look like news every morning.
+- **§4 a follow-up is flow's own writing, so flow keeps it current (item
+  2.10, revisited).** The lifecycle had no way back from a ticket that was
+  true when filed: a finding whose summary or steps improve leaves a stale
+  ticket behind a correct report. An open follow-up whose title or body no
+  longer matches what flow would write today is rewritten in place, under
+  `--fix` only, and the outcome reads `refreshed`. It is not a nudge and does
+  not touch `nudged_at`: a nudge asks somebody to act and is rationed to one
+  a week, while correcting flow's own words costs the reader nothing and must
+  not wait six days. The tracker is asked only when the text really differs,
+  so a steady finding writes nothing.

@@ -788,3 +788,167 @@ func TestAFollowUpOnALockWithNoNudgeKeyRoundTrips(t *testing.T) {
 		t.Errorf("the lock does not record the chase:\n%s", chased)
 	}
 }
+
+// knowsBetter is the same finding, said by a build that can now say what to
+// do about it. Flow's own writing goes stale: a ticket filed when the
+// remediation had no steps keeps "flow has no steps to offer for this one"
+// behind a report that now offers two.
+func knowsBetter() engine.Result {
+	return engine.Fail("the In progress column has no work-in-progress limit").
+		Saw("column limits are per-view and UI-only in github-projects", "https://tracker.test/projects/1").
+		Fix(engine.Remediation{
+			Kind:    engine.RemedyFollowUp,
+			Summary: "the in-progress column has a limit — needs tracker admin",
+			Owner:   engine.OwnerTrackerAdmin,
+			Steps: []string{
+				"open the board's In progress column settings",
+				"set the column limit to 2",
+			},
+		})
+}
+
+// TestAFollowUpIsBroughtUpToDate: the ticket is flow's own writing, so when
+// flow has something better to say it says it in the ticket that is already
+// there rather than leaving a stale one behind a correct report.
+func TestAFollowUpIsBroughtUpToDate(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	before, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+
+	out := w.reconcile(t, knowsBetter(), true)
+	if out.Action != engine.FollowUpRefreshed {
+		t.Errorf("action = %q, want %q", out.Action, engine.FollowUpRefreshed)
+	}
+	after, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	if after.Key != before.Key {
+		t.Errorf("flow filed %s instead of rewriting %s", after.Key, before.Key)
+	}
+	if after.Title == before.Title {
+		t.Errorf("the title is still %q, which is what every such ticket was called", after.Title)
+	}
+	if !strings.Contains(after.Title, "needs tracker admin") {
+		t.Errorf("the title does not say what is wanted: %q", after.Title)
+	}
+	if !strings.Contains(after.Body, "set the column limit to 2") {
+		t.Errorf("the body does not carry the steps flow now has:\n%s", after.Body)
+	}
+	if strings.Contains(after.Body, "no steps to offer") {
+		t.Errorf("the body still says flow has nothing to suggest:\n%s", after.Body)
+	}
+	// Rewriting is not chasing. A nudge asks somebody to act and is rationed
+	// to one a week; correcting flow's own writing costs the reader nothing.
+	if record := w.locked(t); !record.NudgedAt.IsZero() {
+		t.Errorf("the refresh was recorded as a chase, at %v", record.NudgedAt)
+	}
+	if comments := w.tracker.Comments(filed.Ticket.Key); len(comments) != 0 {
+		t.Errorf("the refresh commented on the ticket: %+v", comments)
+	}
+}
+
+// TestASteadyFindingIsNotRewrittenEveryMorning: doctor runs daily, and a
+// ticket whose "last updated" moved every morning would look like news every
+// morning and teach the team to ignore it.
+func TestASteadyFindingIsNotRewrittenEveryMorning(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	before, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	w.clock.Advance(24 * time.Hour)
+
+	out := w.reconcile(t, needsAHuman(), true)
+	if out.Action == engine.FollowUpRefreshed {
+		t.Error("flow rewrote a ticket that already said exactly this")
+	}
+	after, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	if !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("updated at %v then %v: an unchanged finding moved the date",
+			before.UpdatedAt, after.UpdatedAt)
+	}
+}
+
+// TestNothingIsRewrittenWithoutFix: spec 02 §2 keeps every write behind
+// --fix, and a preview that edited a ticket would be a preview that changed
+// the world.
+func TestNothingIsRewrittenWithoutFix(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	before, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+
+	out := w.reconcile(t, knowsBetter(), false)
+	if out.Action == engine.FollowUpRefreshed {
+		t.Error("a run without --fix rewrote the ticket")
+	}
+	after, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	if after.Title != before.Title || after.Body != before.Body {
+		t.Error("a run without --fix rewrote the ticket")
+	}
+}
+
+// wipFinding is the same finding every time, said under whichever summary
+// the build that found it had to offer.
+func wipFinding(summary string) engine.Result {
+	return engine.Fail("the In progress column has no work-in-progress limit").
+		Saw("column limits are per-view and UI-only in github-projects", "https://tracker.test/projects/1").
+		Fix(engine.Remediation{
+			Kind:    engine.RemedyFollowUp,
+			Summary: summary,
+			Owner:   engine.OwnerTrackerAdmin,
+			Steps: []string{
+				"open the board's In progress column settings",
+				"set the column limit to 2",
+			},
+		})
+}
+
+// TestATitleThatImprovedIsRewrittenEvenThoughTheBodyDidNot: the body is not a
+// proxy for the title. A summary that only repeats the finding is left out of
+// the body, so a run that acquires one changes the title and nothing else —
+// and the title is the whole of what a person reads in the issue list.
+func TestATitleThatImprovedIsRewrittenEvenThoughTheBodyDidNot(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, wipFinding(""), true)
+	before, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+
+	out := w.reconcile(t, wipFinding("the In progress column has no work-in-progress limit"), true)
+	if out.Action != engine.FollowUpRefreshed {
+		t.Errorf("action = %q, want %q", out.Action, engine.FollowUpRefreshed)
+	}
+	after, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	if after.Body != before.Body {
+		t.Fatalf("the body moved too, so this proves nothing about the title:\n%s", after.Body)
+	}
+	if after.Title == before.Title {
+		t.Errorf("the title is still %q, which is the one the ticket was filed under", after.Title)
+	}
+}

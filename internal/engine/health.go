@@ -179,7 +179,7 @@ func PublishHealth(ctx context.Context, in HealthInput) HealthOutcome {
 		return out
 	}
 
-	if err := in.Tracker.UpdateFollowUp(ctx, found.Key, marker, out.Body); err != nil {
+	if err := in.Tracker.UpdateFollowUp(ctx, found.Key, marker, HealthTitle(in.Repo), out.Body); err != nil {
 		out.Err = err
 		out.Ticket = *found
 		return out

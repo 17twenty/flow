@@ -1400,8 +1400,8 @@ func (g *GitHubProjects) recall(m core.Marker) (core.Ticket, bool) {
 	return core.Ticket{}, false
 }
 
-// UpdateFollowUp rewrites the body of a ticket flow opened, keeping its
-// marker.
+// UpdateFollowUp rewrites the title and body of a ticket flow opened, keeping
+// its marker.
 //
 // The ticket is read first and the marker checked against what is actually
 // there, not against what flow filed earlier: an issue number can be reused
@@ -1411,7 +1411,7 @@ func (g *GitHubProjects) recall(m core.Marker) (core.Ticket, bool) {
 // A body that already says this is left alone. GitHub moves `updatedAt` on
 // every edit, and a daily report that rewrote itself with identical bytes
 // would make the pinned issue look like it had news every morning.
-func (g *GitHubProjects) UpdateFollowUp(ctx context.Context, key string, m core.Marker, body string) error {
+func (g *GitHubProjects) UpdateFollowUp(ctx context.Context, key string, m core.Marker, title, body string) error {
 	if m.IsZero() {
 		return core.Errorf(core.ErrValidation, "rewrite %s", key).
 			WithWhy("no marker was given, and the marker is what says the ticket is flow's").
@@ -1427,12 +1427,12 @@ func (g *GitHubProjects) UpdateFollowUp(ctx context.Context, key string, m core.
 			WithFix("leave it alone, or let flow open its own ticket to keep")
 	}
 	marked := core.MarkBody(body, m, true)
-	if marked == ticket.Body {
+	if marked == ticket.Body && title == ticket.Title {
 		return nil
 	}
 	if _, err := core.GraphQL[ghMutationResult](ctx, g.client, g.request(), core.GraphQLQuery{
 		Query:     ghUpdateIssueMutation,
-		Variables: map[string]any{"issue": ticket.ID, "body": marked},
+		Variables: map[string]any{"issue": ticket.ID, "title": title, "body": marked},
 	}, ghSentinel); err != nil {
 		return core.Explain(err, "rewrite %s", key)
 	}
