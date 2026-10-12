@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,7 +13,8 @@ import (
 // This file is the wire: the GraphQL documents flow sends to GitHub, the
 // shapes their answers arrive in, and the translation of those shapes into
 // flow's own vocabulary. Projects v2 has no REST API at all, so everything
-// the adapter reads about a board is a query (spec 11 §2).
+// the adapter reads about a board is a query; the repository's own labels,
+// at the end of this file, are the one exception (spec 11 §2).
 
 // ghGraphQLEndpoint is the GraphQL endpoint beside an API root. github.com
 // serves it under the API host; Enterprise Server serves it beside /api/v3
@@ -772,4 +774,231 @@ func ghOr(first, second string) string {
 		return first
 	}
 	return second
+}
+
+// Labels (spec 11 §2, item 3.11).
+//
+// Labels are the one thing this adapter reads over REST. They belong to the
+// repository rather than to the board — a project has no labels of its own —
+// and GitHub's REST labels endpoints are a complete set where GraphQL's are
+// not: there is no mutation to delete a label by name, and `createLabel`
+// needed a preview media type for most of its life. A tracker whose tickets
+// are issues is entitled to the issues' own API.
+
+const (
+	// ghLabelPageSize is how many labels one page carries. GitHub's
+	// maximum is 100 and a repository with more than that is ordinary, so
+	// the reader pages.
+	ghLabelPageSize = 100
+	// ghDefaultLabelColour is the colour a label flow adds is given, as
+	// six hex digits without the leading hash GitHub does not accept. A
+	// flow configuration names labels and says nothing about how they
+	// look (spec 03 §1), so whoever wants another colour picks it and
+	// flow leaves it alone ever after.
+	ghDefaultLabelColour = "ededed"
+	// ghLabelColourField and ghLabelDescriptionField are what a label's
+	// colour and description are called in an observed item's fields.
+	ghLabelColourField      = "color"
+	ghLabelDescriptionField = "description"
+)
+
+// ghLabel is one repository label as REST reports it.
+type ghLabel struct {
+	NodeID      string `json:"node_id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// item is the label as flow observes one: its name, the id the lock can
+// record, and what GitHub knows about it that flow did not ask for.
+func (l ghLabel) item() core.Item {
+	item := core.Item{ID: l.NodeID, Name: l.Name, Fields: map[string]string{}}
+	if l.Color != "" {
+		item.Fields[ghLabelColourField] = strings.ToLower(strings.TrimPrefix(l.Color, "#"))
+	}
+	if l.Description != "" {
+		item.Fields[ghLabelDescriptionField] = l.Description
+	}
+	return item
+}
+
+// ghLabelBody is the body a label is created or edited with. The name is sent
+// as `new_name` on an edit, which is the only way GitHub renames one, so the
+// two bodies differ and are built separately.
+type ghLabelBody struct {
+	Name        string  `json:"name,omitempty"`
+	NewName     string  `json:"new_name,omitempty"`
+	Color       string  `json:"color,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
+// Follow-ups, comments and an issue's state (spec 07 §4, spec 11 §2, item
+// 3.11). These are all about issues rather than about the board, so they are
+// GraphQL against the repository — with one call to `addProjectV2ItemById` at
+// the end of filing, which is the only time flow puts an issue on the board.
+
+const (
+	// ghSearchPage is how many issues one marker search asks for. A
+	// marker identifies one ticket, so anything past the first page would
+	// be a repository with duplicates in it, which the search cannot fix.
+	ghSearchPage = 20
+	// ghCommentPage is how many comments one page of an issue carries.
+	ghCommentPage = 50
+	// The state reasons GitHub records a closure with.
+	ghReasonCompletedInput  = "COMPLETED"
+	ghReasonNotPlannedInput = "NOT_PLANNED"
+)
+
+// ghSearchQuery finds issues by a search expression. The search only narrows:
+// every candidate's own body is read before it counts (spec 11 §2).
+const ghSearchQuery = "query($query:String!,$first:Int!){" +
+	"search(query:$query,type:ISSUE,first:$first){nodes{...on Issue{" + ghIssueFields + "}}}}"
+
+// ghSearchResult is the answer to [ghSearchQuery].
+type ghSearchResult struct {
+	Search struct {
+		Nodes []ghIssue `json:"nodes"`
+	} `json:"search"`
+}
+
+// ghRepoLabelPage is how many of a repository's labels the filing query reads,
+// to turn the names a follow-up asks for into the ids createIssue takes. It is
+// a literal, like the other inner page sizes, because it is flow's own bound
+// and never a caller's.
+const ghRepoLabelPage = "100"
+
+// ghRepoQuery reads what filing an issue needs: the repository's own id, and
+// the ids of the labels a follow-up asks for by name.
+const ghRepoQuery = "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id " +
+	"labels(first:" + ghRepoLabelPage + "){nodes{id name}}}}"
+
+// ghRepoResult is the answer to [ghRepoQuery].
+type ghRepoResult struct {
+	Repository *struct {
+		ID     string `json:"id"`
+		Labels struct {
+			Nodes []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"nodes"`
+		} `json:"labels"`
+	} `json:"repository"`
+}
+
+// ghUserQuery reads one login's id, for assigning a follow-up to its owner.
+const ghUserQuery = "query($login:String!){user(login:$login){id}}"
+
+// ghUserResult is the answer to [ghUserQuery].
+type ghUserResult struct {
+	User *struct {
+		ID string `json:"id"`
+	} `json:"user"`
+}
+
+// ghCreateIssueMutation files an issue and reads back the ticket it became.
+const ghCreateIssueMutation = "mutation($repo:ID!,$title:String!,$body:String!,$labels:[ID!],$assignees:[ID!]){" +
+	"createIssue(input:{repositoryId:$repo,title:$title,body:$body,labelIds:$labels,assigneeIds:$assignees}){" +
+	"issue{" + ghIssueFields + "}}}"
+
+// ghCreateIssueResult is the answer to [ghCreateIssueMutation].
+type ghCreateIssueResult struct {
+	CreateIssue struct {
+		Issue *ghIssue `json:"issue"`
+	} `json:"createIssue"`
+}
+
+// ghAddItemMutation puts an issue on the board. It is idempotent at GitHub's
+// end: adding content the project already holds answers with the item that
+// was already there.
+const ghAddItemMutation = "mutation($project:ID!,$content:ID!){" +
+	"addProjectV2ItemById(input:{projectId:$project,contentId:$content}){item{id}}}"
+
+// ghAddItemResult is the answer to [ghAddItemMutation].
+type ghAddItemResult struct {
+	Add struct {
+		Item *struct {
+			ID string `json:"id"`
+		} `json:"item"`
+	} `json:"addProjectV2ItemById"`
+}
+
+// ghCommentsQuery reads one page of an issue's comments, with the issue's own
+// id so that a comment can be added without a second lookup.
+const ghCommentsQuery = "query($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){" +
+	"repository(owner:$owner,name:$name){issue(number:$number){id " +
+	"comments(first:$first,after:$after){nodes{id body}pageInfo{hasNextPage endCursor}}}}}"
+
+// ghCommentsResult is the answer to [ghCommentsQuery].
+type ghCommentsResult struct {
+	Repository *struct {
+		Issue *struct {
+			ID       string `json:"id"`
+			Comments struct {
+				Nodes []struct {
+					ID   string `json:"id"`
+					Body string `json:"body"`
+				} `json:"nodes"`
+				PageInfo ghPageInfo `json:"pageInfo"`
+			} `json:"comments"`
+		} `json:"issue"`
+	} `json:"repository"`
+}
+
+// The comment mutations: one to write a new comment, one to edit the comment
+// already carrying flow's marker.
+const (
+	ghAddCommentMutation = "mutation($subject:ID!,$body:String!){" +
+		"addComment(input:{subjectId:$subject,body:$body}){clientMutationId}}"
+	ghUpdateCommentMutation = "mutation($comment:ID!,$body:String!){" +
+		"updateIssueComment(input:{id:$comment,body:$body}){clientMutationId}}"
+)
+
+// The state mutations. GitHub records why an issue was closed and nothing at
+// all about why one was reopened, so a reopening's reason is a comment the
+// engine writes separately (spec 07 §4).
+const (
+	ghCloseIssueMutation = "mutation($issue:ID!,$reason:IssueClosedStateReason!){" +
+		"closeIssue(input:{issueId:$issue,stateReason:$reason}){issue{id}}}"
+	ghReopenIssueMutation = "mutation($issue:ID!){reopenIssue(input:{issueId:$issue}){issue{id}}}"
+)
+
+// ghMutationResult is the answer to a mutation whose result flow does not
+// read. The document still asks for a field, because GraphQL has no empty
+// selection set.
+type ghMutationResult struct{}
+
+// ghStateReason is the state reason GitHub takes for one of flow's. Anything
+// flow has no name for is work that was not done: closing a follow-up flow
+// could not verify as completed would be a lie recorded in the tracker.
+func ghStateReason(reason string) string {
+	if reason == core.ClosedCompleted {
+		return ghReasonCompletedInput
+	}
+	return ghReasonNotPlannedInput
+}
+
+// ghSearchExpression is the search that narrows a marker hunt to the issues
+// that could carry it: this repository's, and the marker's own text.
+//
+// Each field is its own quoted phrase rather than the whole marker being one,
+// because a marker naming fewer fields must still find a ticket filed with
+// more (spec 11 §1) and a marker renders its fields in alphabetical order —
+// so `check=…` and `repo=…` are adjacent in one marker and separated in
+// another, and a phrase search for the pair would miss. GitHub requires every
+// term, which narrows; what actually decides is the body.
+func ghSearchExpression(repo string, m core.Marker) string {
+	parts := []string{"repo:" + repo, "is:issue", "in:body", strconv.Quote(core.MarkerPrefix + m.Kind)}
+	for _, field := range slices.Sorted(maps.Keys(m.Fields)) {
+		parts = append(parts, strconv.Quote(ghMarkerField(m.Kind, field, m.Fields[field])))
+	}
+	return strings.Join(parts, " ")
+}
+
+// ghMarkerField renders one of a marker's fields exactly as the marker itself
+// renders it, quoting included, so that the phrase searched for is the text
+// the body carries. It asks the marker rather than reimplementing the quoting,
+// because a search built from a second rendering would drift from the first.
+func ghMarkerField(kind, key, value string) string {
+	return strings.TrimPrefix(core.NewMarker(kind, key, value).String(), core.NewMarker(kind).String()+" ")
 }

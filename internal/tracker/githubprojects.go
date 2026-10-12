@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/17twenty/flow/internal/core"
 )
@@ -98,6 +99,21 @@ type GitHubProjects struct {
 	// the client was built with.
 	graphQL string
 	site    string
+
+	// mu guards filed, which is what flow has put in the tracker during
+	// this process. GitHub's search index lags behind its writes by
+	// seconds to minutes, and a doctor run that filed a follow-up and
+	// then asked whether one existed would otherwise file a second
+	// (spec 07 §4).
+	mu    sync.Mutex
+	filed []ghFiled
+}
+
+// ghFiled is one follow-up this process filed: the marker it carries and the
+// ticket it became.
+type ghFiled struct {
+	marker core.Marker
+	ticket core.Ticket
 }
 
 // NewGitHubProjects returns an adapter for one project.
@@ -363,6 +379,20 @@ func (g *GitHubProjects) Observe(ctx context.Context, what string) (core.Observa
 		}
 		observation.Exists = true
 		observation.Items = project.Status.items()
+	case core.ItemTrackerLabels:
+		labels, err := g.labels(ctx)
+		if err != nil {
+			return core.Observation{}, core.Explain(err, "read the labels of %s", g.repo)
+		}
+		// A repository always has labels — GitHub gives a new one a
+		// starter set — so the observation exists even when the slice
+		// is empty, which is a repository somebody has emptied rather
+		// than one flow could not read.
+		observation.Exists = true
+		observation.Items = make([]core.Item, 0, len(labels))
+		for _, label := range labels {
+			observation.Items = append(observation.Items, label.item())
+		}
 	case core.ItemTrackerWIP, core.ItemTrackerExpedite:
 		// A column's limit and the expedite view are per-view settings
 		// the API does not report at all, which the declaration says by
@@ -372,7 +402,7 @@ func (g *GitHubProjects) Observe(ctx context.Context, what string) (core.Observa
 		// (spec 05 §4).
 		return observation, nil
 	default:
-		return core.Observation{}, notYet("observe %s", what)
+		return core.Observation{}, ghNoSuchItem("observe", what)
 	}
 	return observation.Canonical(), nil
 }
@@ -397,7 +427,8 @@ func (g *GitHubProjects) project(ctx context.Context) (ghProject, error) {
 	return *project, nil
 }
 
-// Apply makes one change to the board.
+// Apply makes one change to the board, or to the labels of the repository
+// whose issues it holds.
 //
 // The only thing flow changes about a board itself is its columns, and GitHub
 // has no way to change one. The options of a single-select field are written
@@ -406,12 +437,38 @@ func (g *GitHubProjects) project(ctx context.Context) (ghProject, error) {
 // pointing at the old one loses. So the whole dance lives behind this one
 // call — read what column every item is in, rewrite the set, put back
 // whatever the provider cleared, and read the board again to prove it
-// (spec 06 §4). Labels and the tickets they go on are item 3.11.
+// (spec 06 §4).
 func (g *GitHubProjects) Apply(ctx context.Context, c core.Change) (core.ApplyResult, error) {
-	if c.What != core.ItemTrackerStatusOptions {
-		return core.ApplyResult{}, notYet("change %s", c.What)
+	switch c.What {
+	case core.ItemTrackerStatusOptions:
+		return g.editColumns(ctx, c)
+	case core.ItemTrackerLabels:
+		return g.editLabel(ctx, c)
+	default:
+		return core.ApplyResult{}, ghNoSuchItem("change", c.What)
 	}
-	return g.editColumns(ctx, c)
+}
+
+// ghNoSuchItem refuses an item this adapter does not own. A tracker is asked
+// only about tracker items, so reaching this is a caller's mistake rather
+// than a gap in the adapter: every item the declaration claims is answered
+// above, including the two it answers by declining to verify.
+func ghNoSuchItem(verb, what string) error {
+	return core.Errorf(core.ErrValidation, "%s %s", verb, what).
+		WithWhy("a tracker has nothing called that").
+		WithFix("ask the tracker about one of %s", strings.Join(ghTrackerItems(), ", "))
+}
+
+// ghTrackerItems is every item a tracker answers for, in the order spec 03
+// declares them.
+func ghTrackerItems() []string {
+	return []string{
+		core.ItemTrackerProject,
+		core.ItemTrackerStatusOptions,
+		core.ItemTrackerLabels,
+		core.ItemTrackerWIP,
+		core.ItemTrackerExpedite,
+	}
 }
 
 // editColumns carries out one change to the board's columns.
@@ -923,6 +980,210 @@ func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID)
 	return nil
 }
 
+// repoed refuses an act that needs a repository when none is configured.
+// Labels and follow-ups are written to a repository, not to a board: a
+// project can hold issues from many, so there is no one repository to infer
+// from the board itself (spec 11 §2).
+func (g *GitHubProjects) repoed(format string, args ...any) error {
+	if g.repo != "" {
+		return nil
+	}
+	return core.Errorf(core.ErrValidation, format, args...).
+		WithWhy("no repository is set, and a label belongs to a repository rather than to a board").
+		WithFix("set repo to the owner/name whose issues the project holds")
+}
+
+// labels reads every label the repository has, a page at a time.
+func (g *GitHubProjects) labels(ctx context.Context) ([]ghLabel, error) {
+	if err := g.repoed("read the labels of %s", g.Slug()); err != nil {
+		return nil, err
+	}
+	var all []ghLabel
+	next := core.Request{
+		Path:  "repos/" + g.repo + "/labels",
+		Query: url.Values{"per_page": {strconv.Itoa(ghLabelPageSize)}},
+	}
+	for {
+		var page []ghLabel
+		next.Out = &page
+		res, err := g.do(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		link, ok := res.Links["next"]
+		if !ok || len(page) == 0 {
+			return all, nil
+		}
+		next = core.Request{Path: link}
+	}
+}
+
+// editLabel carries out one change to the repository's labels.
+//
+// GitHub identifies a label by its name in the path, so a rename is the one
+// edit that has to say both: the name it is reaching for and the name it
+// wants. The node id comes back on every answer and is what the lock records,
+// because a name is what a rename changes.
+func (g *GitHubProjects) editLabel(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	if err := g.repoed("%s the label %q", c.Op, c.Item.Name); err != nil {
+		return core.ApplyResult{}, err
+	}
+	switch c.Op {
+	case core.ChangeCreate:
+		return g.createLabel(ctx, c)
+	case core.ChangeUpdate:
+		return g.updateLabel(ctx, c)
+	case core.ChangeDelete:
+		return g.deleteLabel(ctx, c)
+	default:
+		return core.ApplyResult{}, core.Errorf(core.ErrValidation, "%s the label %q", c.Op, c.Item.Name).
+			WithWhy("flow has no such operation").
+			WithFix("use %s, %s or %s", core.ChangeCreate, core.ChangeUpdate, core.ChangeDelete)
+	}
+}
+
+// createLabel adds a label the repository has not got.
+//
+// It reads the labels first. GitHub answers a duplicate with 422, the same
+// status it uses for a name it will not take, and the two are a conflict and
+// a validation failure respectively — but the per-error code that tells them
+// apart is in a body the client does not hand back with the error. Reading
+// first is what makes the conflict apply relies on (spec 06 §4) reliable, and
+// it is what this adapter already does before every other write.
+func (g *GitHubProjects) createLabel(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	all, err := g.labels(ctx)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	if slices.ContainsFunc(all, func(l ghLabel) bool { return strings.EqualFold(l.Name, c.Item.Name) }) {
+		return core.ApplyResult{}, core.Errorf(core.ErrConflict, "create the label %q", c.Item.Name).
+			WithWhy("%s already has a label with that name", g.repo).
+			WithFix("flow will update it instead")
+	}
+	var made ghLabel
+	if _, err := g.do(ctx, core.Request{
+		Method: http.MethodPost,
+		Path:   "repos/" + g.repo + "/labels",
+		Body: ghLabelBody{
+			Name:        c.Item.Name,
+			Color:       ghLabelColourOf(c.Item),
+			Description: ghLabelDescriptionOf(c.Item),
+		},
+		Out: &made,
+	}); err != nil {
+		return core.ApplyResult{}, core.Explain(err, "create the label %q in %s", c.Item.Name, g.repo)
+	}
+	return core.ApplyResult{
+		Change: c,
+		Item:   made.item(),
+		Note:   fmt.Sprintf("added the label %q to %s", made.Name, g.repo),
+	}, nil
+}
+
+// updateLabel edits a label the repository has, renaming it when the change
+// carries a name the label it names has not got.
+func (g *GitHubProjects) updateLabel(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	// The change names the label it wants to exist; which label that is
+	// comes from the id the plan copied off the observation, because the
+	// name may be the very thing being changed.
+	current, err := g.labelOf(ctx, c.Item)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	// Only what the change names is sent. flow has no opinion about a
+	// label's colour or description, so an update that carries neither must
+	// leave both as they are: a rename that quietly repainted a label the
+	// team had chosen the colour of would be a change nobody asked for.
+	body := ghLabelBody{
+		Color:       ghLabelColour(c.Item),
+		Description: ghLabelDescriptionOf(c.Item),
+	}
+	if current.Name != c.Item.Name {
+		body.NewName = c.Item.Name
+	}
+	var edited ghLabel
+	if _, err := g.do(ctx, core.Request{
+		Method: http.MethodPatch,
+		Path:   "repos/" + g.repo + "/labels/" + url.PathEscape(current.Name),
+		Body:   body,
+		Out:    &edited,
+	}); err != nil {
+		return core.ApplyResult{}, core.Explain(err, "update the label %q in %s", current.Name, g.repo)
+	}
+	note := fmt.Sprintf("updated the label %q of %s", edited.Name, g.repo)
+	if body.NewName != "" {
+		note = fmt.Sprintf("renamed the label %q of %s to %q", current.Name, g.repo, edited.Name)
+	}
+	return core.ApplyResult{Change: c, Item: edited.item(), Note: note}, nil
+}
+
+// deleteLabel removes a label. GitHub takes it off every issue that carried
+// it, which is why only a label the lock records flow as having created is
+// ever proposed for removal (spec 06 §4).
+func (g *GitHubProjects) deleteLabel(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	current, err := g.labelOf(ctx, c.Item)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	if _, err := g.do(ctx, core.Request{
+		Method: http.MethodDelete,
+		Path:   "repos/" + g.repo + "/labels/" + url.PathEscape(current.Name),
+	}); err != nil {
+		return core.ApplyResult{}, core.Explain(err, "delete the label %q from %s", current.Name, g.repo)
+	}
+	return core.ApplyResult{
+		Change: c,
+		Item:   current.item(),
+		Note:   fmt.Sprintf("removed the label %q from %s", current.Name, g.repo),
+	}, nil
+}
+
+// labelOf finds the label a change is about: by node id when the change
+// carries one, because that survives a rename, and by name otherwise.
+func (g *GitHubProjects) labelOf(ctx context.Context, want core.Item) (ghLabel, error) {
+	all, err := g.labels(ctx)
+	if err != nil {
+		return ghLabel{}, err
+	}
+	if want.ID != "" {
+		if at := slices.IndexFunc(all, func(l ghLabel) bool { return l.NodeID == want.ID }); at >= 0 {
+			return all[at], nil
+		}
+	}
+	if at := slices.IndexFunc(all, func(l ghLabel) bool { return l.Name == want.Name }); at >= 0 {
+		return all[at], nil
+	}
+	return ghLabel{}, core.Errorf(core.ErrNotFound, "find the label %q in %s", want.Name, g.repo).
+		WithWhy("the repository has no such label").
+		WithFix("run flow plan again: the label was there when the plan was made")
+}
+
+// ghLabelColour is the colour a change asks for, as GitHub writes one, or
+// empty when the change asks for no colour at all.
+func ghLabelColour(item core.Item) string {
+	return strings.ToLower(strings.TrimPrefix(item.Field(ghLabelColourField), "#"))
+}
+
+// ghLabelColourOf is the colour a change asks for, or flow's default, which
+// is what a label GitHub's own UI makes gets.
+func ghLabelColourOf(item core.Item) string {
+	if colour := ghLabelColour(item); colour != "" {
+		return colour
+	}
+	return ghDefaultLabelColour
+}
+
+// ghLabelDescriptionOf is the description a change asks for, or nil when it
+// says nothing about one. Nil leaves whatever is there: a configuration that
+// names a label is not thereby asking for its description to be erased.
+func ghLabelDescriptionOf(item core.Item) *string {
+	if text := item.Field(ghLabelDescriptionField); text != "" {
+		return &text
+	}
+	return nil
+}
+
 // numbered refuses an act that needs a board when no board number is set.
 // Setup runs before there is one, and saying which setting is missing is more
 // use than a query against project zero.
@@ -935,29 +1196,313 @@ func (g *GitHubProjects) numbered(format string, args ...any) error {
 		WithFix("set tracker.project to the number in the project's web address")
 }
 
-// CreateFollowUp files a ticket for work flow cannot do. Plan item 3.11.
+// CreateFollowUp files a ticket for work flow cannot do, or returns the one
+// it filed before.
+//
+// The marker search runs first, every time: a doctor run that filed a second
+// ticket for the same check every day would be worse than the thing it was
+// reporting (spec 07 §4). The ticket is then put on the board, which is the
+// one place flow adds an issue to a project — a follow-up nobody can see on
+// the board is a follow-up nobody will do.
 func (g *GitHubProjects) CreateFollowUp(ctx context.Context, f core.FollowUp) (core.Ticket, error) {
-	return core.Ticket{}, notYet("file the follow-up %q", f.Title)
+	if f.Marker.IsZero() {
+		return core.Ticket{}, core.Errorf(core.ErrValidation, "file a follow-up").
+			WithWhy("it carries no marker, so flow could never find it again").
+			WithFix("give the follow-up a marker")
+	}
+	if err := g.repoed("file the follow-up %q", f.Title); err != nil {
+		return core.Ticket{}, err
+	}
+	if found, err := g.FindFollowUp(ctx, f.Marker); err != nil {
+		return core.Ticket{}, err
+	} else if found != nil {
+		return *found, nil
+	}
+
+	owner, name, ok := strings.Cut(g.repo, "/")
+	if !ok {
+		return core.Ticket{}, core.Errorf(core.ErrValidation, "file the follow-up %q", f.Title).
+			WithWhy("%q is not an owner/name repository", g.repo).
+			WithFix("set repo to the owner/name whose issues the project holds")
+	}
+	repo, err := core.GraphQL[ghRepoResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghRepoQuery,
+		Variables: map[string]any{"owner": owner, "name": name},
+	}, ghSentinel)
+	if err != nil {
+		return core.Ticket{}, core.Explain(err, "read %s to file the follow-up %q", g.repo, f.Title)
+	}
+	if repo.Repository == nil {
+		return core.Ticket{}, core.Errorf(core.ErrNotFound, "file the follow-up %q", f.Title).
+			WithWhy("%s is not there, or the credential cannot see it", g.repo).
+			WithFix("check repo and that the credential may read it")
+	}
+
+	// A label the repository has not got is left off rather than failing
+	// the filing. The labels are how people find flow's follow-ups, not
+	// what makes one true, and the item that creates them is a separate
+	// change that apply may not have reached yet (spec 06 §3).
+	labels := make([]string, 0, len(f.Labels))
+	for _, want := range f.Labels {
+		for _, have := range repo.Repository.Labels.Nodes {
+			if strings.EqualFold(have.Name, want) {
+				labels = append(labels, have.ID)
+				break
+			}
+		}
+	}
+	assignees, err := g.assignee(ctx, f.Assignee)
+	if err != nil {
+		return core.Ticket{}, err
+	}
+
+	filed, err := core.GraphQL[ghCreateIssueResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query: ghCreateIssueMutation,
+		Variables: map[string]any{
+			"repo":      repo.Repository.ID,
+			"title":     f.Title,
+			"body":      core.MarkBody(f.Body, f.Marker, true),
+			"labels":    labels,
+			"assignees": assignees,
+		},
+	}, ghSentinel)
+	if err != nil {
+		return core.Ticket{}, core.Explain(err, "file the follow-up %q in %s", f.Title, g.repo)
+	}
+	if filed.CreateIssue.Issue == nil {
+		return core.Ticket{}, core.Errorf(core.ErrUnavailable, "file the follow-up %q", f.Title).
+			WithWhy("%s accepted the issue but did not say which one it is", g.Slug())
+	}
+	ticket := ghTicket(*filed.CreateIssue.Issue, ghItemFields{}, g.repo)
+	if err := g.addToBoard(ctx, ticket); err != nil {
+		return core.Ticket{}, err
+	}
+	g.remember(f.Marker, ticket)
+	return ticket, nil
 }
 
-// FindFollowUp returns the ticket carrying a marker. Plan item 3.11.
+// assignee turns a login into the id list createIssue takes. A login GitHub
+// does not know is left unassigned: the owner comes from configuration
+// (spec 07 §4), and a typo there must not stop the follow-up being filed —
+// an unassigned ticket somebody can see beats no ticket at all.
+func (g *GitHubProjects) assignee(ctx context.Context, login string) ([]string, error) {
+	if login == "" {
+		return nil, nil
+	}
+	user, err := core.GraphQL[ghUserResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghUserQuery,
+		Variables: map[string]any{"login": strings.TrimPrefix(login, "@")},
+	}, ghSentinel)
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, core.Explain(err, "find out who %s is", login)
+	}
+	if user.User == nil {
+		return nil, nil
+	}
+	return []string{user.User.ID}, nil
+}
+
+// addToBoard puts a filed follow-up on the project. GitHub answers with the
+// item that was already there when the content is already on the board, so
+// this is safe to repeat; a board flow has no number for is skipped, because
+// setup has not chosen one yet.
+func (g *GitHubProjects) addToBoard(ctx context.Context, ticket core.Ticket) error {
+	if g.number == 0 {
+		return nil
+	}
+	project, err := g.project(ctx)
+	if err != nil {
+		return core.Explain(err, "put %s on %s", ticket.Key, g.Slug())
+	}
+	if !project.Exists {
+		return core.Errorf(core.ErrNotFound, "put %s on %s", ticket.Key, g.Slug()).
+			WithWhy("the project is not there").
+			WithFix("set tracker.project to the number in the project's web address")
+	}
+	if _, err := core.GraphQL[ghAddItemResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghAddItemMutation,
+		Variables: map[string]any{"project": project.ID, "content": ticket.ID},
+	}, ghSentinel); err != nil {
+		return core.Explain(err, "put %s on %s", ticket.Key, g.Slug())
+	}
+	return nil
+}
+
+// FindFollowUp returns the ticket carrying a marker, or nil.
+//
+// The search only narrows. GitHub's index decides which issues are worth
+// looking at, and then every candidate's own body is read and matched, so an
+// index that answers with too much is harmless; the body is the truth and the
+// query is a filter over it.
+//
+// What the index cannot do is answer about an issue filed a moment ago —
+// indexing lags by seconds to minutes — so flow also remembers what it filed
+// in this process. That is exactly the window in which a second filing would
+// happen: one doctor run that files a follow-up and then asks again.
 func (g *GitHubProjects) FindFollowUp(ctx context.Context, m core.Marker) (*core.Ticket, error) {
-	return nil, notYet("find the follow-up marked %s", m)
+	if m.IsZero() {
+		return nil, core.Errorf(core.ErrValidation, "find a follow-up").
+			WithWhy("no marker was given, and a marker is the only thing that identifies one").
+			WithFix("search for a marker such as %s", core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip"))
+	}
+	if err := g.repoed("find the follow-up marked %s", m); err != nil {
+		return nil, err
+	}
+	if found, ok := g.recall(m); ok {
+		return &found, nil
+	}
+	data, err := core.GraphQL[ghSearchResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghSearchQuery,
+		Variables: map[string]any{"query": ghSearchExpression(g.repo, m), "first": ghSearchPage},
+	}, ghSentinel)
+	if err != nil {
+		return nil, core.Explain(err, "find the follow-up marked %s", m)
+	}
+	for _, issue := range data.Search.Nodes {
+		if core.HasMarker(issue.Body, m) {
+			ticket := ghTicket(issue, ghItemFields{}, g.repo)
+			return &ticket, nil
+		}
+	}
+	return nil, nil
 }
 
-// Comment writes a marked comment on a ticket. Plan item 3.11.
+// remember records a ticket flow filed, so that a search run before GitHub's
+// index has caught up still finds it.
+func (g *GitHubProjects) remember(m core.Marker, ticket core.Ticket) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.filed = append(g.filed, ghFiled{marker: m, ticket: ticket})
+}
+
+// recall returns a ticket flow filed in this process whose marker the search
+// matches. The match is the marker's own, so a search naming fewer fields
+// finds what a fuller marker filed (spec 11 §1).
+func (g *GitHubProjects) recall(m core.Marker) (core.Ticket, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, filed := range g.filed {
+		if m.Matches(filed.marker) {
+			return filed.ticket, true
+		}
+	}
+	return core.Ticket{}, false
+}
+
+// Comment writes a marked comment on a ticket, editing the one already
+// carrying that marker rather than adding another.
+//
+// Six weeks of weekly nudging is one comment that keeps changing, not six
+// comments (spec 07 §4), so the comments are read first and the marker
+// decides which — if any — is flow's.
 func (g *GitHubProjects) Comment(ctx context.Context, key string, m core.Marker, body string) error {
-	return notYet("comment on %s", key)
+	owner, name, number, err := ghParseKey(key, g.repo)
+	if err != nil {
+		return err
+	}
+	issueID, existing, err := g.findComment(ctx, owner, name, number, key, m)
+	if err != nil {
+		return err
+	}
+	marked := core.MarkBody(body, m, true)
+	if existing != "" {
+		if _, err := core.GraphQL[ghMutationResult](ctx, g.client, g.request(), core.GraphQLQuery{
+			Query:     ghUpdateCommentMutation,
+			Variables: map[string]any{"comment": existing, "body": marked},
+		}, ghSentinel); err != nil {
+			return core.Explain(err, "edit flow's comment on %s", key)
+		}
+		return nil
+	}
+	if _, err := core.GraphQL[ghMutationResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghAddCommentMutation,
+		Variables: map[string]any{"subject": issueID, "body": marked},
+	}, ghSentinel); err != nil {
+		return core.Explain(err, "comment on %s", key)
+	}
+	return nil
 }
 
-// Close closes a ticket, recording why. Plan item 3.11.
+// findComment returns the issue's id and the id of the comment carrying the
+// marker, empty when there is none. It reads every page: flow's comment is
+// the oldest one on a ticket that has been nudged for weeks.
+func (g *GitHubProjects) findComment(ctx context.Context, owner, name string, number int, key string, m core.Marker) (string, string, error) {
+	var after any
+	issueID := ""
+	for {
+		data, err := core.GraphQL[ghCommentsResult](ctx, g.client, g.request(), core.GraphQLQuery{
+			Query: ghCommentsQuery,
+			Variables: map[string]any{
+				"owner": owner, "name": name, "number": number,
+				"first": ghCommentPage, "after": after,
+			},
+		}, ghSentinel)
+		if err != nil {
+			return "", "", core.Explain(err, "read the comments on %s", key)
+		}
+		if data.Repository == nil || data.Repository.Issue == nil {
+			return "", "", core.Errorf(core.ErrNotFound, "comment on %s", key).
+				WithWhy("%s/%s has no issue %d", owner, name, number)
+		}
+		issue := data.Repository.Issue
+		issueID = issue.ID
+		for _, comment := range issue.Comments.Nodes {
+			if core.HasMarker(comment.Body, m) {
+				return issueID, comment.ID, nil
+			}
+		}
+		if !issue.Comments.PageInfo.HasNextPage || issue.Comments.PageInfo.EndCursor == "" {
+			return issueID, "", nil
+		}
+		after = issue.Comments.PageInfo.EndCursor
+	}
+}
+
+// Close closes a ticket, recording why.
+//
+// A ticket already closed is left exactly as it is. Doctor runs daily, and
+// closing a closed ticket again would move the moment the work was finished —
+// which is what spec 07 §6 reads to decide whether a follow-up is overdue.
 func (g *GitHubProjects) Close(ctx context.Context, key string, reason string) error {
-	return notYet("close %s", key)
+	ticket, _, err := g.ticket(ctx, key)
+	if err != nil {
+		return err
+	}
+	if ticket.Closed {
+		return nil
+	}
+	if _, err := core.GraphQL[ghMutationResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghCloseIssueMutation,
+		Variables: map[string]any{"issue": ticket.ID, "reason": ghStateReason(reason)},
+	}, ghSentinel); err != nil {
+		return core.Explain(err, "close %s", key)
+	}
+	return nil
 }
 
-// Reopen reopens a closed ticket, recording why. Plan item 3.11.
+// Reopen reopens a closed ticket.
+//
+// GitHub records nothing about why an issue was reopened, so the reason is
+// not sent: the engine writes it as a comment of its own, which is evidence
+// somebody can read rather than a field nobody can (spec 07 §4).
 func (g *GitHubProjects) Reopen(ctx context.Context, key string, reason string) error {
-	return notYet("reopen %s", key)
+	ticket, _, err := g.ticket(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !ticket.Closed {
+		return nil
+	}
+	if _, err := core.GraphQL[ghMutationResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghReopenIssueMutation,
+		Variables: map[string]any{"issue": ticket.ID},
+	}, ghSentinel); err != nil {
+		return core.Explain(err, "reopen %s", key)
+	}
+	return nil
 }
 
 // LinkedKeys returns the ticket keys a pull request is for.
@@ -991,15 +1536,6 @@ func (g *GitHubProjects) decorate(r core.Request) core.Request {
 	header.Set("X-GitHub-Api-Version", ghAPIVersion)
 	r.Header = header
 	return r
-}
-
-// notYet is the refusal of a method whose plan item has not landed. It names
-// itself so that a caller reaching it says what it wanted rather than failing
-// blankly.
-func notYet(format string, args ...any) error {
-	return core.Errorf(core.ErrUnsupported, format, args...).
-		WithWhy("the github-projects adapter does not do that yet").
-		WithFix("this is a gap in flow, not in your configuration; see the plan")
 }
 
 // GitHubProjects is a tracker.

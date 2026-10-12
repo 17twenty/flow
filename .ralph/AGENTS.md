@@ -51,3 +51,5 @@ CURRENT MODE: direct
 - `govulncheck` was clean only because nothing imported `net/http`. The first real HTTP client turned ten stdlib advisories reachable at once. Expect a `go.mod` bump with the first use of a new stdlib area, and run govulncheck before claiming the item is done.
 - `http.Header` literals in tests do not work: `Get`/`Values` canonicalise, so `http.Header{"X-RateLimit-Limit": …}` is never found (canonical is `X-Ratelimit-Limit`). Build test headers with `Set`.
 - A transport guard must refuse without retrying. The retry loop happily asked the guard four times before the test noticed.
+- A paging test only proves paging if the thing searched for is beyond page 1. Seed the decoys first, the target last, or a read-only-the-first-page mutant survives.
+- A surviving mutant is a gap in the tests, never a harmless mutation. `ghLabelDescriptionOf` returning `&""` survived: nothing asserted that a rename leaves a description alone.

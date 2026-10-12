@@ -332,3 +332,36 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   seven days, which is enough to renew deliberately rather than in a hurry on
   the morning a check turns red; an attestation inside it still passes and
   carries the renewal command.
+- **§4 the marker search runs before every filing, and flow remembers its own
+  (item 3.11).** GitHub's search index is seconds to minutes behind its
+  writes, which is exactly the span of one doctor run: file a follow-up, ask
+  the index whether one exists, be told no, file it again. So the adapter
+  keeps what it filed in this process and answers from that first. The marker
+  in the body stays the truth — the search is only a filter over it, and every
+  candidate's body is checked — because an index that answers with too much is
+  harmless and one that answers late is not.
+- **§4 a follow-up is put on the board as it is filed (item 3.11).** Filing
+  ends with `addProjectV2ItemById`, which is the only place flow adds an issue
+  to a project. A follow-up that is not on the board is a ticket nobody is
+  looking at, and the lifecycle in §4 assumes somebody will see it. A board
+  flow has no number for yet is skipped rather than refused: setup files
+  follow-ups before it has chosen one.
+- **§4 a label or owner the forge has not got is left off, not fatal (item
+  3.11).** `followups.labels` may name a label the apply that creates it has
+  not reached, and `followups.owners` may name somebody who has left. Both are
+  how people find flow's follow-ups rather than what makes one true, so an
+  unlabelled, unassigned ticket somebody can see beats no ticket at all.
+- **§4 nudging is one comment that keeps changing (item 3.11).** "nudge
+  comment ≤ 1/7d" is read as one marked comment edited in place, not a weekly
+  new one: six weeks of a thing being wrong should read as one conversation.
+  The ticket's comments are read through every page before writing, since
+  flow's is the oldest on a ticket that has been nudged for weeks.
+- **§4 closing a closed ticket writes nothing (item 3.11).** Doctor runs
+  daily, and a second close would move `closedAt` — which §6 reads to decide
+  whether a follow-up is overdue, so repeating the close would make a stale
+  follow-up look permanently fresh. Reopening an open ticket is likewise no
+  work.
+- **§4 the reason a ticket was reopened is a comment, not a field (item
+  3.11).** GitHub records nothing about why an issue was reopened. Rather than
+  drop the reason, the engine writes it where a human can read it; the adapter
+  takes the reason and does not pretend to store it.

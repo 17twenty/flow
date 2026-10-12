@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,14 +64,44 @@ type ghProjectsFake struct {
 	// every option it creates is a new one.
 	optionsMade int
 
+	// labelPageSize is how many labels one page of the REST endpoint
+	// carries, kept small so that an adapter which read the first page
+	// and stopped fails here.
+	labelPageSize int
+	// commentPageSize is the same for an issue's comments. blind makes the
+	// search index answer with nothing at all, which is the index as it is
+	// for the minutes after an issue is filed; loose makes it answer with
+	// every issue in the repository, which is the index being an index
+	// rather than a matcher.
+	commentPageSize int
+	blind           bool
+	loose           bool
+
 	mu      sync.Mutex
 	queries []string
 	paths   []string
+	// labels are the repository's labels, in the order REST returns them,
+	// and labelsMade counts the ids issued so that every label created is
+	// a new one.
+	labels     []ghLabel
+	labelsMade int
+	// comments are each issue's comments by issue number, and issuesMade
+	// and commentsMade count what the fake has created, so that every id
+	// it issues is a new one.
+	comments     map[int][]*ghFakeComment
+	issuesMade   int
+	commentsMade int
 	// items are the board's items, and now the clock a mutation moves. An
 	// item's updatedAt changes when its field value does, which is how a
 	// move that should not have happened is caught.
 	items []*ghFakeItem
 	now   time.Time
+}
+
+// ghFakeComment is one comment on an issue.
+type ghFakeComment struct {
+	id   string
+	body string
 }
 
 // ghFakeItem is one item of the board: an issue, where it currently sits, and
@@ -83,10 +114,13 @@ type ghFakeItem struct {
 	ticket    core.Ticket
 	// repo is the repository the issue is in, empty for the board's own,
 	// and parentRepo the same for its parent. draft is an item holding
-	// something that is not an issue at all.
+	// something that is not an issue at all, and offBoard an issue the
+	// repository has that the project does not hold — which is what an
+	// issue looks like between being filed and being added.
 	repo       string
 	parentRepo string
 	draft      bool
+	offBoard   bool
 }
 
 // in returns the repository an item's issue is in, which is the board's own
@@ -105,14 +139,17 @@ func (i *ghFakeItem) in(here string) string {
 func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProjectsFake, *httptest.Server) {
 	t.Helper()
 	fake := &ghProjectsFake{
-		owner:     ghFixtureOwner,
-		ownerType: OwnerUser,
-		options:   map[int][]ghStatusOption{},
-		columns:   map[string]string{},
-		repo:      ghFixtureOwner + "/widget",
-		pageSize:  2,
-		scopes:    ghScopesOf(fx.Permissions),
-		now:       coretest.ContractNow,
+		owner:           ghFixtureOwner,
+		ownerType:       OwnerUser,
+		options:         map[int][]ghStatusOption{},
+		columns:         map[string]string{},
+		comments:        map[int][]*ghFakeComment{},
+		repo:            ghFixtureOwner + "/widget",
+		pageSize:        2,
+		labelPageSize:   1,
+		commentPageSize: 1,
+		scopes:          ghScopesOf(fx.Permissions),
+		now:             coretest.ContractNow,
 	}
 	for i, candidate := range fx.Candidates[core.ItemTrackerProject] {
 		node := ghProjectNode{
@@ -139,6 +176,14 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 			option.Description = "what " + item.Name + " means"
 		}
 		fake.options[1] = append(fake.options[1], option)
+	}
+	for _, item := range fx.Observations[core.ItemTrackerLabels].Items {
+		fake.labels = append(fake.labels, ghLabel{
+			NodeID:      item.ID,
+			Name:        item.Name,
+			Color:       item.Field("color"),
+			Description: item.Field("description"),
+		})
 	}
 	for id, name := range fx.Columns {
 		fake.columns[string(id)] = name
@@ -197,11 +242,16 @@ func (f *ghProjectsFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.scopes != nil {
 		w.Header().Set(ghScopeHeader, *f.scopes)
 	}
-	switch strings.Trim(r.URL.Path, "/") {
-	case "graphql":
+	path := strings.Trim(r.URL.Path, "/")
+	switch {
+	case path == "graphql":
 		f.graphQL(w, r)
-	case "user":
+	case path == "user":
 		f.writeJSON(w, http.StatusOK, map[string]any{"login": f.owner})
+	case path == "repos/"+f.repo+"/labels":
+		f.labelsEndpoint(w, r)
+	case strings.HasPrefix(path, "repos/"+f.repo+"/labels/"):
+		f.labelEndpoint(w, r, strings.TrimPrefix(path, "repos/"+f.repo+"/labels/"))
 	default:
 		f.fail(w, http.StatusNotFound, "Not Found")
 	}
@@ -231,9 +281,33 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		f.mutate(w, query)
 		return
 	}
-	if strings.Contains(query.Query, "repository(owner:") {
+	if strings.Contains(query.Query, "search(query:") {
 		f.writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{"repository": f.issueLookup(query.Variables)},
+			"data": map[string]any{"search": f.search(query.Variables)},
+		})
+		return
+	}
+	if strings.Contains(query.Query, "repository(owner:") {
+		// Three documents ask about a repository, and what tells them
+		// apart is what they ask for: the issue's board items, its
+		// comments, or the repository's own id.
+		var answer any
+		switch {
+		case strings.Contains(query.Query, "projectItems("):
+			answer = f.issueLookup(query.Variables)
+		case strings.Contains(query.Query, "comments(first:"):
+			answer = f.commentPage(query.Variables)
+		default:
+			answer = f.repoLookup(query.Variables)
+		}
+		f.writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{"repository": answer},
+		})
+		return
+	}
+	if strings.Contains(query.Query, "user(login:$login){id}") {
+		f.writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{"user": f.userLookup(query.Variables)},
 		})
 		return
 	}
@@ -335,13 +409,19 @@ func (f *ghProjectsFake) project(variables map[string]any) any {
 	return nil
 }
 
-// count is how many items the board says it holds: the ones the fake has,
-// unless a test has claimed a board too big to hold in one.
+// count is how many items the board says it holds: the ones the fake has that
+// the project holds, unless a test has claimed a board too big to hold in one.
 func (f *ghProjectsFake) count() int {
 	if f.totalItems > 0 {
 		return f.totalItems
 	}
-	return len(f.items)
+	held := 0
+	for _, item := range f.items {
+		if !item.offBoard {
+			held++
+		}
+	}
+	return held
 }
 
 // ghNodeJSON renders one project as GitHub's connection does.
@@ -417,7 +497,16 @@ func (f *ghProjectsFake) itemPage(variables map[string]any) any {
 			from = n
 		}
 	}
-	rest := f.items[min(from, len(f.items)):]
+	// Only what the project holds. An issue the repository has and the
+	// board has not is not an item at all, which is what a follow-up
+	// looks like until it is added.
+	board := make([]*ghFakeItem, 0, len(f.items))
+	for _, item := range f.items {
+		if !item.offBoard {
+			board = append(board, item)
+		}
+	}
+	rest := board[min(from, len(board)):]
 	more := len(rest) > f.pageSize
 	if more {
 		rest = rest[:f.pageSize]
@@ -458,6 +547,11 @@ func (f *ghProjectsFake) issueLookup(variables map[string]any) any {
 			continue
 		}
 		doc := f.issueJSON(item)
+		if item.offBoard {
+			// The repository has the issue; no project holds it.
+			doc["projectItems"] = map[string]any{"nodes": []any{}}
+			return map[string]any{"issue": doc}
+		}
 		node := f.itemJSON(item)
 		node["project"] = map[string]any{"number": 1}
 		// The issue is on another board too, so that an adapter taking
@@ -490,6 +584,16 @@ func (f *ghProjectsFake) mutate(w http.ResponseWriter, query core.GraphQLQuery) 
 		f.setItemValue(w, query)
 	case strings.Contains(query.Query, ghUpdateFieldOp):
 		f.rewriteOptions(w, query)
+	case strings.Contains(query.Query, "createIssue(input:"):
+		f.createIssue(w, query)
+	case strings.Contains(query.Query, "addProjectV2ItemById(input:"):
+		f.addItem(w, query)
+	case strings.Contains(query.Query, "addComment(input:"):
+		f.addComment(w, query)
+	case strings.Contains(query.Query, "updateIssueComment(input:"):
+		f.updateComment(w, query)
+	case strings.Contains(query.Query, "closeIssue(input:"), strings.Contains(query.Query, "reopenIssue(input:"):
+		f.setIssueState(w, query)
 	default:
 		f.refuse(w, "NOT_IMPLEMENTED", "the fake knows no such mutation")
 	}
@@ -744,4 +848,439 @@ func (f *ghProjectsFake) mutations(op string) int {
 		}
 	}
 	return count
+}
+
+// labelsEndpoint is REST's collection of a repository's labels: GET lists
+// them a page at a time, POST adds one.
+func (f *ghProjectsFake) labelsEndpoint(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		f.listLabels(w, r)
+	case http.MethodPost:
+		f.createLabel(w, r)
+	default:
+		f.fail(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+	}
+}
+
+// listLabels answers one page, with a Link header when there is another. It
+// pages at the fake's own small size whatever per_page asked for, because a
+// server is entitled to answer with fewer than it was asked for and an
+// adapter that assumed otherwise would stop early against a real one.
+func (f *ghProjectsFake) listLabels(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	all := slices.Clone(f.labels)
+	f.mu.Unlock()
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size := f.labelPageSize
+	from := (page - 1) * size
+	if from > len(all) {
+		from = len(all)
+	}
+	to := min(from+size, len(all))
+	if to < len(all) {
+		next := *r.URL
+		query := next.Query()
+		query.Set("page", strconv.Itoa(page+1))
+		next.RawQuery = query.Encode()
+		next.Scheme, next.Host = "http", r.Host
+		w.Header().Set("Link", `<`+next.String()+`>; rel="next"`)
+	}
+	f.writeJSON(w, http.StatusOK, all[from:to])
+}
+
+// createLabel adds a label, or refuses the way GitHub refuses a duplicate:
+// 422, with the per-error code that says it is already there.
+func (f *ghProjectsFake) createLabel(w http.ResponseWriter, r *http.Request) {
+	var body ghLabelBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the body is not JSON")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if slices.ContainsFunc(f.labels, func(l ghLabel) bool { return strings.EqualFold(l.Name, body.Name) }) {
+		f.writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"message": "Validation Failed",
+			"errors":  []any{map[string]any{"resource": "Label", "code": "already_exists", "field": "name"}},
+		})
+		return
+	}
+	f.labelsMade++
+	made := ghLabel{
+		NodeID: "LA_made_" + strconv.Itoa(f.labelsMade),
+		Name:   body.Name,
+		Color:  body.Color,
+	}
+	if body.Description != nil {
+		made.Description = *body.Description
+	}
+	f.labels = append(f.labels, made)
+	f.writeJSON(w, http.StatusCreated, made)
+}
+
+// labelEndpoint is one label by name: PATCH edits or renames it, DELETE
+// removes it, and a name the repository has not got is 404.
+func (f *ghProjectsFake) labelEndpoint(w http.ResponseWriter, r *http.Request, raw string) {
+	name, err := url.PathUnescape(raw)
+	if err != nil {
+		f.fail(w, http.StatusBadRequest, "the label name is not a path segment")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := slices.IndexFunc(f.labels, func(l ghLabel) bool { return l.Name == name })
+	if at < 0 {
+		f.fail(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	switch r.Method {
+	case http.MethodPatch:
+		var body ghLabelBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			f.fail(w, http.StatusBadRequest, "the body is not JSON")
+			return
+		}
+		if body.NewName != "" {
+			f.labels[at].Name = body.NewName
+		}
+		if body.Color != "" {
+			f.labels[at].Color = body.Color
+		}
+		if body.Description != nil {
+			f.labels[at].Description = *body.Description
+		}
+		f.writeJSON(w, http.StatusOK, f.labels[at])
+	case http.MethodDelete:
+		f.labels = slices.Delete(f.labels, at, at+1)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		f.fail(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+	}
+}
+
+// ghFakeRepoID is the node id of the repository the board's issues live in,
+// and ghFakeUserID the id of a login GitHub knows.
+const (
+	ghFakeRepoID = "R_widget"
+	ghFakeUserID = "U_maintainer"
+)
+
+// repoLookup answers the query that filing an issue begins with: the
+// repository's own id, and the labels a follow-up names by name.
+func (f *ghProjectsFake) repoLookup(variables map[string]any) any {
+	owner, _ := variables["owner"].(string)
+	name, _ := variables["name"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !strings.EqualFold(owner+"/"+name, f.repo) {
+		return nil
+	}
+	nodes := make([]any, 0, len(f.labels))
+	for _, label := range f.labels {
+		nodes = append(nodes, map[string]any{"id": label.NodeID, "name": label.Name})
+	}
+	return map[string]any{"id": ghFakeRepoID, "labels": map[string]any{"nodes": nodes}}
+}
+
+// userLookup answers the assignee query. Only the board's owner and a
+// maintainer are people here; anybody else is a null user, which is what
+// GitHub answers for a login nobody has.
+func (f *ghProjectsFake) userLookup(variables map[string]any) any {
+	login, _ := variables["login"].(string)
+	if login != f.owner && login != "maintainer" {
+		return nil
+	}
+	return map[string]any{"id": ghFakeUserID}
+}
+
+// search answers the marker hunt. It honours the repo: filter and requires
+// every quoted phrase to be in the issue's body, which is roughly what
+// GitHub's index does — and then answers with the whole issue, because the
+// adapter is entitled to check the body itself.
+//
+// A blind fake answers with nothing at all, which is the index as it is for
+// the minutes after an issue is filed.
+func (f *ghProjectsFake) search(variables map[string]any) any {
+	expression, _ := variables["query"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	nodes := []any{}
+	if f.blind {
+		return map[string]any{"nodes": nodes}
+	}
+	phrases := ghQuotedPhrases(expression)
+	for _, item := range f.items {
+		if item.draft || !strings.Contains(expression, "repo:"+item.in(f.repo)+" ") {
+			continue
+		}
+		if f.loose || ghContainsAll(item.ticket.Body, phrases) {
+			nodes = append(nodes, f.issueJSON(item))
+		}
+	}
+	return map[string]any{"nodes": nodes}
+}
+
+// ghContainsAll reports whether text carries every phrase.
+func ghContainsAll(text string, phrases []string) bool {
+	for _, phrase := range phrases {
+		if !strings.Contains(text, phrase) {
+			return false
+		}
+	}
+	return true
+}
+
+// ghQuotedPhrases pulls the quoted phrases out of a search expression.
+func ghQuotedPhrases(expression string) []string {
+	var phrases []string
+	rest := expression
+	for {
+		_, after, ok := strings.Cut(rest, `"`)
+		if !ok {
+			return phrases
+		}
+		phrase, remainder, closed := strings.Cut(after, `"`)
+		if !closed {
+			return phrases
+		}
+		if unquoted, err := strconv.Unquote(`"` + phrase + `"`); err == nil {
+			phrase = unquoted
+		}
+		phrases = append(phrases, phrase)
+		rest = remainder
+	}
+}
+
+// createIssue files an issue in the repository. It is not on the board: a
+// project holds an issue only once something adds it, which is the next
+// mutation flow sends.
+func (f *ghProjectsFake) createIssue(w http.ResponseWriter, query core.GraphQLQuery) {
+	repo, _ := query.Variables["repo"].(string)
+	title, _ := query.Variables["title"].(string)
+	body, _ := query.Variables["body"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if repo != ghFakeRepoID {
+		f.refuse(w, "NOT_FOUND", "no repository "+repo)
+		return
+	}
+	f.issuesMade++
+	number := 100 + f.issuesMade
+	item := &ghFakeItem{
+		id:        "PVTI_" + strconv.Itoa(number),
+		number:    number,
+		updatedAt: f.now,
+		offBoard:  true,
+		ticket: core.Ticket{
+			Key:       "#" + strconv.Itoa(number),
+			ID:        "I_" + strconv.Itoa(number),
+			URL:       "https://github.com/" + f.repo + "/issues/" + strconv.Itoa(number),
+			Title:     title,
+			Body:      body,
+			Labels:    f.labelNames(query.Variables["labels"]),
+			Assignees: f.assigneeLogins(query.Variables["assignees"]),
+			UpdatedAt: f.now,
+		},
+	}
+	f.items = append(f.items, item)
+	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"createIssue": map[string]any{"issue": f.issueJSON(item)},
+	}})
+}
+
+// labelNames turns the label ids a filing sent into the names they stand for.
+func (f *ghProjectsFake) labelNames(raw any) []string {
+	ids, _ := raw.([]any)
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		for _, label := range f.labels {
+			if label.NodeID == id {
+				names = append(names, label.Name)
+			}
+		}
+	}
+	return names
+}
+
+// assigneeLogins turns the assignee ids a filing sent into logins.
+func (f *ghProjectsFake) assigneeLogins(raw any) []string {
+	ids, _ := raw.([]any)
+	logins := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == ghFakeUserID {
+			logins = append(logins, "maintainer")
+		}
+	}
+	return logins
+}
+
+// addItem puts an issue on the board. Adding content the project already
+// holds answers with the item that is already there, as GitHub does.
+func (f *ghProjectsFake) addItem(w http.ResponseWriter, query core.GraphQLQuery) {
+	project, _ := query.Variables["project"].(string)
+	content, _ := query.Variables["content"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.projects) == 0 || project != f.projects[0].ID {
+		f.refuse(w, "NOT_FOUND", "no project "+project)
+		return
+	}
+	for _, item := range f.items {
+		if item.ticket.ID != content {
+			continue
+		}
+		item.offBoard = false
+		f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"addProjectV2ItemById": map[string]any{"item": map[string]any{"id": item.id}},
+		}})
+		return
+	}
+	f.refuse(w, "NOT_FOUND", "no content "+content)
+}
+
+// commentPage answers one page of an issue's comments, with the issue's id.
+func (f *ghProjectsFake) commentPage(variables map[string]any) any {
+	owner, _ := variables["owner"].(string)
+	name, _ := variables["name"].(string)
+	raw, ok := variables["number"].(float64)
+	if !ok {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.serves(owner + "/" + name) {
+		return nil
+	}
+	at := slices.IndexFunc(f.items, func(i *ghFakeItem) bool {
+		return i.number == int(raw) && strings.EqualFold(i.in(f.repo), owner+"/"+name)
+	})
+	if at < 0 {
+		return map[string]any{"issue": nil}
+	}
+	from := 0
+	if after, ok := variables["after"].(string); ok {
+		if n, err := strconv.Atoi(after); err == nil {
+			from = n
+		}
+	}
+	all := f.comments[int(raw)]
+	rest := all[min(from, len(all)):]
+	more := len(rest) > f.commentPageSize
+	if more {
+		rest = rest[:f.commentPageSize]
+	}
+	nodes := make([]any, 0, len(rest))
+	for _, comment := range rest {
+		nodes = append(nodes, map[string]any{"id": comment.id, "body": comment.body})
+	}
+	return map[string]any{"issue": map[string]any{
+		"id": f.items[at].ticket.ID,
+		"comments": map[string]any{
+			"nodes": nodes,
+			"pageInfo": map[string]any{
+				"hasNextPage": more,
+				"endCursor":   strconv.Itoa(from + len(rest)),
+			},
+		},
+	}}
+}
+
+// addComment writes a new comment on an issue.
+func (f *ghProjectsFake) addComment(w http.ResponseWriter, query core.GraphQLQuery) {
+	subject, _ := query.Variables["subject"].(string)
+	body, _ := query.Variables["body"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := slices.IndexFunc(f.items, func(i *ghFakeItem) bool { return i.ticket.ID == subject })
+	if at < 0 {
+		f.refuse(w, "NOT_FOUND", "no issue "+subject)
+		return
+	}
+	f.commentsMade++
+	number := f.items[at].number
+	f.comments[number] = append(f.comments[number], &ghFakeComment{
+		id:   "IC_" + strconv.Itoa(f.commentsMade),
+		body: body,
+	})
+	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"addComment": map[string]any{}}})
+}
+
+// updateComment edits a comment in place.
+func (f *ghProjectsFake) updateComment(w http.ResponseWriter, query core.GraphQLQuery) {
+	id, _ := query.Variables["comment"].(string)
+	body, _ := query.Variables["body"].(string)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, comments := range f.comments {
+		for _, comment := range comments {
+			if comment.id == id {
+				comment.body = body
+				f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updateIssueComment": map[string]any{}}})
+				return
+			}
+		}
+	}
+	f.refuse(w, "NOT_FOUND", "no comment "+id)
+}
+
+// setIssueState closes or reopens an issue, recording when and why. The clock
+// moves so that a second closure of a closed issue shows up as a date that
+// moved — which is the thing Close must not do.
+func (f *ghProjectsFake) setIssueState(w http.ResponseWriter, query core.GraphQLQuery) {
+	id, _ := query.Variables["issue"].(string)
+	reason, _ := query.Variables["reason"].(string)
+	closing := strings.Contains(query.Query, "closeIssue(input:")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := slices.IndexFunc(f.items, func(i *ghFakeItem) bool { return i.ticket.ID == id })
+	if at < 0 {
+		f.refuse(w, "NOT_FOUND", "no issue "+id)
+		return
+	}
+	f.now = f.now.Add(time.Minute)
+	ticket := &f.items[at].ticket
+	ticket.Closed = closing
+	ticket.UpdatedAt = f.now
+	if closing {
+		ticket.ClosedAt = f.now
+		ticket.CloseReason = core.ClosedCompleted
+		if reason == ghReasonNotPlannedInput {
+			ticket.CloseReason = core.ClosedNotPlanned
+		}
+	} else {
+		ticket.ClosedAt = time.Time{}
+		ticket.CloseReason = ""
+	}
+	op := "reopenIssue"
+	if closing {
+		op = "closeIssue"
+	}
+	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		op: map[string]any{"issue": map[string]any{"id": id}},
+	}})
+}
+
+// commentBodies is what an issue's comments now say, for a test that asks the
+// fake rather than the adapter.
+func (f *ghProjectsFake) commentBodies(number int) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	bodies := make([]string, 0, len(f.comments[number]))
+	for _, comment := range f.comments[number] {
+		bodies = append(bodies, comment.body)
+	}
+	return bodies
+}
+
+// onBoard reports whether the project holds the issue with that number.
+func (f *ghProjectsFake) onBoard(number int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := slices.IndexFunc(f.items, func(i *ghFakeItem) bool { return i.number == number })
+	return at >= 0 && !f.items[at].offBoard
 }

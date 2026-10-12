@@ -72,10 +72,11 @@ func contractGitHubProjects(ownerType string) coretest.NewTracker {
 	}
 }
 
-// The part of the tracker contract plan items 3.8 and 3.9 land: naming itself,
-// probing, discovery, references, observation, tickets and moves. Follow-ups,
-// comments and closing are 3.10 and 3.11, and the suite is run whole when they
-// have landed (3.12).
+// The part of the tracker contract plan items 3.8 to 3.11 land, which is now
+// every case there is. It stays a named subset until 3.12 runs the suite
+// whole: naming the cases is what has let each plan item be held to the part
+// of the contract it claimed, and the swap to the whole suite is the item
+// that makes a case added later run without anybody remembering to list it.
 //
 // Both owner kinds sit it. A person's projects and an organisation's are
 // reached through different fields of GitHub's schema and shown at different
@@ -91,9 +92,17 @@ func TestGitHubProjectsMeetsTheContractItHasLanded(t *testing.T) {
 				"nonsense is not a reference",
 				"an observation is canonical and stable",
 				"observing something that is not there is not an error",
+				"applying a change is visible in the next observation",
+				"creating the same thing twice is a conflict",
+				"a thing is updated and then deleted",
 				"tickets by key, by column, and all of them",
 				"a ticket that is not there",
 				"a move is idempotent",
+				"a follow-up is filed once and found by its marker",
+				"a new follow-up carries its marker",
+				"a comment is written and edited in place",
+				"a ticket is closed, and closing it again is no work",
+				"a closed ticket is reopened",
 				"linkage uses the forge's own link",
 			)
 		})
@@ -631,38 +640,20 @@ func TestGitHubProjectsEndpointsFollowTheAPIRoot(t *testing.T) {
 	}
 }
 
-// Everything 3.11 will land refuses meanwhile, naming what it wanted rather
-// than failing blankly — the only stub spec 01 permits, and only until its
-// plan item lands.
-func TestGitHubProjectsRefusesWhatItsPlanItemsHaveNotLanded(t *testing.T) {
+// Nothing is left unimplemented: an item name a tracker has nothing for is a
+// caller's mistake, not a gap, and the refusal lists what it could have asked
+// about instead of naming the plan.
+func TestGitHubProjectsRefusesAnItemNoTrackerHas(t *testing.T) {
 	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
 	adapter := newGitHubProjectsAdapter(t, srv, nil)
-	cases := map[string]error{
-		"Observe(labels)": func() error {
-			_, err := adapter.Observe(t.Context(), core.ItemTrackerLabels)
-			return err
-		}(),
-		"Apply(labels)": func() error {
-			_, err := adapter.Apply(t.Context(), core.Change{
-				What: core.ItemTrackerLabels,
-				Op:   core.ChangeCreate,
-				Item: core.Item{Name: "blocked"},
-			})
-			return err
-		}(),
-		"CreateFollowUp": func() error { _, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{}); return err }(),
-		"FindFollowUp": func() error {
-			_, err := adapter.FindFollowUp(t.Context(), core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget"))
-			return err
-		}(),
-		"Comment": adapter.Comment(t.Context(), "#1", core.Marker{}, "hello"),
-		"Close":   adapter.Close(t.Context(), "#1", "done"),
-		"Reopen":  adapter.Reopen(t.Context(), "#1", "not done"),
+	if _, err := adapter.Observe(t.Context(), "forge.branch_protection"); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("Observe(forge.branch_protection) = %v, want ErrValidation", err)
+	} else if !strings.Contains(fixOf(t, err), core.ItemTrackerLabels) {
+		t.Errorf("the refusal offers %q, which does not name the items a tracker has", fixOf(t, err))
 	}
-	for name, err := range cases {
-		if !errors.Is(err, core.ErrUnsupported) {
-			t.Errorf("%s = %v, want it to wrap ErrUnsupported", name, err)
-		}
+	_, err := adapter.Apply(t.Context(), core.Change{What: "forge.merge_settings", Op: core.ChangeCreate})
+	if !errors.Is(err, core.ErrValidation) {
+		t.Errorf("Apply(forge.merge_settings) = %v, want ErrValidation", err)
 	}
 }
 
@@ -1374,4 +1365,554 @@ func TestGitHubProjectsWillNotEditTheColumnsOfABoardItCannotRead(t *testing.T) {
 			t.Errorf("Apply before setup resolved a board = %v, want ErrValidation", err)
 		}
 	})
+}
+
+// Labels are the repository's, not the board's, and they are the one thing
+// this adapter reads over REST (spec 11 §2, item 3.11).
+
+// TestGitHubProjectsReadsEveryLabelThroughThePages: the reader must follow
+// the Link header. A repository with more labels than one page is ordinary,
+// and an adapter that stopped at the first would propose creating every label
+// it had not seen.
+func TestGitHubProjectsReadsEveryLabelThroughThePages(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	observation, err := adapter.Observe(t.Context(), core.ItemTrackerLabels)
+	if err != nil {
+		t.Fatalf("Observe(labels): %v", err)
+	}
+	if !observation.Exists {
+		t.Fatal("a repository always has labels, so the observation exists")
+	}
+	if len(observation.Items) != len(fake.labels) {
+		t.Fatalf("read %d labels of %d: the pages were not followed", len(observation.Items), len(fake.labels))
+	}
+	blocked, ok := observation.Find("blocked")
+	if !ok {
+		t.Fatalf("the blocked label is missing: %+v", observation.Items)
+	}
+	if blocked.Field("color") != "b60205" {
+		t.Errorf("the label's colour is %q, want the one the repository has", blocked.Field("color"))
+	}
+	if blocked.ID == "" {
+		t.Error("the label has no id, so the lock cannot record one flow created")
+	}
+	// Canonical order, whatever order the provider answered in.
+	if observation.Items[0].Name != "blocked" {
+		t.Errorf("the observation is %v, want it canonicalised", observation.Items)
+	}
+}
+
+// TestGitHubProjectsAddsALabelAndLeavesTheRestAlone covers the create case,
+// including the colour a configuration never gives one.
+func TestGitHubProjectsAddsALabelAndLeavesTheRestAlone(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	before := len(fake.labels)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "agent"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(create): %v", err)
+	}
+	if result.Item.ID == "" {
+		t.Error("the created label has no id, so the lock cannot record it")
+	}
+	if result.Note == "" {
+		t.Error("the result explains nothing")
+	}
+	if got := result.Item.Field("color"); got != ghDefaultLabelColour {
+		t.Errorf("the new label's colour is %q, want the default %q: a configuration names labels and not their colours",
+			got, ghDefaultLabelColour)
+	}
+	if len(fake.labels) != before+1 {
+		t.Errorf("the repository has %d labels, want %d", len(fake.labels), before+1)
+	}
+
+	// A colour, when a change does carry one, is what is sent.
+	coloured, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "incident", Fields: map[string]string{"color": "#D93F0B"}},
+	})
+	if err != nil {
+		t.Fatalf("Apply(create with a colour): %v", err)
+	}
+	if got := coloured.Item.Field("color"); got != "d93f0b" {
+		t.Errorf("the colour is %q, want it sent as GitHub takes it: six hex digits, no hash", got)
+	}
+}
+
+// TestGitHubProjectsRefusesALabelThatIsAlreadyThere: a create that collides is
+// ErrConflict, which is what tells apply to update instead (spec 06 §4). The
+// name is matched the way GitHub matches it — labels are case-insensitive,
+// so "Blocked" and "blocked" are one label and a second create would 422.
+func TestGitHubProjectsRefusesALabelThatIsAlreadyThere(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	for _, name := range []string{"blocked", "BLOCKED"} {
+		_, err := adapter.Apply(t.Context(), core.Change{
+			What: core.ItemTrackerLabels,
+			Op:   core.ChangeCreate,
+			Item: core.Item{Name: name},
+		})
+		if !errors.Is(err, core.ErrConflict) {
+			t.Errorf("creating %q = %v, want ErrConflict", name, err)
+		}
+	}
+}
+
+// TestGitHubProjectsEditsALabelInPlace covers update, including the rename
+// GitHub only does through new_name — and finding the label by the id the
+// plan copied off the observation, because the name is what is changing.
+func TestGitHubProjectsEditsALabelInPlace(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	recoloured, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeUpdate,
+		Item: core.Item{ID: "lbl-1", Name: "blocked", Fields: map[string]string{"color": "000000"}},
+	})
+	if err != nil {
+		t.Fatalf("Apply(update): %v", err)
+	}
+	if recoloured.Item.Field("color") != "000000" {
+		t.Errorf("the label is %+v, want the colour it was given", recoloured.Item)
+	}
+
+	renamed, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeUpdate,
+		Item: core.Item{ID: "lbl-1", Name: "is-blocked"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(rename): %v", err)
+	}
+	if renamed.Item.Name != "is-blocked" {
+		t.Errorf("the label is called %q, want the new name", renamed.Item.Name)
+	}
+	if !strings.Contains(renamed.Note, "blocked") {
+		t.Errorf("the note is %q, want it to name what was renamed", renamed.Note)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if slices.ContainsFunc(fake.labels, func(l ghLabel) bool { return l.Name == "blocked" }) {
+		t.Errorf("a rename left the old label behind: %+v", fake.labels)
+	}
+}
+
+// TestGitHubProjectsEditsOnlyWhatTheLabelChangeNames: flow has no opinion
+// about a label's colour or description (engine desires neither), so an
+// update that carries neither must leave both alone. A rename that repainted
+// a label the team chose the colour of would be a change nobody asked for.
+func TestGitHubProjectsEditsOnlyWhatTheLabelChangeNames(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	fake.mu.Lock()
+	at := slices.IndexFunc(fake.labels, func(l ghLabel) bool { return l.Name == "blocked" })
+	if at < 0 {
+		fake.mu.Unlock()
+		t.Fatal("the fixture has no blocked label to edit")
+	}
+	fake.labels[at].Description = "somebody is waiting on somebody else"
+	was := fake.labels[at]
+	fake.mu.Unlock()
+
+	if _, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeUpdate,
+		Item: core.Item{ID: was.NodeID, Name: "is-blocked"},
+	}); err != nil {
+		t.Fatalf("Apply(rename): %v", err)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	now := fake.labels[slices.IndexFunc(fake.labels, func(l ghLabel) bool { return l.NodeID == was.NodeID })]
+	if now.Name != "is-blocked" {
+		t.Errorf("the label is called %q, want the new name", now.Name)
+	}
+	if now.Color != was.Color {
+		t.Errorf("the rename repainted the label %q -> %q", was.Color, now.Color)
+	}
+	if now.Description != was.Description {
+		t.Errorf("the rename rewrote the description %q -> %q", was.Description, now.Description)
+	}
+}
+
+// TestGitHubProjectsRemovesALabelAndSaysSoWhenItCannot covers delete, and the
+// refusal a second apply of the same plan must get.
+func TestGitHubProjectsRemovesALabelAndSaysSoWhenItCannot(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	change := core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeDelete,
+		Item: core.Item{ID: "lbl-1", Name: "blocked"},
+	}
+	if _, err := adapter.Apply(t.Context(), change); err != nil {
+		t.Fatalf("Apply(delete): %v", err)
+	}
+	fake.mu.Lock()
+	gone := !slices.ContainsFunc(fake.labels, func(l ghLabel) bool { return l.Name == "blocked" })
+	fake.mu.Unlock()
+	if !gone {
+		t.Error("the label is still there")
+	}
+	if _, err := adapter.Apply(t.Context(), change); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("deleting it again = %v, want ErrNotFound", err)
+	}
+}
+
+// TestGitHubProjectsWillNotTouchLabelsWithoutARepository: a project can hold
+// issues from many repositories, so there is no one repository to infer. The
+// refusal names the setting rather than failing against an empty path.
+func TestGitHubProjectsWillNotTouchLabelsWithoutARepository(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Repo = "" })
+
+	_, err := adapter.Observe(t.Context(), core.ItemTrackerLabels)
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("Observe(labels) with no repository = %v, want ErrValidation", err)
+	}
+	if fix := fixOf(t, err); !strings.Contains(fix, "repo") {
+		t.Errorf("the fix is %q, want it to name the setting", fix)
+	}
+	if _, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerLabels,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "agent"},
+	}); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("Apply(labels) with no repository = %v, want ErrValidation", err)
+	}
+}
+
+// Follow-ups, comments and an issue's state (spec 07 §4, item 3.11). The
+// contract proves these are idempotent against an index that answers at once;
+// what follows is the part of idempotence a real GitHub makes harder.
+
+// TestGitHubProjectsDoesNotFileTwiceWhileTheIndexLags: GitHub's search index
+// is seconds to minutes behind its writes, so a doctor run that filed a
+// follow-up and then asked whether one existed would file a second one. The
+// blind fake is that window made total.
+func TestGitHubProjectsDoesNotFileTwiceWhileTheIndexLags(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.blind = true
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	follow := core.FollowUp{
+		Marker: core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget"),
+		Title:  "flow: add an expedite view (acme/widget)",
+		Body:   "Why, and how flow will check.",
+	}
+
+	first, err := adapter.CreateFollowUp(t.Context(), follow)
+	if err != nil {
+		t.Fatalf("CreateFollowUp: %v", err)
+	}
+	again, err := adapter.CreateFollowUp(t.Context(), follow)
+	if err != nil {
+		t.Fatalf("CreateFollowUp again: %v", err)
+	}
+	if again.Key != first.Key {
+		t.Errorf("filing it again opened %s as well as %s: the index had not caught up", again.Key, first.Key)
+	}
+	if filed := fake.mutations("createIssue"); filed != 1 {
+		t.Errorf("the fake filed %d issues, want 1", filed)
+	}
+
+	// A search naming fewer fields finds it too, from memory as from the
+	// index (spec 11 §1).
+	found, err := adapter.FindFollowUp(t.Context(), core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite"))
+	if err != nil {
+		t.Fatalf("FindFollowUp: %v", err)
+	}
+	if found == nil || found.Key != first.Key {
+		t.Errorf("a broader search found %v, want %s", found, first.Key)
+	}
+	// And a marker nothing carries is still nothing.
+	other, err := adapter.FindFollowUp(t.Context(), core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip"))
+	if err != nil {
+		t.Fatalf("FindFollowUp for another check: %v", err)
+	}
+	if other != nil {
+		t.Errorf("the memory of one follow-up answered for another: %s", other.Key)
+	}
+}
+
+// TestGitHubProjectsPutsAFollowUpOnTheBoard: filing is the one time flow adds
+// an issue to a project. A follow-up nobody can see on the board is a
+// follow-up nobody will do.
+func TestGitHubProjectsPutsAFollowUpOnTheBoard(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	filed, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{
+		Marker: core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget"),
+		Title:  "flow: add an expedite view (acme/widget)",
+		Body:   "Why, and how flow will check.",
+	})
+	if err != nil {
+		t.Fatalf("CreateFollowUp: %v", err)
+	}
+	number, err := strconv.Atoi(strings.TrimPrefix(filed.Key, "#"))
+	if err != nil {
+		t.Fatalf("the filed ticket's key is %q, which is not an issue key", filed.Key)
+	}
+	if !fake.onBoard(number) {
+		t.Error("the follow-up was filed but not put on the board")
+	}
+	if !core.HasMarker(filed.Body, core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget")) {
+		t.Errorf("the filed ticket's body carries no marker, so nothing will ever find it again: %q", filed.Body)
+	}
+
+	// A board flow has no number for yet is setup before a board exists,
+	// and the follow-up is still filed.
+	bare, bareSrv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	unnumbered := newGitHubProjectsAdapter(t, bareSrv, func(o *GitHubProjectsOptions) { o.Number = 0 })
+	if _, err := unnumbered.CreateFollowUp(t.Context(), core.FollowUp{
+		Marker: core.NewMarker(core.MarkerFollowUp, "check", "tracker.project", "repo", "acme/widget"),
+		Title:  "flow: make a board (acme/widget)",
+	}); err != nil {
+		t.Fatalf("CreateFollowUp without a board: %v", err)
+	}
+	if added := bare.mutations("addProjectV2ItemById"); added != 0 {
+		t.Errorf("flow tried %d times to add an issue to a board it has no number for", added)
+	}
+}
+
+// TestGitHubProjectsFilesAFollowUpTheRepositoryIsNotReadyFor: a label the
+// repository has not got and a login nobody has are both left off rather than
+// refused. The labels are how people find flow's follow-ups, not what makes
+// one true, and the item that creates them is a change apply may not have
+// reached (spec 06 §3); an unassigned ticket somebody can see beats no ticket.
+func TestGitHubProjectsFilesAFollowUpTheRepositoryIsNotReadyFor(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	filed, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{
+		Marker:   core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget"),
+		Title:    "flow: add an expedite view (acme/widget)",
+		Labels:   []string{"flow-followup", "no-such-label"},
+		Assignee: "nobody-at-all",
+	})
+	if err != nil {
+		t.Fatalf("CreateFollowUp: %v", err)
+	}
+	if !slices.Equal(filed.Labels, []string{"flow-followup"}) {
+		t.Errorf("the ticket carries %v, want only the label the repository has", filed.Labels)
+	}
+	if len(filed.Assignees) != 0 {
+		t.Errorf("the ticket is assigned to %v, want nobody: the login does not exist", filed.Assignees)
+	}
+
+	// A login GitHub does know is assigned, so the tolerance above is not
+	// the adapter quietly never assigning anybody.
+	assigned, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{
+		Marker:   core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/other"),
+		Title:    "flow: set a WIP limit (acme/other)",
+		Assignee: "@maintainer",
+	})
+	if err != nil {
+		t.Fatalf("CreateFollowUp with an assignee: %v", err)
+	}
+	if !slices.Contains(assigned.Assignees, "maintainer") {
+		t.Errorf("the ticket is assigned to %v, want the maintainer", assigned.Assignees)
+	}
+	if fake.mutations("createIssue") != 2 {
+		t.Errorf("the fake filed %d issues, want 2", fake.mutations("createIssue"))
+	}
+}
+
+// TestGitHubProjectsBelievesTheBodyAndNotTheIndex: the search only narrows.
+// GitHub decides which issues are worth looking at and flow decides which
+// carry the marker, so an index that answers with too much is harmless.
+func TestGitHubProjectsBelievesTheBodyAndNotTheIndex(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.loose = true
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	found, err := adapter.FindFollowUp(t.Context(), core.NewMarker(core.MarkerFollowUp, "check", "nothing.at.all"))
+	if err != nil {
+		t.Fatalf("FindFollowUp: %v", err)
+	}
+	if found != nil {
+		t.Errorf("FindFollowUp believed the index and answered %s, whose body carries no such marker", found.Key)
+	}
+	// The one that does carry it is still found among the same noise.
+	marked, err := adapter.FindFollowUp(t.Context(), coretest.ContractFollowUpMarker())
+	if err != nil {
+		t.Fatalf("FindFollowUp for the marked ticket: %v", err)
+	}
+	if marked == nil || marked.Key != "#13" {
+		t.Errorf("FindFollowUp = %v, want #13", marked)
+	}
+}
+
+// TestGitHubProjectsRefusesAFollowUpNothingCouldFind: a marker is the only
+// thing that identifies a follow-up, so filing one without a marker would be
+// filing a duplicate every day for ever.
+func TestGitHubProjectsRefusesAFollowUpNothingCouldFind(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	if _, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{Title: "flow: something"}); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("CreateFollowUp without a marker = %v, want ErrValidation", err)
+	}
+	if _, err := adapter.FindFollowUp(t.Context(), core.Marker{}); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("FindFollowUp without a marker = %v, want ErrValidation", err)
+	}
+	if filed := fake.mutations("createIssue"); filed != 0 {
+		t.Errorf("the fake filed %d issues for a follow-up it should have refused", filed)
+	}
+
+	// And without a repository there is nowhere to file one: a project can
+	// hold issues from many, so there is nothing to infer from the board.
+	_, boardOnly := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adrift := newGitHubProjectsAdapter(t, boardOnly, func(o *GitHubProjectsOptions) { o.Repo = "" })
+	_, err := adrift.CreateFollowUp(t.Context(), core.FollowUp{
+		Marker: coretest.ContractFollowUpMarker(),
+		Title:  "flow: something",
+	})
+	if !errors.Is(err, core.ErrValidation) {
+		t.Errorf("CreateFollowUp without a repository = %v, want ErrValidation", err)
+	}
+	if fix := fixOf(t, err); !strings.Contains(fix, "repo") {
+		t.Errorf("the refusal offers %q, which does not name the setting that is missing", fix)
+	}
+}
+
+// TestGitHubProjectsEditsItsOwnCommentWhereverItIs: six weeks of weekly
+// nudging is one comment that keeps changing, not six comments (spec 07 §4).
+// Flow's comment is wherever it fell in a conversation people were already
+// having, so finding it means reading every page and not just the first.
+func TestGitHubProjectsEditsItsOwnCommentWhereverItIs(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
+
+	// People were talking about it before flow said anything.
+	fake.comments[13] = append(fake.comments[13],
+		&ghFakeComment{id: "IC_human_1", body: "is this ours?"},
+		&ghFakeComment{id: "IC_human_2", body: "looks like it"},
+	)
+	if err := adapter.Comment(t.Context(), "#13", marker, "still not done"); err != nil {
+		t.Fatalf("Comment: %v", err)
+	}
+	// And they carry on, so flow's comment is in the middle of the pages.
+	fake.comments[13] = append(fake.comments[13],
+		&ghFakeComment{id: "IC_human_3", body: "on it"},
+		&ghFakeComment{id: "IC_human_4", body: "still on it"},
+	)
+	if err := adapter.Comment(t.Context(), "#13", marker, "still not done, a week on"); err != nil {
+		t.Fatalf("Comment again: %v", err)
+	}
+
+	bodies := fake.commentBodies(13)
+	if len(bodies) != 5 {
+		t.Fatalf("the ticket has %d comments, want 5: flow added one instead of editing its own\n%v", len(bodies), bodies)
+	}
+	if !strings.Contains(bodies[2], "a week on") {
+		t.Errorf("flow's comment says %q, want the second nudge", bodies[2])
+	}
+	if !core.HasMarker(bodies[2], marker) {
+		t.Errorf("flow's edited comment lost its marker, so the next nudge will add a second: %q", bodies[2])
+	}
+
+	// A comment whose marker is somebody else's check is not flow's to
+	// edit: a second marker means a second comment.
+	other := core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget")
+	if err := adapter.Comment(t.Context(), "#13", other, "and this one too"); err != nil {
+		t.Fatalf("Comment with another marker: %v", err)
+	}
+	if got := len(fake.commentBodies(13)); got != 6 {
+		t.Errorf("the ticket has %d comments, want 6: a different marker is a different comment", got)
+	}
+}
+
+// TestGitHubProjectsRecordsWhyItClosedATicket: GitHub distinguishes work that
+// was done from work that was not, and closing a follow-up flow could not
+// verify as completed would be a lie recorded in the tracker.
+func TestGitHubProjectsRecordsWhyItClosedATicket(t *testing.T) {
+	cases := []struct {
+		reason string
+		want   string
+	}{
+		{core.ClosedCompleted, core.ClosedCompleted},
+		{core.ClosedNotPlanned, core.ClosedNotPlanned},
+		{"", core.ClosedNotPlanned},
+		{"because I said so", core.ClosedNotPlanned},
+	}
+	for _, tc := range cases {
+		t.Run(tc.reason, func(t *testing.T) {
+			_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+			adapter := newGitHubProjectsAdapter(t, srv, nil)
+			if err := adapter.Close(t.Context(), "#13", tc.reason); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			closed, err := adapter.Ticket(t.Context(), "#13")
+			if err != nil {
+				t.Fatalf("Ticket: %v", err)
+			}
+			if closed.CloseReason != tc.want {
+				t.Errorf("closing for %q recorded %q, want %q", tc.reason, closed.CloseReason, tc.want)
+			}
+		})
+	}
+}
+
+// TestGitHubProjectsLeavesAnOpenTicketAloneWhenReopeningIt: doctor runs daily
+// and reopens what it cannot verify. Reopening a ticket that is already open
+// would be a mutation a day against every such ticket.
+func TestGitHubProjectsLeavesAnOpenTicketAloneWhenReopeningIt(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	if err := adapter.Reopen(t.Context(), "#13", "flow could not verify it was done"); err != nil {
+		t.Fatalf("Reopen an open ticket: %v", err)
+	}
+	if got := fake.mutations("reopenIssue"); got != 0 {
+		t.Errorf("reopening an open ticket sent %d mutations, want none", got)
+	}
+	if err := adapter.Close(t.Context(), "#11", core.ClosedCompleted); err != nil {
+		t.Fatalf("Close a closed ticket: %v", err)
+	}
+	if got := fake.mutations("closeIssue"); got != 0 {
+		t.Errorf("closing a closed ticket sent %d mutations, want none", got)
+	}
+}
+
+// TestGitHubProjectsSearchesForEveryFieldSeparately: a marker renders its
+// fields in alphabetical order, so a search naming fewer of them is not a
+// substring of a ticket filed with more — "check=… repo=…" against a marker
+// carrying "assignee=… check=… repo=…". One phrase per field is what makes a
+// broader search narrow to a superset rather than to nothing (spec 11 §1).
+func TestGitHubProjectsSearchesForEveryFieldSeparately(t *testing.T) {
+	full := core.NewMarker(core.MarkerFollowUp, "assignee", "ann", "check", "tracker.wip", "repo", "acme/widget")
+	expression := ghSearchExpression("acme/widget", full)
+	if !strings.Contains(expression, "repo:acme/widget") || !strings.Contains(expression, "is:issue") {
+		t.Errorf("the search is %q, which does not narrow to this repository's issues", expression)
+	}
+	phrases := ghQuotedPhrases(expression)
+	want := []string{core.MarkerPrefix + core.MarkerFollowUp, "assignee=ann", "check=tracker.wip", "repo=acme/widget"}
+	if !slices.Equal(phrases, want) {
+		t.Errorf("the search asks for %q, want %q", phrases, want)
+	}
+
+	// Every phrase a broader search asks for is one the fuller marker's
+	// body carries, which is what makes the narrowing safe.
+	body := core.MarkBody("why", full, true)
+	broad := ghQuotedPhrases(ghSearchExpression("acme/widget", core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip")))
+	for _, phrase := range broad {
+		if !strings.Contains(body, phrase) {
+			t.Errorf("a broader search asks for %q, which the ticket it should find does not carry:\n%s", phrase, body)
+		}
+	}
 }

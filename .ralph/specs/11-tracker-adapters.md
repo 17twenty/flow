@@ -282,3 +282,36 @@ reopen, pagination, error mapping.
   know is `ErrValidation`. An update asking for the name the column already
   has rewrites nothing and sends no mutation, so applying the same change
   twice touches the board once.
+- **§2 issues and comments are GraphQL; labels stay REST (item 3.11).** The
+  table says "forge REST issues API" for follow-ups and comments. flow uses
+  GraphQL for both instead: `createIssue` answers with the node id
+  `addProjectV2ItemById` needs, so filing and putting the ticket on the board
+  are one transport, one error vocabulary and one round trip fewer. Labels are
+  the exception and stay REST, because GraphQL has no complete set of label
+  mutations — there is no rename — and the REST endpoints are a whole set.
+- **§2 labels need `forge.repo` and are refused without it (item 3.11).** A
+  project can hold issues from many repositories, so there is no one
+  repository to infer labels from. Observing or applying `tracker.labels`
+  without a repository is `ErrValidation` naming the setting, not a request
+  against an empty path.
+- **§2 a repository with no labels still exists (item 3.11).** The labels
+  observation is always `Exists: true` when the repository can be read.
+  `Exists: false` means flow could not see the thing at all, and a repository
+  somebody has emptied of labels is not that — it is a repository with
+  everything left to create.
+- **§2 a label change sends only what it names (item 3.11).** flow's desired
+  labels carry a name and nothing else, so an update must leave the colour and
+  description alone; sending flow's default grey on a rename would repaint a
+  label the team chose the colour of. A create has to send a colour because
+  GitHub's API requires one, and that is where the default belongs.
+- **§2 a duplicate label is found by reading, not by the 422 (item 3.11).**
+  GitHub answers both "already exists" and "that is not a label name" with
+  422, and the per-error `code` that tells them apart is in a body the client
+  does not hand back with the error. So `create` lists the labels first and
+  answers a name already there — case-insensitively, as GitHub matches — with
+  the `ErrConflict` the apply loop relies on.
+- **§2 a label is found by node id when the change carries one (item 3.11).**
+  The name may be the very thing changing, so update and delete resolve the
+  label through the id the plan copied off the observation, falling back to
+  the name. A label that has gone since the plan was made is `ErrNotFound`
+  with "run flow plan again" as the fix.
