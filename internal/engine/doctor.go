@@ -716,6 +716,20 @@ func (r Report) Exit() int {
 	}
 }
 
+// MarshalJSON writes the report with the code the run exited on in it.
+//
+// The code is derived from the results rather than stored alongside them, so
+// the two cannot come to disagree — but nothing reading the document should
+// have to re-derive it, and spec 07 §9 puts it on the summary line a person
+// reads for exactly that reason.
+func (r Report) MarshalJSON() ([]byte, error) {
+	type report Report
+	return json.Marshal(struct {
+		report
+		ExitCode int `json:"exit_code"`
+	}{report(r), r.Exit()})
+}
+
 // errorCode is the exit code one error on its own would have had. An error
 // flow has nothing to say about is a plain failure rather than weather.
 func errorCode(err error) int {

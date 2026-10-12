@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -294,8 +295,30 @@ func TestExitAggregation(t *testing.T) {
 			if got := report.Exit(); got != tc.want {
 				t.Errorf("exit %d, want %d", got, tc.want)
 			}
+			// And the document says so too. Something reading `--json`
+			// instead of the process's status must not have to re-derive
+			// the verdict from the states.
+			if got := exitCodeOf(t, report); got != tc.want {
+				t.Errorf("the document says exit %d, want %d", got, tc.want)
+			}
 		})
 	}
+}
+
+// exitCodeOf is the exit code as the JSON document carries it.
+func exitCodeOf(t *testing.T, report engine.Report) int {
+	t.Helper()
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal the report: %v", err)
+	}
+	var document struct {
+		ExitCode int `json:"exit_code"`
+	}
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatalf("read the report back: %v", err)
+	}
+	return document.ExitCode
 }
 
 // TestSummaryCountsWhoMustAct is spec 07 §9's last line.

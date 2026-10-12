@@ -415,3 +415,9 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   through a rewrite of the thing it was attested about. Editing the workflow
   is not itself a fault, so `lock.consistent` still passes and says so as
   evidence.
+- **§9 the exit code is in the document as well as on the summary line (item
+  4.5).** `--json` carries `exit_code`, derived from the results when the
+  report is written rather than stored next to them, so the two cannot come to
+  disagree. The summary line a person reads ends in `exit X`; something
+  reading the document instead of the process's status deserves the same
+  answer without re-deriving the verdict from twenty states.

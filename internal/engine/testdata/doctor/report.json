@@ -205,5 +205,6 @@
         "message": "no follow-up has been open longer than a week"
       }
     }
-  ]
+  ],
+  "exit_code": 1
 }
