@@ -73,19 +73,19 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
-- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits done (5.1–5.4); catch-up, flag cleanup, report and health issue remain
+- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits and the `--fix` catch-up done (5.1–5.5); flag cleanup, report, health issue and `--ci` remain
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
 ### Status notes
 
-*(updated after plan item 5.2, the deployment half of the live-health audit,
-commit `18ad3fe`, CI green)*
+*(updated after plan item 5.5, the catch-up of the transitions flow owns,
+commit `adec9ef`, CI green)*
 
 **Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
-4.1–4.6) and Phase 5 is half done (5.1–5.4), their issues closed and their
-phase parents (#6, #13, #27, #44) closed with them. Every command in spec 00 §5 is implemented; the only
+4.1–4.6) and Phase 5 is five items of eight (5.1–5.5), their issues closed and
+their phase parents (#6, #13, #27, #44) closed with them. Every command in spec 00 §5 is implemented; the only
 `ErrUnsupported` left in the shipped surface is three `doctor` flags whose own
 items are in Phases 5 and 6 (`--report` 5.7, `--ci` 5.8, `--watch` 6.3), which
 are refused rather than parsed and ignored.
@@ -184,14 +184,14 @@ for byte identical.
    `issue_closed` are `owner: native` and GitHub's built-ins are enabled.
    Backlog → Ready is nobody's: flow judges readiness, it never promotes.
    Stage B is what makes the middle of the board move.
-3. *Phase 5 is half done.* 5.1 (pull requests), 5.2 (deployments), 5.3 (the
-   board) and 5.4 (native transitions) landed, so every question spec 07 §6
-   asks of a live repository now has a check behind it. What remains is what
-   doctor does with the answers: 5.5 (`--fix` catching up the transitions flow
-   owns), 5.6 (flag cleanup), 5.7 (`--report` and the pinned health issue) and
-   5.8 (`--ci` annotations). 5.7 is what the 14-day proof is read from, and the
-   streak cannot start until H.1 makes doctor exit 0, so the clock does not
-   favour reordering it.
+3. *Phase 5 has three items left.* 5.1 (pull requests), 5.2 (deployments),
+   5.3 (the board), 5.4 (native transitions) and 5.5 (the catch-up) landed, so
+   every question spec 07 §6 asks of a live repository has a check behind it
+   and the one finding flow can act on, it acts on. What remains is what
+   doctor does with the answers: 5.6 (flag cleanup), 5.7 (`--report` and the
+   pinned health issue) and 5.8 (`--ci` annotations). 5.7 is what the 14-day
+   proof is read from, and the streak cannot start until H.1 makes doctor
+   exit 0, so the clock does not favour reordering it.
 4. *Phases 6–8:* the TUI, the remaining adapters, and the proof.
 
 **The board half of the audit (item 5.3, just landed).** `live.tickets.*` asks
@@ -214,39 +214,52 @@ and it is precisely what Stage B settles. The check stays literal and its
 remediation points at `forge.protection`, the setup check that decides whether
 work may reach the trunk that way at all.
 
-**The deployment half of the audit (item 5.2, this run).** The pull request
-checks ask whether work landed the way the team agreed and the board checks
-ask whether the board says so; `live.deploys.recent` and `live.deploys.lag`
-ask the only question left, which is whether any of it is running. They divide
-it: `recent` is one fact about an environment — nothing has reached it inside
-`max_age` — so it fails and counts nothing, since naming the commit and the
-day says more than "1/1"; `lag` is a share of the merges and never does worse
-than warn, because nothing in the setup can make a release faster. What
-switches them on is `deploys.source`, not `done_on`: a team that finishes work
-on the merge still holds itself to `max_lag`, and this repository is one. The
-setup check `deploys.source` now asks that same question through the same
-`ReadsDeployments`, so the plan and the audit cannot disagree about which
-repositories have deployments.
+**The catch-up (item 5.5, this run).** `live.transitions.native.<event>`
+audits the moves flow declined to make and can only ever complain. This is the
+other half: the moves flow owns, where the board being wrong never means flow
+decided differently — the decision is deterministic — but that flow was never
+asked. A CI run that did not start, a webhook the forge dropped, a credential
+that expired on Friday evening. So `live.transitions.flow` is the one live
+check whose remedy is flow's own command, and `doctor --fix` performs the
+moves rather than printing steps for somebody.
 
-Two mutants mattered. Judging a merge as "still inside its objective" before
-asking whether it is already running survived the first draft of the tests —
-and a team that deploys in minutes merges everything inside its own objective,
-so that check would have counted nothing and passed for ever. And nothing
-proved doctor compares through the ancestry cache `flow check deploy` keeps,
-which is the whole reason a fortnight of merges is affordable daily; both now
-have a test. Live on this repository it reads `live.deploys.recent` pass —
-production took `4cb8b91` today — and `live.deploys.lag 0/0`, "nothing merged
-in the window", which is direct mode telling the truth again.
+It is one check for all events, where the native side is one per event:
+`Transition` folds everything a ticket's work says into the single column it
+belongs in, and asking per event would run that fold once per event and count
+a ticket as many times as it had work. It is the same function over the same
+snapshot the gate uses, so spec 04 §5 holds without being written twice —
+which is the "delegate, never repeat" lesson applied where it matters most,
+because a second implementation of the transition rules would have diverged
+inside a release.
 
-**Single best next step:** plan item 5.5 — the catch-up of missed flow-owned
-transitions in `doctor --fix` (#69, spec 07 §6, scenario V04). Its two
-dependencies just landed: 5.3 built the one reading of the board it needs, and
-5.4 settled how flow decides a transition did not happen — at-or-past the
-target column, outside a fifteen-minute grace, only for events it can date. It
-is the natural next item because it is the other half of 5.4's finding: 5.4
-audits the transitions the tracker owns and can only ever report them, while
-the transitions flow owns are ones flow can still perform, so the same reading
-turns from a complaint into a repair. It is also the last live check that
-changes anything, which leaves 5.6–5.8 as presentation — and it is what makes
-`flow check pr` missing a run survivable, which is exactly the failure mode
-Stage B introduces.
+Three judgements worth recording. The grace runs from the *first* event that
+asked for a move, not the last: a move owed since Monday should not wait
+another quarter of an hour because somebody opened a second pull request, and
+racing `flow check pr` costs nothing because rule 5 makes the move idempotent.
+A caught-up ticket counts as held but keeps its evidence line, so a daily
+`--fix` run does not exit non-zero for ever while the report still shows how
+much flow had to put right. And this check alone reads the forge strictly: the
+others only describe, so a pull request they miss costs a little accuracy,
+whereas a reading missing the open half of a ticket's work is exactly the one
+that would move it to Done too early.
+
+Four mutants survived the first draft and each bought a test: ignoring tickets
+closed with no pull request at all (closing is the one event that is not about
+anybody's work); dating a deployment at `now` rather than at the grace
+deadline, which would have raced `flow check deploy` on the one event where
+the two most overlap; taking the latest asking event rather than the earliest;
+and a half-read forge being acted on. Live on this repository the check reads
+62/62 — the board is right, and now flow can say so about its own half of it.
+
+**Single best next step:** plan item 5.7 — `--report` markdown and the pinned
+health issue (#71, spec 07 §9–10). Taken ahead of 5.6 (flag cleanup, #70) on
+purpose: 5.7 is the thing the acceptance criterion is literally read from —
+"`flow doctor` exits 0 for 14 consecutive daily runs" is a claim somebody has
+to be able to check, and until the daily run writes its verdict somewhere
+durable there is no record of a streak, only of the latest morning. It also
+closes the dogfood loop that the last five items have been filling in: eleven
+live checks now have something to say about this repository every day, and
+nothing yet carries what they said beyond the terminal it was printed in. 5.6
+is a single check with a well-understood shape (git trailers, a marker, a
+ticket created under `--fix` exactly as 5.5 now moves one) and loses nothing
+by going second.
