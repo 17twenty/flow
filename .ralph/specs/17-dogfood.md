@@ -209,3 +209,36 @@ Each iteration, as the agent identity:
   therefore re-runnable without duplicating: the interrupted first run left
   issue #32 unmarked, and the re-run adopted it instead of seeding a second copy.
 
+
+- **§1 a deploy key is the push credential; it is not a second identity.** A
+  repository deploy key (write-enabled) now authenticates every push, so the
+  agent no longer pushes with the human's personal account key and the PAT no
+  longer needs `contents:write`. It is scoped to this one repository, which is
+  what spec 15 wants of a credential a loop holds.
+
+  It does **not** close the Stage B blocker. A deploy key is an SSH transport
+  credential: it cannot call REST or GraphQL, so it cannot open a pull
+  request, and the pull request therefore still carries the identity of
+  whatever token created it — `@17twenty`. The three ways out named above (a
+  second account, a machine user, an App used only as a credential source)
+  are still the only ways out.
+
+  Worth recording because it is not obvious: dropping the `agent` label to
+  dodge the check is not a fourth way out. §09's `agent.human_review` fires
+  when the author is in `agents.authors` **or** a label is in
+  `agents.labels`, so an unlabelled PR authored by `@17twenty` is simply not
+  an agent PR, and the check passes while demonstrating nothing. A vacuous
+  green is worse than a red one for a repository whose purpose is to be the
+  proof.
+- **§5 Stage B is deferred; the loop stays in direct mode for the rest of v1
+  construction.** Phases 4–6 are built committing to `main`, and the switch
+  to PR mode happens once, at the end, immediately before the Stage C
+  acceptance run. The cost is accepted knowingly: `flow check pr` is
+  exercised against its own tests and fixtures rather than against live agent
+  pull requests until late, and the 14-day Stage C window cannot begin until
+  the identity question is settled. The alternative — standing up a second
+  identity now — was weighed and declined for v1 construction.
+
+  Consequence for whoever picks this up: the identity decision is still owed,
+  and it is owed *before* Stage C, not before Stage B. `agent.human_review`
+  and `live.prs.reviewed` remain unsatisfiable until it is made.

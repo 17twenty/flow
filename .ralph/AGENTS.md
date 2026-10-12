@@ -1,12 +1,13 @@
 # AGENTS.md — operational guide (< 150 lines)
 
 CURRENT MODE: direct
-<!-- Human switches to `pr` at bootstrap Stage B (specs/17-dogfood.md §5). -->
+<!-- Stage B deferred to the end of v1; the switch to `pr` happens immediately before Stage C (specs/17-dogfood.md §5 Decisions). -->
 
 ## Identity
-- Auth: classic PAT (`GH_TOKEN`). The GitHub App is deferred — flow must stay forge-neutral (specs/17-dogfood.md Decisions).
+- Auth: classic PAT (`GH_TOKEN`) for the API. The GitHub App is deferred — flow must stay forge-neutral (specs/17-dogfood.md Decisions).
+- Push: the repo deploy key, wired as `core.sshCommand`. It needs `-F /dev/null`, because `~/.ssh/config` sets `IdentityFile` for github.com and would otherwise win. `ssh -T` must answer `Hi 17twenty/flow!`, not `Hi 17twenty!`.
 - Author commits as `17twenty-flow-agent[bot]`: `git -c user.name=... -c user.email=...`. Authorship is independent of the push credential.
-- Never approve PRs. API-created objects currently carry @17twenty — blocks `agent.human_review`; resolve before Stage B.
+- Never approve PRs. API-created objects carry @17twenty, so `agent.human_review` is unsatisfiable; a deploy key does not fix this (it cannot call the API). Resolve before Stage C.
 
 ## Toolchain
 - Go: the version in `go.mod` (CI uses `go-version-file`). Bump `go.mod` to upgrade; never let CI drift to `stable`.
