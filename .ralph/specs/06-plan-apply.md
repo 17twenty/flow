@@ -206,3 +206,18 @@ each successful mutation (atomic) and at the end. Summary.
   observes what was deployed and has no business creating one. Apply skips
   them with that as the reason rather than failing on a target it has no call
   for.
+- **§4 the >500-item retreat is taken when the change is applied, not when
+  it is planned (item 3.10).** How many cards a board holds has nothing to do
+  with what the configuration asks for, and a plan that changed with the size
+  of the board would not be the same plan twice. The plan says the column
+  should exist; apply is where flow discovers it cannot safely make that true
+  and hands the change over.
+- **§4 a provider's retreat is `core.ApplyResult.FollowUp`, and it is
+  neither a success nor a failure (item 3.10).** Nothing was written, so
+  there is nothing to record in the lock and nothing to save; but the change
+  is still owed, so it does not count as done. The engine turns it into
+  `AppliedChange.FollowUp` and sets the item's outcome to `follow_up`, which
+  is the same outcome a capability flow never had would produce — a human
+  reading the result does not need to know which of the two it was. The
+  retreat stops nothing else: the remaining changes of the item are attempted
+  as usual, because one change a human owes does not make the others theirs.

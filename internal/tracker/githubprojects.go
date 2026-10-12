@@ -6,6 +6,7 @@ package tracker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -396,9 +397,366 @@ func (g *GitHubProjects) project(ctx context.Context) (ghProject, error) {
 	return *project, nil
 }
 
-// Apply makes one change to the board. Plan item 3.10.
+// Apply makes one change to the board.
+//
+// The only thing flow changes about a board itself is its columns, and GitHub
+// has no way to change one. The options of a single-select field are written
+// whole: the mutation takes the set the field should end up with, and an
+// option it did not recognise is a new option with a new id, which every item
+// pointing at the old one loses. So the whole dance lives behind this one
+// call — read what column every item is in, rewrite the set, put back
+// whatever the provider cleared, and read the board again to prove it
+// (spec 06 §4). Labels and the tickets they go on are item 3.11.
 func (g *GitHubProjects) Apply(ctx context.Context, c core.Change) (core.ApplyResult, error) {
-	return core.ApplyResult{}, notYet("change %s", c.What)
+	if c.What != core.ItemTrackerStatusOptions {
+		return core.ApplyResult{}, notYet("change %s", c.What)
+	}
+	return g.editColumns(ctx, c)
+}
+
+// editColumns carries out one change to the board's columns.
+func (g *GitHubProjects) editColumns(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	if err := g.numbered("%s the column %q", c.Op, c.Item.Name); err != nil {
+		return core.ApplyResult{}, err
+	}
+	project, err := g.project(ctx)
+	if err != nil {
+		return core.ApplyResult{}, core.Explain(err, "%s the column %q of %s", c.Op, c.Item.Name, g.Slug())
+	}
+	switch {
+	case !project.Exists:
+		return core.ApplyResult{}, core.Errorf(core.ErrNotFound, "%s the column %q", c.Op, c.Item.Name).
+			WithWhy("%s is not there", g.Slug()).
+			WithFix("set tracker.project to the number in the project's web address")
+	case project.Status == nil:
+		return core.ApplyResult{}, core.Errorf(core.ErrNotFound, "%s the column %q", c.Op, c.Item.Name).
+			WithWhy("%s has no %s field, so it has no columns", g.Slug(), ghStatusFieldName).
+			WithFix("add a %s field to the board: a board's fields are the team's own and flow does not create them", ghStatusFieldName)
+	}
+
+	edit, err := ghColumnEditOf(*project.Status, c, g.Slug())
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	if !edit.rewrites {
+		return core.ApplyResult{Change: c, Item: edit.standing(), Note: edit.note}, nil
+	}
+	// The retreat spec 06 §4 asks for, and it is taken here rather than
+	// when the plan was made: how big the board is has nothing to do with
+	// what the configuration asks for, and a plan that changed with the
+	// number of cards on a board would not be the same plan twice.
+	if project.Items.TotalCount > ghOptionEditLimit {
+		return core.ApplyResult{Change: c, FollowUp: fmt.Sprintf(
+			"%s holds %d items; rewriting a board's columns clears the column of every item on it, and flow puts back at most %d",
+			g.Slug(), project.Items.TotalCount, ghOptionEditLimit)}, nil
+	}
+
+	before, err := g.columnValues(ctx)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	if held := ghHolders(before, edit.removing()); held > 0 {
+		return core.ApplyResult{}, core.Errorf(core.ErrConflict, "remove the column %q from %s", edit.subject.Name, g.Slug()).
+			WithWhy("%d items are in it, and nothing flow can do afterwards would put them back", held).
+			WithFix("move them to another column first")
+	}
+
+	if _, err := core.GraphQL[ghFieldResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query:     ghOptionsMutation,
+		Variables: map[string]any{"field": project.Status.ID, "options": ghOptionInputs(edit.options)},
+	}, ghSentinel); err != nil {
+		return core.ApplyResult{}, core.Explain(err, "rewrite the columns of %s", g.Slug())
+	}
+
+	after, err := g.project(ctx)
+	if err != nil {
+		return core.ApplyResult{}, core.Explain(err, "read back the columns of %s", g.Slug())
+	}
+	if !after.Exists || after.Status == nil {
+		return core.ApplyResult{}, core.Errorf(core.ErrConflict, "rewrite the columns of %s", g.Slug()).
+			WithWhy("the board has no %s field after the rewrite", ghStatusFieldName)
+	}
+	item, err := edit.verify(*after.Status)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	restored, err := g.restore(ctx, after, before, edit.renames)
+	if err != nil {
+		return core.ApplyResult{}, err
+	}
+	return core.ApplyResult{Change: c, Item: item, Note: edit.note + ghRestoreNote(restored, len(before))}, nil
+}
+
+// columnValues reads every item of the board and the column it is in.
+//
+// This is the snapshot the rewrite is put back from, and it is taken over
+// every item rather than every ticket: a draft and a pull request sit in a
+// column too, and clearing one of those is as much a loss as clearing an
+// issue's. An item in no column is left out — there is nothing to put back.
+func (g *GitHubProjects) columnValues(ctx context.Context) ([]ghItemValue, error) {
+	variables := map[string]any{"login": g.owner, "number": g.number, "first": ghItemPageSize}
+	var values []ghItemValue
+	for page := 0; page < core.MaxPages; page++ {
+		data, err := core.GraphQL[ghItemsResult](ctx, g.client, g.request(), core.GraphQLQuery{
+			Query:     ghItemValuesQuery(g.ownerType),
+			Variables: variables,
+		}, ghSentinel)
+		if err != nil {
+			return nil, core.Explain(err, "read what column each item of %s is in", g.Slug())
+		}
+		items := data.owner().items()
+		for _, item := range items.Nodes {
+			if item.ID == "" || item.Status == nil || item.Status.Name == "" {
+				continue
+			}
+			values = append(values, ghItemValue{ID: item.ID, Name: item.Status.Name})
+		}
+		if !items.PageInfo.HasNextPage || items.PageInfo.EndCursor == "" {
+			return values, nil
+		}
+		variables["after"] = items.PageInfo.EndCursor
+	}
+	return nil, core.Errorf(core.ErrUnavailable, "read what column each item of %s is in", g.Slug()).
+		WithWhy("the board offered more than %d pages of items", core.MaxPages).
+		WithFix("split the board: flow reads every item of it before it touches a column")
+}
+
+// restore puts every item back in the column it was in, and returns how many
+// had to be put back.
+//
+// It reads before it writes, because the provider may well have kept the
+// values: an option sent back with its own id keeps its identity, and
+// rewriting 500 items that never moved would touch every card on the board
+// every time flow added a column. What was put back is then read again, so
+// that "restored" is something flow saw rather than something it attempted.
+func (g *GitHubProjects) restore(ctx context.Context, project ghProject, before []ghItemValue, renames map[string]string) (int, error) {
+	now, err := g.columnValues(ctx)
+	if err != nil {
+		return 0, err
+	}
+	held := ghValueIndex(now)
+	cleared := 0
+	for _, was := range before {
+		want := ghOr(renames[was.Name], was.Name)
+		if held[was.ID] == want {
+			continue
+		}
+		cleared++
+		option, ok := project.Status.find(want)
+		if !ok {
+			// Nothing to put it back into. The verification below
+			// is what reports it, so that one answer covers every
+			// way an item can fail to come back.
+			continue
+		}
+		if err := g.setColumn(ctx, project, was.ID, option.ID); err != nil {
+			return 0, core.Explain(err, "put an item of %s back in %q", g.Slug(), want)
+		}
+	}
+	if cleared == 0 {
+		return 0, nil
+	}
+
+	now, err = g.columnValues(ctx)
+	if err != nil {
+		return 0, err
+	}
+	held = ghValueIndex(now)
+	lost := 0
+	for _, was := range before {
+		if held[was.ID] != ghOr(renames[was.Name], was.Name) {
+			lost++
+		}
+	}
+	if lost > 0 {
+		return cleared, core.Errorf(core.ErrConflict, "put the items of %s back in their columns", g.Slug()).
+			WithWhy("the rewrite cleared %d item columns and %d of them are still empty", cleared, lost).
+			WithFix("the board needs a person: flow made the column change, but %d items no longer say which column they were in", lost)
+	}
+	return cleared, nil
+}
+
+// setColumn puts one item in one column.
+func (g *GitHubProjects) setColumn(ctx context.Context, project ghProject, item, option string) error {
+	_, err := core.GraphQL[ghMoveResult](ctx, g.client, g.request(), core.GraphQLQuery{
+		Query: ghMoveMutation,
+		Variables: map[string]any{
+			"project": project.ID,
+			"item":    item,
+			"field":   project.Status.ID,
+			"option":  option,
+		},
+	}, ghSentinel)
+	return err
+}
+
+// ghColumnEdit is what one change does to a board's columns: the option set
+// the field is to end up with, and what a snapshot taken before the rewrite
+// means afterwards.
+type ghColumnEdit struct {
+	// options is the whole set, as the field should stand afterwards.
+	options []ghStatusOption
+	// subject is the option the change is about, as it stood before. It
+	// is empty for a column being added, which stood nowhere.
+	subject ghStatusOption
+	// want is what the option is called afterwards, empty for a removal.
+	want string
+	// renames maps a column's name before the rewrite to its name after,
+	// which is how an item whose column was renamed is put back in it.
+	renames map[string]string
+	// note says what happened, for the log.
+	note string
+	// rewrites says whether the option set has to be written at all. A
+	// change asking for what the board already says does not.
+	rewrites bool
+}
+
+// ghColumnEditOf works out the rewrite one change asks for.
+//
+// Adding a column that is there and changing or removing one that is not are
+// the tracker contract's own answers — ErrConflict and ErrNotFound — because
+// the planner only ever proposes a change against what it observed, and a
+// board that no longer looks like that is news rather than a no-op.
+func ghColumnEditOf(field ghStatusField, c core.Change, slug string) (ghColumnEdit, error) {
+	refuse := func(sentinel error, why string, args ...any) (ghColumnEdit, error) {
+		return ghColumnEdit{}, core.Errorf(sentinel, "%s the column %q of %s", c.Op, c.Item.Name, slug).
+			WithWhy(why, args...)
+	}
+	switch c.Op {
+	case core.ChangeCreate:
+		if c.Item.Name == "" {
+			return refuse(core.ErrValidation, "a column has to be called something")
+		}
+		if _, taken := field.find(c.Item.Name); taken {
+			return refuse(core.ErrConflict, "%s already has a column called %q", slug, c.Item.Name)
+		}
+		added := ghStatusOption{Name: c.Item.Name, Color: ghDefaultOptionColour}
+		return ghColumnEdit{
+			options:  append(slices.Clone(field.Options), added),
+			want:     added.Name,
+			note:     fmt.Sprintf("added the column %q", added.Name),
+			rewrites: true,
+		}, nil
+
+	case core.ChangeUpdate:
+		standing, ok := field.identify(c.Item)
+		if !ok {
+			return refuse(core.ErrNotFound, "%s has no such column", slug)
+		}
+		if c.Item.Name == "" {
+			return refuse(core.ErrValidation, "a column has to be called something")
+		}
+		if standing.Name == c.Item.Name {
+			return ghColumnEdit{
+				subject: standing,
+				want:    standing.Name,
+				note:    fmt.Sprintf("the column %q is already as it should be", standing.Name),
+			}, nil
+		}
+		if _, taken := field.find(c.Item.Name); taken {
+			return refuse(core.ErrConflict, "%s already has a column called %q", slug, c.Item.Name)
+		}
+		options := slices.Clone(field.Options)
+		for i := range options {
+			if options[i].ID == standing.ID {
+				options[i].Name = c.Item.Name
+			}
+		}
+		return ghColumnEdit{
+			options:  options,
+			subject:  standing,
+			want:     c.Item.Name,
+			renames:  map[string]string{standing.Name: c.Item.Name},
+			note:     fmt.Sprintf("renamed the column %q to %q", standing.Name, c.Item.Name),
+			rewrites: true,
+		}, nil
+
+	case core.ChangeDelete:
+		standing, ok := field.identify(c.Item)
+		if !ok {
+			return refuse(core.ErrNotFound, "%s has no such column", slug)
+		}
+		options := slices.DeleteFunc(slices.Clone(field.Options), func(o ghStatusOption) bool {
+			return o.ID == standing.ID
+		})
+		return ghColumnEdit{
+			options:  options,
+			subject:  standing,
+			note:     fmt.Sprintf("removed the column %q", standing.Name),
+			rewrites: true,
+		}, nil
+
+	default:
+		return refuse(core.ErrValidation, "%q is not something flow does to a column", c.Op)
+	}
+}
+
+// removing is the name of the column the edit takes away, empty when it takes
+// none away.
+func (e ghColumnEdit) removing() string {
+	if e.want != "" {
+		return ""
+	}
+	return e.subject.Name
+}
+
+// standing is the option a change that needed no rewrite left alone.
+func (e ghColumnEdit) standing() core.Item {
+	return core.Item{ID: e.subject.ID, Name: e.subject.Name}
+}
+
+// verify reads the rewrite back off the board: the column the change asked
+// for is there, under the name it asked for, or the one it took away is gone.
+// What comes back is the item the lock records, with the id the board gave it
+// — which for every option of a rewritten field is a new one.
+func (e ghColumnEdit) verify(field ghStatusField) (core.Item, error) {
+	if e.want == "" {
+		if _, still := field.find(e.subject.Name); still {
+			return core.Item{}, core.Errorf(core.ErrConflict, "remove the column %q", e.subject.Name).
+				WithWhy("the board still has it after the rewrite")
+		}
+		return core.Item{ID: e.subject.ID, Name: e.subject.Name}, nil
+	}
+	option, ok := field.find(e.want)
+	if !ok {
+		return core.Item{}, core.Errorf(core.ErrConflict, "set the column %q", e.want).
+			WithWhy("the board has no such column after the rewrite").
+			WithFix("the rewrite was accepted and did something else: look at the board before running flow again")
+	}
+	return core.Item{ID: option.ID, Name: option.Name}, nil
+}
+
+// ghHolders counts the items in a column, by name. A name nobody asked about
+// holds nothing.
+func ghHolders(values []ghItemValue, name string) int {
+	if name == "" {
+		return 0
+	}
+	held := 0
+	for _, value := range values {
+		if value.Name == name {
+			held++
+		}
+	}
+	return held
+}
+
+// ghValueIndex is the column each item is in, by item id.
+func ghValueIndex(values []ghItemValue) map[string]string {
+	index := make(map[string]string, len(values))
+	for _, value := range values {
+		index[value.ID] = value.Name
+	}
+	return index
+}
+
+// ghRestoreNote says what the rewrite cost the items on the board, which is
+// the half of the log line a person actually worries about.
+func ghRestoreNote(restored, held int) string {
+	if restored == 0 {
+		return fmt.Sprintf("; every one of the %d item columns survived it", held)
+	}
+	return fmt.Sprintf("; %d of %d item columns were cleared by it and put back", restored, held)
 }
 
 // Ticket returns one ticket by key.
@@ -559,15 +917,7 @@ func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID)
 	if item.optionID() == string(to) {
 		return nil
 	}
-	if _, err := core.GraphQL[ghMoveResult](ctx, g.client, g.request(), core.GraphQLQuery{
-		Query: ghMoveMutation,
-		Variables: map[string]any{
-			"project": project.ID,
-			"item":    item.ID,
-			"field":   project.Status.ID,
-			"option":  string(to),
-		},
-	}, ghSentinel); err != nil {
+	if err := g.setColumn(ctx, project, item.ID, string(to)); err != nil {
 		return core.Explain(err, "move %s to %s", key, to)
 	}
 	return nil

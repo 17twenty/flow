@@ -109,11 +109,17 @@ func ghProjectsQuery(ownerType string) string {
 // ghProjectQuery reads one project and its Status field together. The columns
 // are the single-select options of that field, so asking for them separately
 // would be a second query for one board.
+//
+// The option's colour and description are read although no observation
+// records them: GitHub's option input makes both mandatory, so rewriting the
+// option set means sending every option flow is not changing back exactly as
+// it stands. The item count comes along for the same reason — it is what says
+// whether the rewrite is one flow can put right afterwards (spec 06 §4).
 func ghProjectQuery(ownerType string) string {
 	return "query($login:String!,$number:Int!){" +
 		ghOwnerField(ownerType) + "(login:$login){" +
-		"projectV2(number:$number){id number title shortDescription closed " +
-		`field(name:"Status"){...on ProjectV2SingleSelectField{id name options{id name}}}` +
+		"projectV2(number:$number){id number title shortDescription closed items{totalCount} " +
+		`field(name:"Status"){...on ProjectV2SingleSelectField{id name options{id name color description}}}` +
 		"}}}"
 }
 
@@ -157,14 +163,17 @@ type ghProjectConnection struct {
 
 // ghProjectNode is one project as discovery sees it.
 type ghProjectNode struct {
-	ID               string `json:"id"`
-	Number           int    `json:"number"`
-	Title            string `json:"title"`
-	ShortDescription string `json:"shortDescription"`
-	Closed           bool   `json:"closed"`
-	Items            struct {
-		TotalCount int `json:"totalCount"`
-	} `json:"items"`
+	ID               string      `json:"id"`
+	Number           int         `json:"number"`
+	Title            string      `json:"title"`
+	ShortDescription string      `json:"shortDescription"`
+	Closed           bool        `json:"closed"`
+	Items            ghItemCount `json:"items"`
+}
+
+// ghItemCount is how many items a board holds.
+type ghItemCount struct {
+	TotalCount int `json:"totalCount"`
 }
 
 // toCandidate offers the project as an answer to the tracker.project
@@ -226,6 +235,7 @@ type ghProject struct {
 	Title            string         `json:"title"`
 	ShortDescription string         `json:"shortDescription"`
 	Closed           bool           `json:"closed"`
+	Items            ghItemCount    `json:"items"`
 	Status           *ghStatusField `json:"field"`
 }
 
@@ -260,14 +270,47 @@ func (f ghStatusField) items() []core.Item {
 }
 
 // ghStatusOption is one column.
+//
+// The colour and the description are the provider's own and no observation
+// records them, but a rewrite of the option set has to send them back: see
+// [ghOptionInput].
 type ghStatusOption struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
 }
 
 // has reports whether one of the field's options is that column.
 func (f ghStatusField) has(optionID string) bool {
 	return slices.ContainsFunc(f.Options, func(o ghStatusOption) bool { return o.ID == optionID })
+}
+
+// find returns the option with that display name. A board cannot hold two
+// columns of one name, so a name identifies an option as surely as an id —
+// which matters because a rewrite gives every option it touches a new id.
+func (f ghStatusField) find(name string) (ghStatusOption, bool) {
+	for _, option := range f.Options {
+		if option.Name == name {
+			return option, true
+		}
+	}
+	return ghStatusOption{}, false
+}
+
+// identify returns the option a change is about: the one with its id, or the
+// one with its name when the change carries no id. A change made from an
+// observation carries the id; one made by hand need not.
+func (f ghStatusField) identify(item core.Item) (ghStatusOption, bool) {
+	if item.ID != "" {
+		for _, option := range f.Options {
+			if option.ID == item.ID {
+				return option, true
+			}
+		}
+		return ghStatusOption{}, false
+	}
+	return f.find(item.Name)
 }
 
 // names is the columns as a human would list them, for an error that has to
@@ -627,4 +670,106 @@ type ghMoveResult struct {
 			ID string `json:"id"`
 		} `json:"projectV2Item"`
 	} `json:"updateProjectV2ItemFieldValue"`
+}
+
+// The column rewrite (spec 06 §4, spec 11 §2, item 3.10).
+
+const (
+	// ghUpdateFieldOp is the mutation that edits a field. There is no
+	// mutation that adds one option to a single select: the input carries
+	// the option set the field is to end up with, and GitHub replaces
+	// what is there with it.
+	ghUpdateFieldOp = "updateProjectV2Field"
+	// ghOptionEditLimit is the largest board whose columns flow will
+	// rewrite. The rewrite is only safe because flow reads every item
+	// value first and puts back whatever the provider cleared, and a
+	// board bigger than this is one flow cannot promise to restore in one
+	// pass — so the edit becomes a human's (spec 06 §4).
+	ghOptionEditLimit = 500
+	// ghDefaultOptionColour is the colour a column flow adds is given.
+	// GitHub's input makes the colour mandatory and a flow configuration
+	// has no opinion about it, so a new column is grey; whoever wants
+	// another one picks it in the UI, and flow sends it back unchanged
+	// ever after.
+	ghDefaultOptionColour = "GRAY"
+)
+
+// ghOptionsMutation rewrites a single-select field's option set.
+const ghOptionsMutation = "mutation($field:ID!,$options:[ProjectV2SingleSelectFieldOptionInput!]!){" +
+	ghUpdateFieldOp + "(input:{fieldId:$field,singleSelectOptions:$options}){" +
+	"projectV2Field{...on ProjectV2SingleSelectField{id}}}}"
+
+// ghOptionInput is one option as the rewrite sends it.
+//
+// The id is what makes the edit an edit: GitHub keeps an option's identity,
+// and with it every item's value, when the option comes back with its own id.
+// A provider that does not know the field — an older GitHub Enterprise Server
+// — refuses the document before performing any of it, which is why flow sends
+// the id rather than hoping: a rewrite that recreated the options would also
+// break the board's own automations, which name the option they move an item
+// to by id. Name, colour and description are mandatory, so an option flow is
+// not changing is sent back exactly as it stands, and a description nobody
+// wrote is sent as the empty string rather than left out.
+type ghOptionInput struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// ghOptionInputs is an option set as the rewrite sends it.
+func ghOptionInputs(options []ghStatusOption) []ghOptionInput {
+	inputs := make([]ghOptionInput, 0, len(options))
+	for _, option := range options {
+		inputs = append(inputs, ghOptionInput{
+			ID:          option.ID,
+			Name:        option.Name,
+			Color:       ghOr(option.Color, ghDefaultOptionColour),
+			Description: option.Description,
+		})
+	}
+	return inputs
+}
+
+// ghFieldResult is the answer to [ghOptionsMutation]. The field is read back
+// from the board afterwards rather than out of this, because the rewrite has
+// to be verified against what the board says it is now.
+type ghFieldResult struct {
+	UpdateProjectV2Field struct {
+		ProjectV2Field struct {
+			ID string `json:"id"`
+		} `json:"projectV2Field"`
+	} `json:"updateProjectV2Field"`
+}
+
+// ghItemValuesQuery reads one page of the board's items and nothing but the
+// column each sits in.
+//
+// It is the snapshot a rewrite is restored from, so it covers every item of
+// the board rather than every ticket: a draft and a pull request hold a
+// column too, and losing one of those values would be as much a loss as
+// losing an issue's.
+func ghItemValuesQuery(ownerType string) string {
+	return "query($login:String!,$number:Int!,$first:Int!,$after:String){" +
+		ghOwnerField(ownerType) + "(login:$login){projectV2(number:$number){" +
+		"items(first:$first,after:$after){nodes{id " + ghStatusValue + "}" +
+		"pageInfo{hasNextPage endCursor}}}}}"
+}
+
+// ghItemValue is one item of the board and the column it was in, by name.
+//
+// By name, because the rewrite is exactly what makes the id meaningless: the
+// option the item pointed at is gone, and the column it belongs in is the one
+// called what that one was called.
+type ghItemValue struct {
+	ID   string
+	Name string
+}
+
+// ghOr is the first of two strings that is set.
+func ghOr(first, second string) string {
+	if first != "" {
+		return first
+	}
+	return second
 }

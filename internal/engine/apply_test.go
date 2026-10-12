@@ -248,6 +248,67 @@ func TestPruneRefusesWhatTheLockDoesNotOwn(t *testing.T) {
 	}
 }
 
+// TestAProviderRetreatBecomesSomebodyElsesWork is spec 06 §4's other way out
+// of a change flow cannot safely make: the provider does nothing, says why,
+// and the item stops being one flow carried out natively. A retreat is not a
+// failure — it does not stop the rest of the item — and it is not a success:
+// nothing was written, so the lock must not claim it.
+func TestAProviderRetreatBecomesSomebodyElsesWork(t *testing.T) {
+	w := githubProjectsWorld(t)
+	why := "the board holds 900 items, and flow puts back at most 500"
+	tracker := &retreatingTracker{FakeTracker: w.tracker, why: why}
+	adapters := w.adapters()
+	adapters.Tracker = tracker
+
+	applied, records := applyTo(t, w, engine.ApplyInput{Adapters: adapters, Prune: true})
+	options := item(t, applied, core.ItemTrackerStatusOptions)
+
+	if options.Err != nil {
+		t.Fatalf("a retreat failed the item: %v", options.Err)
+	}
+	if options.Outcome != engine.OutcomeFollowUp {
+		t.Errorf("the item's outcome is %q, want %q: a change owed to a human is not one flow made",
+			options.Outcome, engine.OutcomeFollowUp)
+	}
+	if len(options.Changes) == 0 {
+		t.Fatalf("no changes were attempted")
+	}
+	retreat := options.Changes[0]
+	if retreat.FollowUp != why {
+		t.Errorf("the change carries %q, want the provider's reason %q", retreat.FollowUp, why)
+	}
+	if retreat.Done() {
+		t.Errorf("the retreated change counts as done: %+v", retreat)
+	}
+
+	// The rest of the item went ahead: one change a human owes does not
+	// make the others somebody else's.
+	landed := 0
+	for i, change := range options.Changes[1:] {
+		if change.Err != nil || change.FollowUp != "" {
+			t.Errorf("change %d was dragged down by the retreat: %+v", i+1, change)
+		}
+		if change.Done() {
+			landed++
+		}
+	}
+	if landed == 0 {
+		t.Errorf("one retreat stopped every other change: %+v", options.Changes)
+	}
+
+	// Nothing was written for the retreat, so the lock claims nothing.
+	if slices.Contains(records.last(), "tracker.status_option "+retreat.Change.Item.Name) {
+		t.Errorf("the lock claims %q, which the provider never created: %v", retreat.Change.Item.Name, records.last())
+	}
+	observation, err := w.tracker.Observe(context.Background(), core.ItemTrackerStatusOptions)
+	if err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	if slices.ContainsFunc(observation.Items, func(i core.Item) bool { return i.Name == retreat.Change.Item.Name }) {
+		t.Errorf("the column %q is on the board after a retreat: %v", retreat.Change.Item.Name, observation.Items)
+	}
+}
+
 // TestApplyStopsAtAFailureAndLeavesTheLockTrue is the first half of the
 // acceptance: an apply that is interrupted has recorded exactly what it did,
 // and claimed nothing it did not.
@@ -409,6 +470,24 @@ func refused(applied engine.AppliedItem) []string {
 		}
 	}
 	return reasons
+}
+
+// retreatingTracker makes every change except the first, which it declines
+// and hands back to a human. It is how a provider says a change is possible
+// but not safe for flow to make — the board too big to put back being the
+// one that exists (spec 06 §4).
+type retreatingTracker struct {
+	*coretest.FakeTracker
+	why   string
+	calls int
+}
+
+func (t *retreatingTracker) Apply(ctx context.Context, c core.Change) (core.ApplyResult, error) {
+	t.calls++
+	if t.calls == 1 {
+		return core.ApplyResult{Change: c, FollowUp: t.why}, nil
+	}
+	return t.FakeTracker.Apply(ctx, c)
 }
 
 // haltingTracker fails one call to Apply, so that a test can interrupt an

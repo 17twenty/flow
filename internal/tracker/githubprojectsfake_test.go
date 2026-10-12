@@ -49,6 +49,20 @@ type ghProjectsFake struct {
 	repo    string
 	columns map[string]string
 
+	// totalItems overrides how many items the board reports holding, for
+	// a test about a board larger than one can be built in memory.
+	totalItems int
+	// wipesIDs makes the fake ignore the option ids a rewrite sends, so
+	// that every option is recreated and every item value cleared: the
+	// hazard spec 11 §2 names, and what an older server does.
+	wipesIDs bool
+	// deafToMoves makes setting an item's value answer without doing it,
+	// which is the one thing a restore has to notice.
+	deafToMoves bool
+	// optionsMade counts the options the fake has issued ids for, so that
+	// every option it creates is a new one.
+	optionsMade int
+
 	mu      sync.Mutex
 	queries []string
 	paths   []string
@@ -110,8 +124,21 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 		node.Items.TotalCount = 10 + i
 		fake.projects = append(fake.projects, node)
 	}
-	for _, item := range fx.Observations[core.ItemTrackerStatusOptions].Items {
-		fake.options[1] = append(fake.options[1], ghStatusOption{ID: item.ID, Name: item.Name})
+	for i, item := range fx.Observations[core.ItemTrackerStatusOptions].Items {
+		// A real option has a colour and may have a description, and
+		// neither is in the fixture: an observation does not record
+		// them. The fake gives them anyway, because a rewrite that
+		// dropped them would be invisible against a board where every
+		// option was grey and silent.
+		option := ghStatusOption{
+			ID:    item.ID,
+			Name:  item.Name,
+			Color: ghFakeColours[i%len(ghFakeColours)],
+		}
+		if i%2 == 0 {
+			option.Description = "what " + item.Name + " means"
+		}
+		fake.options[1] = append(fake.options[1], option)
 	}
 	for id, name := range fx.Columns {
 		fake.columns[string(id)] = name
@@ -130,6 +157,10 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 	t.Cleanup(srv.Close)
 	return fake, srv
 }
+
+// ghFakeColours are the colours the fake's columns come in, so that a rewrite
+// which did not send an option's own colour back shows up as a recolour.
+var ghFakeColours = []string{"GREEN", "YELLOW", "PURPLE", "GRAY"}
 
 // ghFixtureOwner is the login the fixture's board belongs to. A tracker
 // fixture names no owner — it is about boards and tickets — so the GitHub
@@ -281,12 +312,17 @@ func (f *ghProjectsFake) project(variables map[string]any) any {
 			continue
 		}
 		doc := ghNodeJSON(node)
-		delete(doc, "items")
+		doc["items"] = map[string]any{"totalCount": f.count()}
 		doc["field"] = nil
 		if options, ok := f.options[number]; ok {
 			values := make([]any, 0, len(options))
 			for _, option := range options {
-				values = append(values, map[string]any{"id": option.ID, "name": option.Name})
+				values = append(values, map[string]any{
+					"id":          option.ID,
+					"name":        option.Name,
+					"color":       option.Color,
+					"description": option.Description,
+				})
 			}
 			doc["field"] = map[string]any{
 				"id":      "PVTSSF_status",
@@ -297,6 +333,15 @@ func (f *ghProjectsFake) project(variables map[string]any) any {
 		return doc
 	}
 	return nil
+}
+
+// count is how many items the board says it holds: the ones the fake has,
+// unless a test has claimed a board too big to hold in one.
+func (f *ghProjectsFake) count() int {
+	if f.totalItems > 0 {
+		return f.totalItems
+	}
+	return len(f.items)
 }
 
 // ghNodeJSON renders one project as GitHub's connection does.
@@ -437,12 +482,90 @@ func (f *ghProjectsFake) serves(slug string) bool {
 	})
 }
 
-// mutate performs the one mutation flow sends: setting an item's Status.
+// mutate performs the two mutations flow sends: setting an item's Status, and
+// rewriting the options of the Status field itself.
 func (f *ghProjectsFake) mutate(w http.ResponseWriter, query core.GraphQLQuery) {
-	if !strings.Contains(query.Query, ghUpdateItemFieldOp) {
+	switch {
+	case strings.Contains(query.Query, ghUpdateItemFieldOp):
+		f.setItemValue(w, query)
+	case strings.Contains(query.Query, ghUpdateFieldOp):
+		f.rewriteOptions(w, query)
+	default:
 		f.refuse(w, "NOT_IMPLEMENTED", "the fake knows no such mutation")
+	}
+}
+
+// rewriteOptions replaces the Status field's option set, the way GitHub does.
+//
+// An option sent back with its own id keeps it, and one sent without gets a
+// new one. Whatever is no longer there takes every item value pointing at it
+// with it: that is the hazard, and it is the fake's job to inflict it.
+func (f *ghProjectsFake) rewriteOptions(w http.ResponseWriter, query core.GraphQLQuery) {
+	field, _ := query.Variables["field"].(string)
+	payload, err := json.Marshal(query.Variables["options"])
+	if err != nil {
+		f.refuse(w, "INVALID", "the options did not encode: "+err.Error())
 		return
 	}
+	var sent []ghOptionInput
+	if err := json.Unmarshal(payload, &sent); err != nil {
+		f.refuse(w, "INVALID", "the options are not options: "+err.Error())
+		return
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if field != ghFakeStatusFieldID {
+		f.refuse(w, "NOT_FOUND", "no field "+field)
+		return
+	}
+	if len(sent) == 0 {
+		// GitHub leaves the options alone when none are sent, which
+		// flow must never rely on: it is the one input that means
+		// something other than what it says.
+		f.refuse(w, "INVALID", "singleSelectOptions was empty")
+		return
+	}
+	next := make([]ghStatusOption, 0, len(sent))
+	for _, option := range sent {
+		if option.Name == "" || option.Color == "" {
+			f.refuse(w, "INVALID", "every option needs a name and a colour")
+			return
+		}
+		id := option.ID
+		if id == "" || f.wipesIDs {
+			f.optionsMade++
+			id = "opt-made-" + strconv.Itoa(f.optionsMade)
+		}
+		next = append(next, ghStatusOption{
+			ID:          id,
+			Name:        option.Name,
+			Color:       option.Color,
+			Description: option.Description,
+		})
+	}
+	had := f.options[1]
+	f.options[1] = next
+	for _, item := range f.items {
+		// Only a value pointing at an option the field actually had is
+		// cleared. An item sitting in a column the Status field does
+		// not have at all is the fixture's board that somebody moved
+		// on from, and a rewrite of the options says nothing about it.
+		was := func(o ghStatusOption) bool { return o.ID == item.optionID }
+		if item.optionID == "" || !slices.ContainsFunc(had, was) || slices.ContainsFunc(next, was) {
+			continue
+		}
+		f.now = f.now.Add(time.Minute)
+		item.optionID = ""
+		item.updatedAt = f.now
+	}
+	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		ghUpdateFieldOp: map[string]any{"projectV2Field": map[string]any{"id": field}},
+	}})
+}
+
+// setItemValue puts one item in one column.
+func (f *ghProjectsFake) setItemValue(w http.ResponseWriter, query core.GraphQLQuery) {
 	itemID, _ := query.Variables["item"].(string)
 	option, _ := query.Variables["option"].(string)
 	field, _ := query.Variables["field"].(string)
@@ -465,6 +588,12 @@ func (f *ghProjectsFake) mutate(w http.ResponseWriter, query core.GraphQLQuery) 
 	for _, item := range f.items {
 		if item.id != itemID {
 			continue
+		}
+		if f.deafToMoves {
+			f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+				ghUpdateItemFieldOp: map[string]any{"projectV2Item": map[string]any{"id": item.id}},
+			}})
+			return
 		}
 		f.now = f.now.Add(time.Minute)
 		item.optionID = option
@@ -492,10 +621,22 @@ func (f *ghProjectsFake) itemJSON(item *ghFakeItem) map[string]any {
 	if item.optionID != "" {
 		doc["fieldValueByName"] = map[string]any{
 			"optionId": item.optionID,
-			"name":     f.columns[item.optionID],
+			"name":     f.optionName(item.optionID),
 		}
 	}
 	return doc
+}
+
+// optionName is what the column with that id is called: the board's own
+// options first, since a rewrite gives them new ids, and then the fixture's
+// column names, which cover a column the Status field no longer has.
+func (f *ghProjectsFake) optionName(id string) string {
+	for _, option := range f.options[1] {
+		if option.ID == id {
+			return option.Name
+		}
+	}
+	return f.columns[id]
 }
 
 // issueJSON renders the issue behind an item.
@@ -565,17 +706,42 @@ func (f *ghProjectsFake) itemIn(number int) string {
 	return ""
 }
 
-// ghOr is the first of two names that is set.
-func ghOr(first, second string) string {
-	if first != "" {
-		return first
-	}
-	return second
-}
-
 // sent returns the GraphQL documents the fake has been asked, in order.
 func (f *ghProjectsFake) sent() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.queries)
+}
+
+// columnOf is what the item holding that issue is in, by column name, for a
+// test that asks the fake rather than the adapter where a card ended up.
+func (f *ghProjectsFake) columnOf(number int) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, item := range f.items {
+		if item.number == number {
+			return f.optionName(item.optionID)
+		}
+	}
+	return ""
+}
+
+// statusOptions is the board's Status options as they now stand.
+func (f *ghProjectsFake) statusOptions() []ghStatusOption {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.options[1])
+}
+
+// mutations counts how many documents carrying that operation were sent.
+func (f *ghProjectsFake) mutations(op string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, query := range f.queries {
+		if strings.HasPrefix(query, "mutation") && strings.Contains(query, op) {
+			count++
+		}
+	}
+	return count
 }

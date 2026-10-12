@@ -70,7 +70,10 @@ type Applied struct {
 type AppliedItem struct {
 	// ID is the item's id.
 	ID string
-	// Outcome is what the plan said flow would do about it.
+	// Outcome is what the plan said flow would do about it, unless a
+	// provider retreated from a change it could only make unsafely: a
+	// native item every change of which became somebody's follow-up is a
+	// follow_up item, whatever the plan hoped for (spec 06 §4).
 	Outcome Outcome
 	// Changes is what became of each change the plan listed.
 	Changes []AppliedChange
@@ -94,12 +97,16 @@ type AppliedChange struct {
 	// Refused says why flow declined to make it: a removal without --prune,
 	// an option somebody is using, something flow did not create.
 	Refused string
+	// FollowUp says the provider would not make it and a human must, with
+	// the reason. It is a refusal by the provider rather than by flow, and
+	// it is what turns the item's outcome into follow_up.
+	FollowUp string
 	// Err is why the provider refused or failed.
 	Err error
 }
 
 // Done reports whether the change was made.
-func (c AppliedChange) Done() bool { return c.Err == nil && c.Refused == "" }
+func (c AppliedChange) Done() bool { return c.Err == nil && c.Refused == "" && c.FollowUp == "" }
 
 // Counts of what happened, for the summary a human reads.
 func (a Applied) Counts() (done, skipped, failed int) {
@@ -205,6 +212,12 @@ func (a *applier) item(ctx context.Context, planned PlanItem) AppliedItem {
 			a.fail(planned.ID, planned.ID)
 			break
 		}
+		// A provider that retreated from a change owes it to a human,
+		// and an item one of whose changes is owed to a human is not
+		// an item flow carried out natively.
+		if change.FollowUp != "" {
+			applied.Outcome = OutcomeFollowUp
+		}
 	}
 	return applied
 }
@@ -246,6 +259,14 @@ func (a *applier) tracker(ctx context.Context, planned PlanItem, wanted DesiredI
 		if err != nil {
 			a.log(planned.ID, change.Op, change.Item.Name, "", err)
 			return append(applied, AppliedChange{Change: change, Err: err})
+		}
+		// A retreat is not a mutation: nothing was written, so there is
+		// nothing to record in the lock and nothing to save.
+		if result.FollowUp != "" {
+			a.in.Log.Info("the provider will not make the change",
+				"item", planned.ID, "op", change.Op, "name", change.Item.Name, "why", result.FollowUp)
+			applied = append(applied, AppliedChange{Change: change, FollowUp: result.FollowUp})
+			continue
 		}
 		a.log(planned.ID, change.Op, change.Item.Name, result.Item.ID, nil)
 		a.record(wanted, change, result.Item)

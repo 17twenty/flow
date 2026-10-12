@@ -256,6 +256,13 @@ type ApplyResult struct {
 	Item Item
 	// Note is one line describing what the provider did, for the log.
 	Note string
+	// FollowUp says the change was not made and a human has to make it,
+	// with the reason. It is how an adapter retreats from a change it
+	// could only make unsafely — GitHub Projects will not rewrite the
+	// columns of a board too large to put back afterwards (spec 06 §4).
+	// Nothing happened: an adapter that has already written something
+	// returns the error it hit instead.
+	FollowUp string
 }
 
 // FollowUp is a ticket flow files for work it cannot do itself: what is

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -630,9 +631,9 @@ func TestGitHubProjectsEndpointsFollowTheAPIRoot(t *testing.T) {
 	}
 }
 
-// Everything 3.10 and 3.11 will land refuses meanwhile, naming what it wanted
-// rather than failing blankly — the only stub spec 01 permits, and only until
-// its plan item lands.
+// Everything 3.11 will land refuses meanwhile, naming what it wanted rather
+// than failing blankly — the only stub spec 01 permits, and only until its
+// plan item lands.
 func TestGitHubProjectsRefusesWhatItsPlanItemsHaveNotLanded(t *testing.T) {
 	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
 	adapter := newGitHubProjectsAdapter(t, srv, nil)
@@ -641,8 +642,12 @@ func TestGitHubProjectsRefusesWhatItsPlanItemsHaveNotLanded(t *testing.T) {
 			_, err := adapter.Observe(t.Context(), core.ItemTrackerLabels)
 			return err
 		}(),
-		"Apply": func() error {
-			_, err := adapter.Apply(t.Context(), core.Change{What: core.ItemTrackerStatusOptions})
+		"Apply(labels)": func() error {
+			_, err := adapter.Apply(t.Context(), core.Change{
+				What: core.ItemTrackerLabels,
+				Op:   core.ChangeCreate,
+				Item: core.Item{Name: "blocked"},
+			})
 			return err
 		}(),
 		"CreateFollowUp": func() error { _, err := adapter.CreateFollowUp(t.Context(), core.FollowUp{}); return err }(),
@@ -990,4 +995,383 @@ func TestGitHubProjectsRefusesAMoveToNowhere(t *testing.T) {
 	if fake.asked() != 0 {
 		t.Errorf("a move to nowhere sent %d queries", fake.asked())
 	}
+}
+
+// Editing a board's columns (spec 06 §4, spec 11 §2, item 3.10).
+//
+// GitHub has no mutation that adds one option to a single select: the option
+// set is written whole. flow therefore sends every option it is not changing
+// back exactly as it stands — with its own id, which is what lets the
+// provider keep the items pointing at it, and with its own colour and
+// description, which the input makes mandatory and a rewrite would otherwise
+// reset.
+func TestGitHubProjectsAddsAColumnWithoutDisturbingTheOthers(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	before := fake.statusOptions()
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "Blocked"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(create): %v", err)
+	}
+	if result.FollowUp != "" {
+		t.Fatalf("the adapter retreated from a board of %d items: %s", len(fake.items), result.FollowUp)
+	}
+	if result.Item.ID == "" || result.Item.Name != "Blocked" {
+		t.Errorf("the created column is %+v, want the name it was given and an id the lock can record", result.Item)
+	}
+	if result.Note == "" {
+		t.Error("the result explains nothing, so the log cannot say what happened")
+	}
+
+	after := fake.statusOptions()
+	if len(after) != len(before)+1 {
+		t.Fatalf("the board has %d columns, want the %d it had and one more", len(after), len(before))
+	}
+	for i, option := range before {
+		if after[i] != option {
+			t.Errorf("column %d is %+v, want the %+v it was: a rewrite sends every option it is not changing back as it stands", i, after[i], option)
+		}
+	}
+	added := after[len(after)-1]
+	if added.Name != "Blocked" || added.Color != ghDefaultOptionColour || added.Description != "" {
+		t.Errorf("the added column is %+v, want a grey %q with no description", added, "Blocked")
+	}
+	if added.ID != result.Item.ID {
+		t.Errorf("the result says the column is %q, the board says %q", result.Item.ID, added.ID)
+	}
+}
+
+// The provider keeping the item values is the ordinary case, and flow must
+// not write over them anyway: putting 500 cards back where they already are
+// would touch every one of them every time somebody added a column.
+func TestGitHubProjectsLeavesItemsAloneWhenTheRewriteSparedThem(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "Blocked"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(create): %v", err)
+	}
+	if moves := fake.mutations(ghUpdateItemFieldOp); moves != 0 {
+		t.Errorf("flow moved %d items that had not moved", moves)
+	}
+	if !strings.Contains(result.Note, "survived") {
+		t.Errorf("the note is %q, want it to say the item columns survived", result.Note)
+	}
+	for _, number := range []int{10, 11, 12, 13, 14} {
+		if fake.columnOf(number) == "" {
+			t.Errorf("issue #%d lost its column", number)
+		}
+	}
+}
+
+// And when the provider does clear them — which is what it does to any option
+// it is not handed back by id, and what every option of an older server's
+// board gets — every value goes back by name.
+func TestGitHubProjectsPutsEveryClearedItemBackByName(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.wipesIDs = true
+	was := map[int]string{}
+	for _, number := range []int{10, 11, 12, 13, 14} {
+		was[number] = fake.columnOf(number)
+	}
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "Blocked"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(create): %v", err)
+	}
+	for number, column := range was {
+		if now := fake.columnOf(number); now != column {
+			t.Errorf("issue #%d is in %q, want the %q it was in before the rewrite", number, now, column)
+		}
+	}
+	// Four of the five items were in a column of the Status field; the
+	// fifth is in one the board has moved on from, which no rewrite of
+	// the options touches.
+	if !strings.Contains(result.Note, "4 of 5") {
+		t.Errorf("the note is %q, want it to say 4 of 5 item columns were put back", result.Note)
+	}
+}
+
+// A rename carries the items over: the column an item was in is the one now
+// called what that one was called.
+func TestGitHubProjectsRenamesAColumnAndTakesItsItemsWithIt(t *testing.T) {
+	for _, wipes := range []bool{false, true} {
+		name := "the provider kept the options"
+		if wipes {
+			name = "the provider recreated the options"
+		}
+		t.Run(name, func(t *testing.T) {
+			fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+			fake.wipesIDs = wipes
+			adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+			result, err := adapter.Apply(t.Context(), core.Change{
+				What: core.ItemTrackerStatusOptions,
+				Op:   core.ChangeUpdate,
+				Item: core.Item{ID: string(coretest.ColumnInProgress), Name: "Doing"},
+			})
+			if err != nil {
+				t.Fatalf("Apply(update): %v", err)
+			}
+			if result.Item.Name != "Doing" {
+				t.Errorf("the renamed column is %+v, want it called Doing", result.Item)
+			}
+			if column := fake.columnOf(10); column != "Doing" {
+				t.Errorf("issue #10 is in %q, want the renamed column it was in", column)
+			}
+			if slices.ContainsFunc(fake.statusOptions(), func(o ghStatusOption) bool { return o.Name == "In progress" }) {
+				t.Error("the board still has a column called In progress")
+			}
+		})
+	}
+}
+
+// Removing a column clears every item in it, and nothing flow does afterwards
+// would put them back: there is no column left to put them in. So it refuses,
+// before it writes anything.
+func TestGitHubProjectsRefusesToRemoveAColumnSomebodyIsUsing(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	_, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeDelete,
+		Item: core.Item{ID: string(coretest.ColumnTodo), Name: "Todo"},
+	})
+	if !errors.Is(err, core.ErrConflict) {
+		t.Fatalf("removing a column in use = %v, want ErrConflict", err)
+	}
+	if !strings.Contains(err.Error(), "2 items") {
+		t.Errorf("the refusal is %q, want it to say how many items are in the way", err)
+	}
+	if rewrites := fake.mutations(ghUpdateFieldOp); rewrites != 0 {
+		t.Errorf("flow rewrote the option set %d times while refusing to", rewrites)
+	}
+	if len(fake.statusOptions()) != 4 {
+		t.Errorf("the board has %d columns, want the 4 it started with", len(fake.statusOptions()))
+	}
+}
+
+// An empty one goes, and the result carries the id it had so that the lock
+// can stop recording it as flow's.
+func TestGitHubProjectsRemovesAnEmptyColumn(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeDelete,
+		Item: core.Item{ID: string(coretest.ColumnInReview), Name: "In review"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(delete): %v", err)
+	}
+	if result.Item.ID != string(coretest.ColumnInReview) {
+		t.Errorf("the removed column is %+v, want the id the lock recorded", result.Item)
+	}
+	for _, option := range fake.statusOptions() {
+		if option.Name == "In review" {
+			t.Error("the column survived being removed")
+		}
+	}
+}
+
+// Above the limit spec 06 §4 sets, the rewrite is a human's: flow puts back
+// what the rewrite clears, and it will not clear what it cannot put back.
+func TestGitHubProjectsWillNotRewriteTheColumnsOfABoardItCannotPutBack(t *testing.T) {
+	cases := []struct {
+		items    int
+		retreats bool
+	}{
+		{items: ghOptionEditLimit, retreats: false},
+		{items: ghOptionEditLimit + 1, retreats: true},
+	}
+	for _, c := range cases {
+		t.Run(strconv.Itoa(c.items)+" items", func(t *testing.T) {
+			fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+			fake.totalItems = c.items
+			adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+			result, err := adapter.Apply(t.Context(), core.Change{
+				What: core.ItemTrackerStatusOptions,
+				Op:   core.ChangeCreate,
+				Item: core.Item{Name: "Blocked"},
+			})
+			if err != nil {
+				t.Fatalf("Apply(create): %v", err)
+			}
+			switch {
+			case c.retreats && result.FollowUp == "":
+				t.Fatal("flow rewrote the columns of a board it cannot put back")
+			case !c.retreats && result.FollowUp != "":
+				t.Fatalf("flow retreated from a board of %d items: %s", c.items, result.FollowUp)
+			}
+			rewrites := fake.mutations(ghUpdateFieldOp)
+			if c.retreats {
+				if rewrites != 0 {
+					t.Errorf("flow sent %d rewrites while retreating from one", rewrites)
+				}
+				if !strings.Contains(result.FollowUp, strconv.Itoa(c.items)) {
+					t.Errorf("the retreat is %q, want it to say how big the board is", result.FollowUp)
+				}
+				return
+			}
+			if rewrites != 1 {
+				t.Errorf("flow sent %d rewrites, want one", rewrites)
+			}
+		})
+	}
+}
+
+// The restore is read back, not assumed: a provider that accepts every move
+// and performs none would otherwise leave a board full of cleared cards and
+// an apply that said it was fine.
+func TestGitHubProjectsSaysWhenTheItemsDidNotComeBack(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.wipesIDs = true
+	fake.deafToMoves = true
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	_, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeCreate,
+		Item: core.Item{Name: "Blocked"},
+	})
+	if !errors.Is(err, core.ErrConflict) {
+		t.Fatalf("a restore that did not happen = %v, want ErrConflict", err)
+	}
+	if fix := fixOf(t, err); !strings.Contains(fix, "person") {
+		t.Errorf("the fix is %q, want it to send a person to the board", fix)
+	}
+}
+
+// A change the board has moved on from is news rather than a no-op: the
+// planner proposes against what it observed, and the tracker contract's own
+// answers say which kind of news it is.
+func TestGitHubProjectsRefusesAColumnChangeTheBoardDisagreesWith(t *testing.T) {
+	cases := map[string]struct {
+		change core.Change
+		want   error
+	}{
+		"adding one that is there": {
+			change: core.Change{Op: core.ChangeCreate, Item: core.Item{Name: "Todo"}},
+			want:   core.ErrConflict,
+		},
+		"adding one with no name": {
+			change: core.Change{Op: core.ChangeCreate, Item: core.Item{}},
+			want:   core.ErrValidation,
+		},
+		"renaming one that is gone": {
+			change: core.Change{Op: core.ChangeUpdate, Item: core.Item{ID: "opt-nobody", Name: "Doing"}},
+			want:   core.ErrNotFound,
+		},
+		"renaming one to a name in use": {
+			change: core.Change{Op: core.ChangeUpdate, Item: core.Item{ID: string(coretest.ColumnTodo), Name: "Done"}},
+			want:   core.ErrConflict,
+		},
+		"removing one that is gone": {
+			change: core.Change{Op: core.ChangeDelete, Item: core.Item{Name: "Blocked"}},
+			want:   core.ErrNotFound,
+		},
+		"a change that is not one": {
+			change: core.Change{Op: "rearrange", Item: core.Item{Name: "Todo"}},
+			want:   core.ErrValidation,
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+			adapter := newGitHubProjectsAdapter(t, srv, nil)
+			c.change.What = core.ItemTrackerStatusOptions
+
+			if _, err := adapter.Apply(t.Context(), c.change); !errors.Is(err, c.want) {
+				t.Errorf("Apply = %v, want %v", err, c.want)
+			}
+			if rewrites := fake.mutations(ghUpdateFieldOp); rewrites != 0 {
+				t.Errorf("flow rewrote the option set %d times while refusing to", rewrites)
+			}
+		})
+	}
+}
+
+// A change asking for what the board already says writes nothing. A rewrite
+// is the most dangerous thing flow does to a tracker, and doing one to no
+// effect is the worst version of it.
+func TestGitHubProjectsRewritesNothingForAColumnThatIsAlreadyRight(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	result, err := adapter.Apply(t.Context(), core.Change{
+		What: core.ItemTrackerStatusOptions,
+		Op:   core.ChangeUpdate,
+		Item: core.Item{ID: string(coretest.ColumnTodo), Name: "Todo"},
+	})
+	if err != nil {
+		t.Fatalf("Apply(update): %v", err)
+	}
+	if result.Item.ID != string(coretest.ColumnTodo) {
+		t.Errorf("the result is %+v, want the column as it stands", result.Item)
+	}
+	if rewrites := fake.mutations(ghUpdateFieldOp); rewrites != 0 {
+		t.Errorf("flow rewrote the option set %d times to change nothing", rewrites)
+	}
+}
+
+// A board flow cannot see is not a board flow rewrites.
+func TestGitHubProjectsWillNotEditTheColumnsOfABoardItCannotRead(t *testing.T) {
+	t.Run("no board", func(t *testing.T) {
+		_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+		adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Number = 99 })
+		_, err := adapter.Apply(t.Context(), core.Change{
+			What: core.ItemTrackerStatusOptions,
+			Op:   core.ChangeCreate,
+			Item: core.Item{Name: "Blocked"},
+		})
+		if !errors.Is(err, core.ErrNotFound) {
+			t.Errorf("Apply against a board nobody has = %v, want ErrNotFound", err)
+		}
+	})
+	t.Run("no status field", func(t *testing.T) {
+		fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+		delete(fake.options, 1)
+		adapter := newGitHubProjectsAdapter(t, srv, nil)
+		_, err := adapter.Apply(t.Context(), core.Change{
+			What: core.ItemTrackerStatusOptions,
+			Op:   core.ChangeCreate,
+			Item: core.Item{Name: "Blocked"},
+		})
+		if !errors.Is(err, core.ErrNotFound) {
+			t.Errorf("Apply to a board with no Status field = %v, want ErrNotFound", err)
+		}
+		if fix := fixOf(t, err); !strings.Contains(fix, ghStatusFieldName) {
+			t.Errorf("the fix is %q, want it to name the field the board is missing", fix)
+		}
+	})
+	t.Run("no board number", func(t *testing.T) {
+		_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+		adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Number = 0 })
+		_, err := adapter.Apply(t.Context(), core.Change{
+			What: core.ItemTrackerStatusOptions,
+			Op:   core.ChangeCreate,
+			Item: core.Item{Name: "Blocked"},
+		})
+		if !errors.Is(err, core.ErrValidation) {
+			t.Errorf("Apply before setup resolved a board = %v, want ErrValidation", err)
+		}
+	})
 }

@@ -234,3 +234,51 @@ reopen, pagination, error mapping.
   query for an arbitrary set of them. A caller naming several tickets is asking
   which of them are there, and one that has been deleted is an answer rather
   than a failure of the whole query.
+- **§2 a rewrite sends every option back with its own id (item 3.10).**
+  GitHub has no mutation that edits one option of a single-select field: the
+  set is written whole, and an option the server does not recognise is a new
+  option with a new id, which every item pointing at the old one loses.
+  `ProjectV2SingleSelectFieldOptionInput` takes an optional `id` precisely to
+  preserve an option's identity across such a write, so flow sends the id,
+  name, colour and description of every column it is not changing exactly as
+  it read them. This also preserves the board's own built-in automations,
+  which name their columns by id and would otherwise be silently unhooked.
+  There is no fallback for a server whose schema lacks the field: that is a
+  GraphQL validation error, which happens before anything is written, and
+  flow reports it rather than retrying a write that would clear the board.
+- **§2 the snapshot and restore happen anyway (item 3.10).** Spec 06 §4
+  asks for them and they are right whichever way the provider behaves: flow
+  reads the column of every item, rewrites the set, puts back whatever was
+  cleared, and reads the board again to prove it. Because the restore reads
+  before it writes, a provider that honoured the ids costs zero item
+  mutations and the note says every column survived; the verification pass
+  runs only when something had to be put back.
+- **§2 the snapshot covers every item on the board, not just tickets (item
+  3.10).** Draft issues and pull requests sit in columns too, and a rewrite
+  clears theirs identically. Restoring only the issues would quietly empty
+  the rest of the board.
+- **§2 items are put back by column name, through the rename (item 3.10).**
+  An id is what the rewrite may have changed, so it cannot be what the
+  restore matches on; the name is what a human means by the column. A rename
+  carries its items with it — an item that was in `Ready` belongs in whatever
+  `Ready` was renamed to, not in nothing.
+- **§2 colour and description are read but are not observed (item 3.10).**
+  The rewrite has to send them back, so the project query now asks for them.
+  They stay out of `Observe` deliberately: a column flow created in grey that
+  somebody recoloured is the same column, and an observation that included
+  the colour would report that as drift and recolour it on every apply.
+- **§2 a new column is grey with no description (item 3.10).** GitHub's
+  input makes the colour mandatory and a flow configuration has no opinion
+  about it. Whoever wants another colour picks it in the UI, and flow sends
+  it back unchanged ever after.
+- **§2 deleting a column that holds items is refused before any write (item
+  3.10).** The refusal is `ErrConflict` and names how many items are in it.
+  Unlike a cleared value, there is nothing flow could do afterwards to put
+  those items back — the column they belong in would no longer exist — so
+  this is checked against the snapshot, before the mutation is sent.
+- **§2 option edits follow the tracker contract's own semantics (item
+  3.10).** Creating a column that is already there is `ErrConflict`; updating
+  or deleting one that is gone is `ErrNotFound`; an operation flow does not
+  know is `ErrValidation`. An update asking for the name the column already
+  has rewrites nothing and sends no mutation, so applying the same change
+  twice touches the board once.
