@@ -73,19 +73,19 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
-- [ ] Phase 8 — Live health (plan Phase 5): PR audits done (5.1); deploy/ticket/transition audits, report, health issue remain
+- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits done (5.1–5.4); catch-up, flag cleanup, report and health issue remain
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
 ### Status notes
 
-*(updated after plan item 5.1, the live-health audit of pull requests, commit
-`71f0c9c`, CI green)*
+*(updated after plan item 5.2, the deployment half of the live-health audit,
+commit `18ad3fe`, CI green)*
 
 **Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
-4.1–4.6) and Phase 5 has begun with 5.1, their issues closed and their phase parents (#6, #13, #27, #44)
-closed with them. Every command in spec 00 §5 is implemented; the only
+4.1–4.6) and Phase 5 is half done (5.1–5.4), their issues closed and their
+phase parents (#6, #13, #27, #44) closed with them. Every command in spec 00 §5 is implemented; the only
 `ErrUnsupported` left in the shipped surface is three `doctor` flags whose own
 items are in Phases 5 and 6 (`--report` 5.7, `--ci` 5.8, `--watch` 6.3), which
 are refused rather than parsed and ignored.
@@ -184,12 +184,14 @@ for byte identical.
    `issue_closed` are `owner: native` and GitHub's built-ins are enabled.
    Backlog → Ready is nobody's: flow judges readiness, it never promotes.
    Stage B is what makes the middle of the board move.
-3. *Phase 5 is a quarter done.* 5.1 and 5.3 landed; 5.2 (deploys), 5.4 (native
-   transitions actually fired), 5.5 (`--fix` catching up the transitions flow
+3. *Phase 5 is half done.* 5.1 (pull requests), 5.2 (deployments), 5.3 (the
+   board) and 5.4 (native transitions) landed, so every question spec 07 §6
+   asks of a live repository now has a check behind it. What remains is what
+   doctor does with the answers: 5.5 (`--fix` catching up the transitions flow
    owns), 5.6 (flag cleanup), 5.7 (`--report` and the pinned health issue) and
-   5.8 (`--ci` annotations) remain. 5.7 is what the 14-day proof is read from,
-   and the streak cannot start until H.1 makes doctor exit 0, so the clock
-   does not favour reordering it.
+   5.8 (`--ci` annotations). 5.7 is what the 14-day proof is read from, and the
+   streak cannot start until H.1 makes doctor exit 0, so the clock does not
+   favour reordering it.
 4. *Phases 6–8:* the TUI, the remaining adapters, and the proof.
 
 **The board half of the audit (item 5.3, just landed).** `live.tickets.*` asks
@@ -212,16 +214,39 @@ and it is precisely what Stage B settles. The check stays literal and its
 remediation points at `forge.protection`, the setup check that decides whether
 work may reach the trunk that way at all.
 
-**Single best next step:** plan item 5.4 — `live.transitions.native` (#68,
-specs 07 §6 and 04 §5). Every other check so far has audited people; this one
-audits the tracker's own automation, which is the half of the workflow flow
-deliberately does not perform. `flow plan` attests that GitHub's built-in
-"item closed → Done" workflows are enabled, but an attestation is a claim, and
-5.4 is what makes it checkable: for each `owner: native` transition, did
-tickets actually move within 15 minutes of the event? It is the natural next
-item because 5.3 just built the one reading of the board it needs — the
-tickets carry their status and `updated_at` already — and because 5.5, the
-`--fix` catch-up of the transitions flow owns, is listed as depending on it.
-On this repository it has something to say today: `pr_merged` and
-`issue_closed` are the two native transitions, and every one of the 59 Done
-tickets went through the second of them.
+**The deployment half of the audit (item 5.2, this run).** The pull request
+checks ask whether work landed the way the team agreed and the board checks
+ask whether the board says so; `live.deploys.recent` and `live.deploys.lag`
+ask the only question left, which is whether any of it is running. They divide
+it: `recent` is one fact about an environment — nothing has reached it inside
+`max_age` — so it fails and counts nothing, since naming the commit and the
+day says more than "1/1"; `lag` is a share of the merges and never does worse
+than warn, because nothing in the setup can make a release faster. What
+switches them on is `deploys.source`, not `done_on`: a team that finishes work
+on the merge still holds itself to `max_lag`, and this repository is one. The
+setup check `deploys.source` now asks that same question through the same
+`ReadsDeployments`, so the plan and the audit cannot disagree about which
+repositories have deployments.
+
+Two mutants mattered. Judging a merge as "still inside its objective" before
+asking whether it is already running survived the first draft of the tests —
+and a team that deploys in minutes merges everything inside its own objective,
+so that check would have counted nothing and passed for ever. And nothing
+proved doctor compares through the ancestry cache `flow check deploy` keeps,
+which is the whole reason a fortnight of merges is affordable daily; both now
+have a test. Live on this repository it reads `live.deploys.recent` pass —
+production took `4cb8b91` today — and `live.deploys.lag 0/0`, "nothing merged
+in the window", which is direct mode telling the truth again.
+
+**Single best next step:** plan item 5.5 — the catch-up of missed flow-owned
+transitions in `doctor --fix` (#69, spec 07 §6, scenario V04). Its two
+dependencies just landed: 5.3 built the one reading of the board it needs, and
+5.4 settled how flow decides a transition did not happen — at-or-past the
+target column, outside a fifteen-minute grace, only for events it can date. It
+is the natural next item because it is the other half of 5.4's finding: 5.4
+audits the transitions the tracker owns and can only ever report them, while
+the transitions flow owns are ones flow can still perform, so the same reading
+turns from a complaint into a repair. It is also the last live check that
+changes anything, which leaves 5.6–5.8 as presentation — and it is what makes
+`flow check pr` missing a run survivable, which is exactly the failure mode
+Stage B introduces.
