@@ -64,3 +64,7 @@ Render functions are pure and golden-tested; models tested via `Update`.
   terminal check and the query are injected into an unexported
   `darkBackground`, because a test on Unix cannot otherwise tell flow's
   decision from the library's. When flow cannot ask, it assumes dark.
+- **§1 a policy result has no markdown rendering (item 4.3).** The markdown a
+  gate produces already exists: it is the comment the engine writes on the
+  pull request, so that the same bytes go out whoever runs flow. A second one
+  here would be a second answer to a settled question. Text and JSON only.

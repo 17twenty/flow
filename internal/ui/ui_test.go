@@ -417,3 +417,78 @@ func TestMarkdownTablesSurviveWhatPeopleWrite(t *testing.T) {
 		t.Errorf("the message did not survive the table: %q", row)
 	}
 }
+
+// sampleGate is a run of the policy gate with one rule broken and one card
+// moved, which is enough to tell the three renderings apart.
+func sampleGate() engine.Gate {
+	return engine.Gate{
+		Result: engine.PolicyResult{
+			PR:  7,
+			SHA: "abc1234",
+			Findings: []engine.Finding{
+				{Rule: "pr.ticket.linked", Severity: "error", OK: true},
+				{
+					Rule:     "ticket.ready",
+					Severity: "error",
+					Message:  "a linked ticket does not meet the Definition of Ready",
+					Fix:      "fill in what the ticket is missing",
+				},
+			},
+		},
+		Status:         core.CommitStatus{Context: "flow/policy", State: core.StatusFailure, Description: "✗ 1 error — ticket.ready"},
+		StatusOutcome:  engine.GatePosted,
+		CommentOutcome: engine.GatePosted,
+		Moves:          []engine.TicketMove{{Key: "#12", From: "ready", To: "in_progress", Event: "pr_opened_draft"}},
+	}
+}
+
+// TestPolicyIsDecoratedNotRelaidOut holds the gate's rendering to the rule
+// every other one follows: colour off is the engine's own words, byte for
+// byte, and colour on is those words with escape sequences around them.
+func TestPolicyIsDecoratedNotRelaidOut(t *testing.T) {
+	gate := sampleGate()
+	plain, err := ui.New(ui.Options{}).Policy(gate)
+	if err != nil {
+		t.Fatalf("render the gate: %v", err)
+	}
+	if plain != gate.Text() {
+		t.Errorf("the plain rendering is not the engine's:\n--- got\n%s\n--- want\n%s", plain, gate.Text())
+	}
+	coloured, err := ui.New(ui.Options{Colour: true, Dark: true}).Policy(gate)
+	if err != nil {
+		t.Fatalf("render the gate in colour: %v", err)
+	}
+	if !strings.Contains(coloured, "\x1b[") {
+		t.Error("the coloured rendering carries no escape sequences")
+	}
+	if !strings.Contains(coloured, "ticket.ready") {
+		t.Errorf("colouring lost the rule that failed:\n%s", coloured)
+	}
+}
+
+// TestPolicyJSONIsTheEnginesOwn keeps the --json document parseable.
+func TestPolicyJSONIsTheEnginesOwn(t *testing.T) {
+	gate := sampleGate()
+	rendered, err := ui.New(ui.Options{Format: ui.FormatJSON, Colour: true, ASCII: true}).Policy(gate)
+	if err != nil {
+		t.Fatalf("render the gate: %v", err)
+	}
+	plain, err := gate.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered != string(plain) {
+		t.Errorf("the JSON document is not the engine's:\n--- got\n%s\n--- want\n%s", rendered, plain)
+	}
+}
+
+// TestPolicyHasNoMarkdownRendering is spec 12's division of labour: the
+// markdown a gate produces is the comment the engine writes on the pull
+// request, and a second one here would be a second answer.
+func TestPolicyHasNoMarkdownRendering(t *testing.T) {
+	for _, format := range []ui.Format{ui.FormatMarkdown, "html"} {
+		if _, err := ui.New(ui.Options{Format: format}).Policy(sampleGate()); !errors.Is(err, core.ErrValidation) {
+			t.Errorf("rendering a gate as %s gave %v", format, err)
+		}
+	}
+}

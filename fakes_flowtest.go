@@ -59,6 +59,19 @@ type fakeWorld struct {
 // path, which is unique per test, so two tests cannot see each other's board.
 var fakeWorlds sync.Map
 
+// fakeSeeds are the pull requests and tickets a test wants its world to hold
+// before the first command looks at it, keyed by working tree.
+//
+// A gate has nothing to judge in a repository with no pull requests, and the
+// world is built lazily inside the first command, so a test cannot reach in
+// and populate it beforehand. It leaves the population here instead and the
+// world applies it to itself as it is born.
+var fakeSeeds sync.Map
+
+// seedFakeWorld registers what a test wants its repository's providers to
+// hold. It must be called before the first command runs against dir.
+func seedFakeWorld(dir string, seed func(*fakeWorld)) { fakeSeeds.Store(dir, seed) }
+
 // fakeWorldFor returns the world behind one working tree, building it the
 // first time it is asked for.
 func fakeWorldFor(s *session) (*fakeWorld, error) {
@@ -68,6 +81,9 @@ func fakeWorldFor(s *session) (*fakeWorld, error) {
 	world, err := newFakeWorld(s)
 	if err != nil {
 		return nil, err
+	}
+	if seed, ok := fakeSeeds.Load(s.Root); ok {
+		seed.(func(*fakeWorld))(world)
 	}
 	actual, _ := fakeWorlds.LoadOrStore(s.Root, world)
 	return actual.(*fakeWorld), nil

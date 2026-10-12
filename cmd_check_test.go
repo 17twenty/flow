@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,5 +290,121 @@ func TestCheckCommitJSONMarksGeneratedMessagesSkipped(t *testing.T) {
 	}
 	if len(doc.Violations) != 0 {
 		t.Errorf("a generated message must not be judged: %+v", doc.Violations)
+	}
+}
+
+// TestEventPRReadsEitherShape covers both payloads the gate is started by: a
+// `pull_request` event, which carries the number at the top level, and a
+// `pull_request_review`, which only carries it inside the pull request.
+func TestEventPRReadsEitherShape(t *testing.T) {
+	cases := map[string]struct {
+		payload string
+		want    int
+	}{
+		"pull_request":        {`{"action":"opened","number":7,"pull_request":{"number":7}}`, 7},
+		"pull_request_review": {`{"action":"submitted","pull_request":{"number":9}}`, 9},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "event.json")
+			if err := os.WriteFile(path, []byte(tc.payload), 0o600); err != nil {
+				t.Fatalf("write the payload: %v", err)
+			}
+			got, err := eventPR(path)
+			if err != nil {
+				t.Fatalf("eventPR: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("eventPR read #%d, want #%d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEventPRAsksWhenItCannotTell holds every way the payload fails to name a
+// pull request to the same answer: ask for --pr. A gate that guessed a number
+// would judge somebody else's work.
+func TestEventPRAsksWhenItCannotTell(t *testing.T) {
+	dir := t.TempDir()
+	notJSON := filepath.Join(dir, "not.json")
+	if err := os.WriteFile(notJSON, []byte("this is not json"), 0o600); err != nil {
+		t.Fatalf("write the payload: %v", err)
+	}
+	notAPR := filepath.Join(dir, "push.json")
+	if err := os.WriteFile(notAPR, []byte(`{"action":"created","ref":"refs/heads/main"}`), 0o600); err != nil {
+		t.Fatalf("write the payload: %v", err)
+	}
+	cases := map[string]string{
+		"unset":   "",
+		"missing": filepath.Join(dir, "nothing-here.json"),
+		"garbage": notJSON,
+		"other":   notAPR,
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			number, err := eventPR(path)
+			if number != 0 {
+				t.Errorf("eventPR invented #%d", number)
+			}
+			if !errors.Is(err, core.ErrNeedsInput) {
+				t.Fatalf("eventPR returned %v, want ErrNeedsInput", err)
+			}
+			var user *core.UserError
+			if !errors.As(err, &user) {
+				t.Fatalf("eventPR returned %T, want a core.UserError carrying a fix", err)
+			}
+			if !strings.Contains(user.Fix, "--pr") {
+				t.Errorf("the fix %q does not say to pass --pr", user.Fix)
+			}
+		})
+	}
+}
+
+// TestCheckPRNumberPrefersTheFlag holds the precedence: an explicit --pr is
+// never overridden by whatever event the runner happens to be in.
+func TestCheckPRNumberPrefersTheFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(path, []byte(`{"number":7}`), 0o600); err != nil {
+		t.Fatalf("write the payload: %v", err)
+	}
+	t.Setenv("GITHUB_EVENT_PATH", path)
+
+	cmd := &CheckPRCmd{PR: 42}
+	got, err := cmd.number()
+	if err != nil {
+		t.Fatalf("number: %v", err)
+	}
+	if got != 42 {
+		t.Errorf("number is #%d, want the flag's #42", got)
+	}
+}
+
+// TestCheckPRNumberRefusesANonsenseFlag refuses a number no pull request can
+// have, rather than asking the forge for it and reporting a 404.
+func TestCheckPRNumberRefusesANonsenseFlag(t *testing.T) {
+	cmd := &CheckPRCmd{PR: -1}
+	if _, err := cmd.number(); !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("number returned %v, want ErrValidation", err)
+	}
+}
+
+// TestCIRunURLNeedsEveryPart holds the status's link to all-or-nothing: three
+// variables name a run, and two of them name a page that is not it.
+func TestCIRunURLNeedsEveryPart(t *testing.T) {
+	full := map[string]string{
+		"GITHUB_SERVER_URL": "https://github.com/",
+		"GITHUB_REPOSITORY": "17twenty/flow",
+		"GITHUB_RUN_ID":     "123",
+	}
+	const want = "https://github.com/17twenty/flow/actions/runs/123"
+	if got := ciRunURL(func(name string) string { return full[name] }); got != want {
+		t.Errorf("ciRunURL is %q, want %q", got, want)
+	}
+	for missing := range full {
+		partial := maps.Clone(full)
+		delete(partial, missing)
+		if got := ciRunURL(func(name string) string { return partial[name] }); got != "" {
+			t.Errorf("without %s ciRunURL guessed %q", missing, got)
+		}
 	}
 }

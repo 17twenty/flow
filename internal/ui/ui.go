@@ -130,6 +130,23 @@ func (r Renderer) Comparison(comparison engine.Comparison) (string, error) {
 	}
 }
 
+// Policy renders a run of the policy gate (spec 09).
+//
+// The gate's markdown already exists and is not this: it is the comment the
+// gate leaves on the pull request, written by the engine so that the same
+// bytes go out whoever is running flow. Rendering a second markdown here would
+// be a second answer to a question already settled.
+func (r Renderer) Policy(gate engine.Gate) (string, error) {
+	switch r.format {
+	case FormatText:
+		return r.decorate(gate.Text()), nil
+	case FormatJSON:
+		return r.json(gate.JSON())
+	default:
+		return "", r.noRendering("a policy result")
+	}
+}
+
 // json passes the engine's serialisation through untouched. A JSON document
 // is the one rendering with no presentation in it at all: colouring it would
 // break the parser the flag exists for, and translating its glyphs would
@@ -152,9 +169,9 @@ func (r Renderer) unknownFormat() error {
 //
 // Markdown belongs to the two documents somebody reads on a web page: the
 // plan a setup PR quotes and the doctor report `--report` writes (spec 02
-// §2). An apply and a comparison are read where they were asked for, so a
-// caller asking for markdown has made a mistake, and answering with the
-// terminal layout would put ANSI-shaped text in a comment.
+// §2). An apply, a comparison and a policy result are read where they were
+// asked for, so a caller asking for markdown has made a mistake, and answering
+// with the terminal layout would put ANSI-shaped text in a comment.
 func (r Renderer) noRendering(what string) error {
 	return fmt.Errorf("%w: there is no %q rendering of %s; flow writes it as text or json", core.ErrValidation, r.format, what)
 }

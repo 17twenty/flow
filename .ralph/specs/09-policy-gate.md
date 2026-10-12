@@ -118,3 +118,38 @@ golden; determinism; fork/read-only path; draft path.
 - **§2 the comment lists only what did not hold (item 2.13).** Somebody reading
   it has a pull request to fix. Nine rows with two crosses in them makes them
   hunt for the crosses.
+- **§1 the gathering lives in the engine, not in the command (item 4.3).** The
+  rules are pure and the `cmd_*.go` files hold no business logic, so the one
+  thing left — taking the snapshot, publishing the verdict, moving the cards —
+  is `internal/engine/gate.go`. It is the same shape as `Observe`/`Apply`:
+  above the adapters, below the command, taking `engine.Adapters` so it never
+  learns which providers it has.
+- **§1 the order is status, then comment, then transitions (item 4.3).** The
+  status is what branch protection and auto-merge wait on, so it goes out
+  before anything slower can fail. A run that died writing a comment has still
+  told the machinery what it needed to know.
+- **§1 read-only is discovered by being refused, never predicted (item 4.3).**
+  The forge is the only authority on what a credential may do. A gate that
+  read a scope list would either skip a post it could have made or claim it
+  was allowed and fail. One refusal is enough: having been refused the status,
+  flow does not then ask the board, because that would turn one refusal into a
+  transition that half happened.
+- **§2 membership is read from the board listing, not asked a second time
+  (item 4.3).** `pr.ticket.in_project` compares the linked ticket against every
+  item of the project, because an issue the tracker will happily produce may
+  still not be an item. Asking the tracker instead would mean trusting an empty
+  column to mean "not on the board", and an item with no status set has an
+  empty column too.
+- **§2 the board gives no arrival order (item 4.3).** `WIPItem.Since` is left
+  zero. No tracker flow speaks to records when an item entered a column, and
+  filling it with the last-edited time would let an item somebody merely
+  touched jump the queue.
+- **§3 the pull requests consulted are the open ones, plus this one (item
+  4.3).** Spec 04 §5 rule 4 wants all of a ticket's work considered, and open
+  work is what a ticket is still waiting on. The gate never runs on a closed
+  pull request, the merge is `check deploy`'s to react to, and walking every
+  pull request the repository ever had would put an unbounded read in a CI job.
+- **§3 a branch whose protection cannot be read asks for no approvals (item
+  4.3).** The pull request's own approvals are then what counts. The reading
+  that invents a requirement nobody configured is the one that blocks work for
+  a reason no one can find.

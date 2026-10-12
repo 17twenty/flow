@@ -63,3 +63,7 @@ CURRENT MODE: direct
 - macOS's case-insensitive filesystem masks cache-key casing bugs. Assert the key, not the file.
 - GraphQL payloads go to `curl -d @file`, never `-d "$(jq ...)"`. An inline command substitution produced a parse error pointing at valid syntax; the identical query from a file succeeded. The bug was the shell, so debugging the query was the wrong layer.
 - A user-owned Project v2 has its own collaborator list, separate from the repo's. A token without access gets `projectV2: null` — "not found", not "forbidden" — which reads like a wrong project number.
+- An acceptance scenario can disagree with the spec it tests (G01 says "status success" of a *draft*, spec 09 says `pending`). The spec wins, the test asserts what they agree on, and the disagreement is a Decision — never a quietly weakened assertion.
+- A reference fake can be too well-behaved to reach a branch: `coretest.FakeTracker`'s board is every ticket it holds, so `InProject` was always true. Wrap it and override the one method (`boardlessTracker`, `deletelessForge`) rather than teaching the reference implementation to misbehave.
+- Make a verdict fail by breaking the *rule's* input, not by moving the card: a ticket in Backlog still meets the Definition of Ready, so "put it somewhere else" proves nothing. Delete the acceptance criteria instead.
+- `core.UserError.Fix` is not in `Error()`. Asserting "the message says to pass --pr" must read the field, or a `WithWhy` that replaces the message silently passes.

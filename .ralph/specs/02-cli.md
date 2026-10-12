@@ -170,3 +170,18 @@ Secrets never printed.
   so a repository with a hook manager in charge, or with somebody else's
   commit-msg hook, is reported as `deferred` and left alone. `init` still
   succeeds: a repository is configured whether or not it got a hook.
+- **§2 `check pr` exits 0 whenever the status was published (item 4.3).** The
+  status carries the verdict; a failing job as well would report the same thing
+  twice and stop auto-merge from ever seeing the red tick it is waiting for.
+  `--exit-code` is the local exception, for somebody running the gate at their
+  desk with no commit status to look at.
+- **§2 `--pr` defaults to the CI event, and asks when it cannot tell (item
+  4.3).** The payload GitHub writes is read for both shapes: a `pull_request`
+  event carries the number at the top level, a `pull_request_review` only
+  inside the pull request. Anything else — no variable, an unreadable file,
+  JSON about something else — is `ErrNeedsInput` and exit 2. A gate that
+  guessed a number would judge somebody else's work.
+- **§2 the status links to the run, or to nothing (item 4.3).**
+  `GITHUB_SERVER_URL`, `GITHUB_REPOSITORY` and `GITHUB_RUN_ID` are taken
+  together: with any of them missing the status gets no target URL, because a
+  status pointing at the wrong page is worse than one pointing nowhere.

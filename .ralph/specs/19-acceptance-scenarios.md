@@ -53,3 +53,17 @@ The final acceptance is spec 17 §5 Stage C on the real repo.
 - **S01** tracked `.flow.local.toml` with `token_cmd` → refused, warning, 77 if no other credential.
 - **S02** credential to unapproved host non-interactively → 77 with fix.
 - **S03** redaction: tokens in errors/logs never appear in stderr/stdout.
+
+## Decisions
+- **G01 "status success" means the gate passes, not that the status is green
+  (item 4.3).** The scenario opens with a *draft* pull request, and spec 09 §2
+  publishes a draft as `pending` / "draft — not enforced" — judged in full,
+  but not enforced against work somebody is still writing. The test asserts
+  what the two agree on: every rule passes, the card moves to in progress, and
+  the status turns `success` the moment the pull request is offered for review.
+- **G04 the agent is recognised by `agents.authors` (item 4.3).** The preset
+  ships `authors: []` and `labels: [agent]`, so the scenario's author-based
+  reading needs the configuration to name the author. The test writes the
+  login into `.flow.yaml` rather than labelling the pull request, because
+  `agent.human_review` firing on a label makes dropping the label a way to pass
+  the rule vacuously.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/17twenty/flow/internal/commits"
 	"github.com/17twenty/flow/internal/core"
+	"github.com/17twenty/flow/internal/engine"
+	"github.com/17twenty/flow/internal/ui"
 )
 
 // CheckCmd groups the CI entry points (spec 02 §2, specs 08, 09, 13).
@@ -28,8 +31,106 @@ type CheckPRCmd struct {
 	ExitCode      bool `name:"exit-code" help:"Exit 1 when policy fails. For local use."`
 }
 
-// Run implements the check pr command.
-func (c *CheckPRCmd) Run(app *Context) error { return app.unimplemented("check pr") }
+// Run implements the check pr command. It exits 0 whenever the status went
+// out: the status carries the verdict, and a CI job that failed as well would
+// report the same thing twice. `--exit-code` is the local exception.
+func (c *CheckPRCmd) Run(app *Context) error {
+	s, err := app.open()
+	if err != nil {
+		return err
+	}
+	number, err := c.number()
+	if err != nil {
+		return err
+	}
+	if err := s.connect(app); err != nil {
+		return err
+	}
+
+	gate, err := engine.RunGate(app.Ctx, engine.GateInput{
+		PR:            number,
+		Config:        s.Config,
+		Lock:          s.Lock,
+		Adapters:      s.Adapters,
+		Now:           s.Clock.Now(),
+		DryRun:        c.DryRun,
+		NoTransitions: c.NoTransitions,
+		TargetURL:     ciRunURL(os.Getenv),
+	})
+	if err != nil {
+		return err
+	}
+	if err := app.render(s, func(r ui.Renderer) (string, error) { return r.Policy(gate) }); err != nil {
+		return err
+	}
+	if c.ExitCode && !gate.Pass() {
+		app.exit(core.ExitFail)
+	}
+	return nil
+}
+
+// number is the pull request to judge: the flag, or the CI event that started
+// this run (spec 02 §2).
+func (c *CheckPRCmd) number() (int, error) {
+	if c.PR > 0 {
+		return c.PR, nil
+	}
+	if c.PR < 0 {
+		return 0, core.Errorf(core.ErrValidation, "check pull request %d", c.PR).
+			WithWhy("pull requests are numbered from 1").
+			WithFix("pass --pr with the number of the pull request to check")
+	}
+	number, err := eventPR(os.Getenv("GITHUB_EVENT_PATH"))
+	if err != nil {
+		return 0, err
+	}
+	return number, nil
+}
+
+// eventPR reads the pull request number out of the CI event payload. GitHub
+// writes the whole webhook body to a file and names it in the environment;
+// `pull_request` events carry the number at the top level and
+// `pull_request_review` only inside the pull request, so both are read.
+func eventPR(path string) (int, error) {
+	needs := core.Errorf(core.ErrNeedsInput, "find the pull request to check").
+		WithWhy("no --pr was given and no CI event payload names one").
+		WithFix("pass --pr with the number of the pull request to check")
+	if path == "" {
+		return 0, needs
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, needs.WithWhy("the event payload at %s could not be read: %v", path, err)
+	}
+	var event struct {
+		Number      int `json:"number"`
+		PullRequest *struct {
+			Number int `json:"number"`
+		} `json:"pull_request"`
+	}
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return 0, needs.WithWhy("the event payload at %s is not JSON: %v", path, err)
+	}
+	if event.PullRequest != nil && event.PullRequest.Number > 0 {
+		return event.PullRequest.Number, nil
+	}
+	if event.Number > 0 {
+		return event.Number, nil
+	}
+	return 0, needs.WithWhy("the event payload at %s is not about a pull request", path)
+}
+
+// ciRunURL is where to send somebody who wants to see why the status says what
+// it says. An environment that does not name a run gets no link rather than a
+// guess: a status pointing at the wrong page is worse than one pointing
+// nowhere.
+func ciRunURL(getenv func(string) string) string {
+	server, repo, run := getenv("GITHUB_SERVER_URL"), getenv("GITHUB_REPOSITORY"), getenv("GITHUB_RUN_ID")
+	if server == "" || repo == "" || run == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/actions/runs/%s", strings.TrimSuffix(server, "/"), repo, run)
+}
 
 // CheckDeployCmd reacts to a deployment event. With done_on: deployed it moves
 // the tickets linked to PRs merged at or before the deployed SHA (spec 04 §6).

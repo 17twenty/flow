@@ -65,12 +65,11 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 // cleanly as ErrUnsupported rather than pretending to work (plan item 0.1).
 // Commands drop off this list as their plan item lands: check commit did so
 // with item 1.3, schema with item 1.9, hook with item 1.13, init with item
-// 4.1, and plan and apply with item 4.2.
+// 4.1, plan and apply with item 4.2, and check pr with item 4.3.
 func TestUnimplementedCommandsExitFail(t *testing.T) {
 	cases := [][]string{
 		{"attest", "tracker.native.pr_merged", "--note", "confirmed"},
 		{"doctor"},
-		{"check", "pr"},
 		{"check", "deploy"},
 	}
 	for _, args := range cases {
