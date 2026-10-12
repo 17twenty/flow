@@ -365,3 +365,53 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   3.11).** GitHub records nothing about why an issue was reopened. Rather than
   drop the reason, the engine writes it where a human can read it; the adapter
   takes the reason and does not pretend to store it.
+- **§5 a provider check asks the plan, not the provider (item 4.5).** Spec 06
+  §1 makes `tracker.status_options` the check and `tracker.status_options` the
+  plan item the same question, so the check reads the plan: a plan that needs
+  no change is a pass, a native change is a failure flow can fix, a change
+  flow is not allowed to make is a follow-up, and an unsupported one is a
+  skip. Observing once and deciding once is what keeps doctor and apply from
+  disagreeing about the same board. Only `auth.forge`, `auth.tracker` and
+  `forge.repo` reach for a network, because reaching for one is their whole
+  subject.
+- **§5 a configuration that does not parse is a report, not a refusal (item
+  4.5).** Every other command stops on an unreadable `.flow.yaml`, because it
+  cannot do its job without one. Doctor's job *is* to say which part is wrong,
+  so it records the parse error as `config.syntax`, the semantic error as
+  `config.semantics`, and blocks what stands behind them rather than failing
+  twenty checks about a file nobody could read. Loading stops there as well:
+  planning a workflow just found incoherent means asking a provider flow never
+  connected to, and the warning that produces blames the wrong thing.
+- **§5 the credential scan is the redactor (item 4.5).** `config.secrets` asks
+  whether [core.Redact] changes the file rather than keeping a second list of
+  token shapes. The shapes flow knows how to keep out of a log are exactly the
+  shapes it should refuse to find in a committed file, and one list cannot
+  drift from another that does not exist. The refusal names the lines that
+  changed and never what was on them.
+- **§5 reachability and the trunk are one check (item 4.5).** A slug that is
+  wrong, a repository that was renamed and a credential that cannot see it all
+  produce the same reply from the forge, so `forge.repo` reports one problem
+  once instead of marking both "the repository is not there" and "its default
+  branch is not the workflow's".
+- **§5 a credential that allows nothing still passes (item 4.5).** `auth.*`
+  asks whether the token resolves and is accepted. What it is permitted to do
+  is the planner's business item by item (spec 05 §4), so a missing permission
+  becomes a follow-up on the one thing it blocks rather than a red mark
+  against the whole provider.
+- **§5 an unanswered board blocks the tracker checks (item 4.5).** Every
+  tracker check depends on `tracker.project`, so a board flow has not been
+  told which one it is reads `input` once and blocks the rest, rather than
+  failing them each in turn about the same missing answer.
+- **§5 a follow-up open for thirty days stops being healthy (item 4.5).**
+  `followups.health` passes while flow's own asking is moving and reads
+  `external` once the oldest open follow-up has been outstanding a month: long
+  enough that a team on holiday does not come back to a red check, short
+  enough that a ticket nobody intends to do is noticed in the quarter it was
+  filed.
+- **§8 the lock is stamped with the configuration doctor read (item 4.5).**
+  `--fix` writes `config_hash` as it writes the lock, which is what makes a
+  promise taken against the whole file lapse when the file is rewritten
+  (spec 03 §3). A lock whose hash stayed empty would carry every attestation
+  through a rewrite of the thing it was attested about. Editing the workflow
+  is not itself a fault, so `lock.consistent` still passes and says so as
+  evidence.

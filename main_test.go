@@ -65,12 +65,16 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 // cleanly as ErrUnsupported rather than pretending to work (plan item 0.1).
 // Commands drop off this list as their plan item lands: check commit did so
 // with item 1.3, schema with item 1.9, hook with item 1.13, init with item
-// 4.1, plan and apply with item 4.2, check pr with item 4.3 and check deploy
-// with item 4.4.
+// 4.1, plan and apply with item 4.2, check pr with item 4.3, check deploy
+// with item 4.4 and doctor with item 4.5. A flag whose own item has not
+// landed is on the list too, because doctor accepting it and ignoring it
+// would be the stub this test exists to forbid.
 func TestUnimplementedCommandsExitFail(t *testing.T) {
 	cases := [][]string{
 		{"attest", "tracker.native.pr_merged", "--note", "confirmed"},
-		{"doctor"},
+		{"doctor", "--ci"},
+		{"doctor", "--report", "health.md"},
+		{"doctor", "--watch"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

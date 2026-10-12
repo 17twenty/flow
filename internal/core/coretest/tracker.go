@@ -446,6 +446,40 @@ func (t *FakeTracker) SetTicket(ticket core.Ticket) {
 	t.tickets = append(t.tickets, ticket)
 }
 
+// SetObservation adds or replaces what Observe finds for one desired item,
+// keyed by the item's own id, so that a test can move the board behind flow's
+// back: a status option renamed after a check passed is what drift is
+// (spec 07 §7), and it cannot be staged any other way.
+func (t *FakeTracker) SetObservation(what string, observation core.Observation) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.observations == nil {
+		t.observations = map[string]core.Observation{}
+	}
+	observation.What = what
+	t.observations[what] = observation
+}
+
+// SetCandidates replaces what Discover offers for one placeholder. How many
+// there are is the whole of spec 07 §3: one is an answer flow may take, and
+// more than one is a question only a person can settle.
+func (t *FakeTracker) SetCandidates(what string, candidates ...core.Candidate) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.candidates == nil {
+		t.candidates = map[string][]core.Candidate{}
+	}
+	t.candidates[what] = slices.Clone(candidates)
+}
+
+// SetPermissions replaces what Probe reports, so that a test can hold a
+// credential that is accepted and still too small.
+func (t *FakeTracker) SetPermissions(permissions core.Permissions) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.permissions = permissions
+}
+
 // indexOf finds a ticket by key, ignoring a leading #. The caller holds the
 // lock.
 func (t *FakeTracker) indexOf(key string) int {

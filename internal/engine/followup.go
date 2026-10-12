@@ -603,3 +603,24 @@ func ReconcileFollowUps(ctx context.Context, report Report, in FollowUpInput) []
 	}
 	return outcomes
 }
+
+// Absorb writes what the follow-up lifecycle decided back into the report.
+//
+// A check that failed because flow is not allowed to do something reads
+// `external` once there is a ticket for it, which is the difference between
+// "broken" and "waiting on somebody" — and the difference between a doctor
+// run that exits non-zero every morning and one that exits non-zero when
+// something has actually gone wrong (spec 07 §4).
+func (r *Report) Absorb(outcomes []FollowUpOutcome) {
+	for _, outcome := range outcomes {
+		if outcome.Action == FollowUpNone || outcome.Result.State == "" {
+			continue
+		}
+		for i := range r.Checks {
+			if r.Checks[i].ID == outcome.Check {
+				r.Checks[i].Result = outcome.Result
+				break
+			}
+		}
+	}
+}

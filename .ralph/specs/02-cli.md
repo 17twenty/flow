@@ -196,3 +196,10 @@ Secrets never printed.
   from configuration alone, before resolving a token or reading the event. A
   payload it could not read is therefore not an error in that case — the
   complaint is only worth making to somebody who was relying on the answer.
+- **§2 a flag whose own item has not landed is refused, not ignored (item
+  4.5).** `doctor --ci`, `--report` and `--watch` belong to items 5.8, 5.7 and
+  6.3, and until those land the command exits `ErrUnsupported` when asked for
+  them. Parsing a flag and doing nothing with it is worse than not having it:
+  the run then looks like it did what was asked. The flags are declared now
+  rather than added later so that the shipped surface is spec 02's exactly,
+  and `TestUnimplementedCommandsExitFail` holds each one until its item.

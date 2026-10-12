@@ -133,11 +133,21 @@ type session struct {
 	// Repo is the working tree, and Root its absolute path.
 	Repo *git.Repo
 	Root string
-	// ConfigPath is where `.flow.yaml` was read from, Config what it said,
-	// and ConfigHash the hash a plan is pinned to (spec 06 §3).
+	// ConfigPath is where `.flow.yaml` was read from, Source its bytes,
+	// Config what it said, and ConfigHash the hash a plan is pinned to
+	// (spec 06 §3).
 	ConfigPath string
+	Source     []byte
 	Config     *config.Config
 	ConfigHash string
+	// ConfigErr is why the configuration did not parse and SemanticsErr why
+	// it does not hang together, for the one caller that wants to carry on
+	// anyway. Every command but doctor gets these as an error from [open];
+	// doctor reports them as `config.syntax` and `config.semantics`, because
+	// a report saying which part is wrong is worth more than a refusal to
+	// start (spec 07 §5).
+	ConfigErr    error
+	SemanticsErr error
 	// Settings are the personal preferences after every layer has had its
 	// say (spec 03 §4).
 	Settings config.Settings
@@ -163,6 +173,28 @@ type session struct {
 // reading two declarations off the disk would make an offline question fail
 // for want of a secret it is not going to send anywhere.
 func (a *Context) open() (*session, error) {
+	s, err := a.inspect()
+	if err != nil {
+		return nil, err
+	}
+	if s.ConfigErr != nil {
+		return nil, s.ConfigErr
+	}
+	if s.SemanticsErr != nil {
+		return nil, s.SemanticsErr
+	}
+	return s, nil
+}
+
+// inspect is [open] without the refusal: a configuration that did not parse
+// or does not hang together is recorded on the session rather than returned,
+// and loading stops at the first thing that genuinely cannot be done without
+// it.
+//
+// Only doctor uses this. Every other command wants the error, because it
+// cannot do its job with a workflow nobody can read — but doctor's job is to
+// say which part is wrong, and it cannot say that if it will not start.
+func (a *Context) inspect() (*session, error) {
 	repo, err := git.Open(a.Ctx, a.CLI.Dir)
 	if err != nil {
 		return nil, core.Errorf(core.ErrValidation, "read this repository").
@@ -181,10 +213,11 @@ func (a *Context) open() (*session, error) {
 			WithWhy("%v", err).
 			WithFix("run flow init to write one")
 	}
-	if s.Config, err = config.Parse(source, s.ConfigPath); err != nil {
-		return nil, err
-	}
+	s.Source = source
 	s.ConfigHash = config.Hash(source)
+	if s.Config, err = config.Parse(source, s.ConfigPath); err != nil {
+		s.ConfigErr = err
+	}
 
 	declarations, err := assets.Capabilities()
 	if err != nil {
@@ -193,8 +226,14 @@ func (a *Context) open() (*session, error) {
 	if s.Registry, err = core.LoadRegistry(declarations); err != nil {
 		return nil, err
 	}
+	if s.ConfigErr != nil {
+		// There is nothing further to load: every remaining step reads the
+		// configuration, and a session half-built from a file that did not
+		// parse would answer questions with made-up defaults.
+		return s, nil
+	}
 	if err := config.Validate(s.Config, s.ConfigPath, s.Registry); err != nil {
-		return nil, err
+		s.SemanticsErr = err
 	}
 
 	if s.Settings, err = a.settings(repo); err != nil {
@@ -210,6 +249,14 @@ func (a *Context) open() (*session, error) {
 			return nil, err
 		}
 		s.Lock = config.NewLock(version)
+	}
+
+	if s.SemanticsErr != nil {
+		// The lock and the personal settings are loaded above and are worth
+		// having — doctor reports on both. The desired state is not: it is
+		// built out of the parts of the configuration that were just found
+		// not to hang together.
+		return s, nil
 	}
 
 	templates, err := assets.Templates()

@@ -468,5 +468,14 @@ func (f *FakeForge) SetPullRequest(pr core.PullRequest) {
 	f.nextPR = max(f.nextPR, pr.Number)
 }
 
+// SetPermissions replaces what Probe reports, so that a test can hold the
+// common unhappy case: a credential the forge accepts which still cannot
+// administer the repository (scenario A06).
+func (f *FakeForge) SetPermissions(permissions core.Permissions) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.permissions = permissions
+}
+
 // FakeForge is the reference implementation of the interface.
 var _ core.Forge = (*FakeForge)(nil)
