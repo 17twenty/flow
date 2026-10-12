@@ -67,7 +67,12 @@ func deployFixture(t *testing.T) coretest.DeployFixture {
 
 // githubProjectsWorld is a board that is most of the way there: four of the
 // five columns, two of the six labels, one column flow created and no longer
-// wants, and the built-in "Pull request merged" automation already on.
+// wants, and the built-in "Pull request merged" automation somebody has
+// vouched for.
+//
+// Nothing observes that automation, because the Projects API will not say
+// whether it is on; a human's word is the only evidence there is, which is
+// what `remediation: attest` means (spec 05 §4).
 func githubProjectsWorld(t *testing.T) world {
 	t.Helper()
 	tracker := coretest.ContractTracker()
@@ -90,9 +95,6 @@ func githubProjectsWorld(t *testing.T) world {
 			{ID: "lbl-1", Name: "blocked", Fields: map[string]string{"color": "b60205"}},
 			{ID: "lbl-2", Name: "flow-followup", Fields: map[string]string{"color": "d73a4a"}},
 		}},
-		"tracker.native.pr_merged": {Exists: true, Items: []core.Item{
-			{Name: "pr_merged", Fields: map[string]string{engine.FieldTo: "Done"}},
-		}},
 	}
 
 	lock := config.NewLock("v0.3.0")
@@ -103,13 +105,21 @@ func githubProjectsWorld(t *testing.T) world {
 		Name: "Icebox",
 		At:   coretest.ContractNow.Add(-30 * 24 * time.Hour),
 	})
-	lock.Attestations = append(lock.Attestations, config.Attestation{
-		Check:     core.ItemTrackerExpedite,
-		By:        "@17twenty",
-		Note:      "the Expedite view is saved on the board",
-		At:        coretest.ContractNow.Add(-24 * time.Hour),
-		ExpiresAt: coretest.ContractNow.Add(29 * 24 * time.Hour),
-	})
+	lock.Attestations = append(lock.Attestations,
+		config.Attestation{
+			Check:     core.ItemTrackerExpedite,
+			By:        "@17twenty",
+			Note:      "the Expedite view is saved on the board",
+			At:        coretest.ContractNow.Add(-24 * time.Hour),
+			ExpiresAt: coretest.ContractNow.Add(29 * 24 * time.Hour),
+		},
+		config.Attestation{
+			Check:     core.NativeItem("pr_merged"),
+			By:        "@17twenty",
+			Note:      "the built-in 'Pull request merged' workflow is on and points at Done",
+			At:        coretest.ContractNow.Add(-24 * time.Hour),
+			ExpiresAt: coretest.ContractNow.Add(29 * 24 * time.Hour),
+		})
 
 	return world{
 		forge:   coretest.NewFakeForge(forgeFixture(t)),
@@ -298,6 +308,37 @@ func TestPlanOutcomes(t *testing.T) {
 	}
 }
 
+// TestWhatCountsAsNothingToDo states the exit code one outcome at a time,
+// because the two worlds above both have plenty outstanding and so cannot
+// tell which outcome is the one keeping them at 2.
+//
+// The case that matters is compensated: the intent is enforced, by something
+// other than what the configuration named, and nothing anybody types will
+// ever change that. A run that reported it as pending would exit 2 for ever.
+func TestWhatCountsAsNothingToDo(t *testing.T) {
+	for _, tc := range []struct {
+		outcome engine.Outcome
+		exit    int
+	}{
+		{engine.OutcomeNoop, 0},
+		{engine.OutcomeCompensated, 0},
+		{engine.OutcomeNative, 2},
+		{engine.OutcomeFollowUp, 2},
+		{engine.OutcomeAttest, 2},
+		{engine.OutcomeUnsupported, 1},
+	} {
+		t.Run(string(tc.outcome), func(t *testing.T) {
+			plan := engine.Plan{Items: []engine.PlanItem{
+				{ID: "tracker.project", Outcome: engine.OutcomeNoop},
+				{ID: "tracker.labels", Outcome: tc.outcome},
+			}}
+			if got := plan.ExitCode(); got != tc.exit {
+				t.Errorf("a plan whose only outstanding item is %s exits %d, want %d", tc.outcome, got, tc.exit)
+			}
+		})
+	}
+}
+
 // TestPlanChanges states the diff itself: what is missing is created, what
 // disagrees is updated against the provider's own id, and what flow created
 // and no longer wants is removed.
@@ -361,6 +402,45 @@ func TestPlanAttestationLapsesWithTheConfig(t *testing.T) {
 	item, _ := planFor(t, w).Find(core.ItemTrackerExpedite)
 	if item.Outcome != engine.OutcomeAttest {
 		t.Errorf("after the configuration changed the view plans as %s, want attest", item.Outcome)
+	}
+}
+
+// TestPlanAttestationLapsesWithTheItemItCovered proves the finer rule: a
+// promise that names what it was about lapses when that one item is
+// rewritten, and not when anything else in the file is.
+//
+// Both halves matter. Without the first, flow would ask a person to vouch
+// again for something nobody had touched, every time a colleague edited a
+// label somewhere else. Without the second, a promise would outlive the thing
+// it was made about, which is the way `flow attest` becomes a way to sign off
+// a workflow that no longer exists.
+func TestPlanAttestationLapsesWithTheItemItCovered(t *testing.T) {
+	w := githubProjectsWorld(t)
+	covers, _ := planFor(t, w).Find(core.ItemTrackerExpedite)
+	at := -1
+	for i, a := range w.lock.Attestations {
+		if a.Check == core.ItemTrackerExpedite {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the fixture has no attestation for %s", core.ItemTrackerExpedite)
+	}
+
+	// Pin the promise to the item it was made about, which is what
+	// `flow attest` writes.
+	w.lock.Attestations[at].Inputs = covers.DesiredHash
+	if item, _ := planFor(t, w).Find(core.ItemTrackerExpedite); item.Outcome != engine.OutcomeNoop {
+		t.Fatalf("a promise about this very item plans as %s, want noop", item.Outcome)
+	}
+
+	w.lock.Attestations[at].Inputs = "sha256:0000"
+	item, _ := planFor(t, w).Find(core.ItemTrackerExpedite)
+	if item.Outcome != engine.OutcomeAttest {
+		t.Errorf("a promise about a different shape of the item plans as %s, want attest", item.Outcome)
+	}
+	if w.lock.ConfigHash != planConfigHash {
+		t.Errorf("the configuration hash moved, so this proves nothing finer than the file")
 	}
 }
 

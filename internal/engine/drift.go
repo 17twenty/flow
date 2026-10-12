@@ -342,11 +342,27 @@ func NewAttestation(check, by, note, inputs string, now time.Time, ttl time.Dura
 	}
 }
 
-// DefaultAttestationTTL is how long a human's word stands when the
-// configuration does not say. Ninety days is long enough not to be a chore
-// and short enough that nobody is relying on something a departed colleague
-// checked two years ago.
-const DefaultAttestationTTL = 90 * 24 * time.Hour
+// DefaultAttestationTTL is how long a human's word stands when neither the
+// person nor the configuration says: thirty days (spec 02 §2). Long enough
+// not to be a chore, short enough that nobody is relying on something a
+// departed colleague checked two years ago.
+const DefaultAttestationTTL = 30 * 24 * time.Hour
+
+// AttestationTTL is how long a promise made now would stand: what the team
+// agreed (spec 03 §2), else the default.
+//
+// Both `flow attest` and the line doctor prints asking for one read it here,
+// because a remediation that promises a different number from the one the
+// command writes is a remediation nobody can check.
+func AttestationTTL(cfg *config.Config) time.Duration {
+	if cfg == nil {
+		return DefaultAttestationTTL
+	}
+	if agreed := time.Duration(cfg.Attestation.DefaultTTL); agreed > 0 {
+		return agreed
+	}
+	return DefaultAttestationTTL
+}
 
 // RecordAttestation puts an attestation in the lock, replacing whatever stood
 // for that check. One check has one answer: a second person vouching for the

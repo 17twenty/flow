@@ -402,6 +402,14 @@ func (g *GitHubProjects) Observe(ctx context.Context, what string) (core.Observa
 		// (spec 05 §4).
 		return observation, nil
 	default:
+		if strings.HasPrefix(what, core.NativeItemPrefix) {
+			// Whether a built-in workflow is on is not something the
+			// Projects API will say, so at setup there is nothing to
+			// observe and a person's word is what settles it. What
+			// actually happened to the cards is the live-health
+			// audit's question, not this one (spec 07 §6).
+			return observation, nil
+		}
 		return core.Observation{}, ghNoSuchItem("observe", what)
 	}
 	return observation.Canonical(), nil

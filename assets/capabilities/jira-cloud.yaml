@@ -15,9 +15,9 @@ capabilities:
   labels:             { set: true,  verify: true, remediation: none, notes: "Free-form." }
   follow_up_tickets:  { set: true,  verify: true, requires: [create_issues], remediation: none }
   ticket_move:        { set: true,  verify: true, requires: [transition_issues], remediation: follow_up }
-  native_transition_pr_opened_draft:     { set: false, verify: true, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }
-  native_transition_pr_ready_for_review: { set: false, verify: true, remediation: attest }
-  native_transition_changes_requested:   { set: false, verify: true, remediation: attest }
-  native_transition_pr_merged:           { set: false, verify: true, remediation: attest }
+  native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }
+  native_transition_pr_ready_for_review: { set: false, verify: false, remediation: attest }
+  native_transition_changes_requested:   { set: false, verify: false, remediation: attest }
+  native_transition_pr_merged:           { set: false, verify: false, remediation: attest }
   native_transition_issue_closed:        { set: false, verify: false, remediation: none }
-  native_transition_deployed:            { set: false, verify: true, remediation: attest, notes: "Automation 'Deployment successful' via GitHub integration deployments — verify on day one." }
+  native_transition_deployed:            { set: false, verify: false, remediation: attest, notes: "Automation 'Deployment successful' via GitHub integration deployments — verify on day one." }

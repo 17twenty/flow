@@ -291,6 +291,9 @@ func (c Capability) validate() []string {
 	case c.CompensatedBy != "" && !slices.Contains(compensators, c.CompensatedBy):
 		add("is compensated by %q, which is not a mechanism flow has; use %s", c.CompensatedBy, strings.Join(compensators, ", "))
 	}
+	if c.Remediation == RemediationAttest && c.Verify {
+		add("asks for an attestation but says flow can verify it; spec 05 §4 only lets a promise stand in for an observation flow cannot make, so an attestation of this would never settle anything")
+	}
 	for _, token := range c.Requires {
 		if strings.TrimSpace(token) == "" {
 			add("requires an empty permission token")

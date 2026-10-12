@@ -401,7 +401,14 @@ func TestGitHubProjectsObservesABoardWithNoStatusField(t *testing.T) {
 func TestGitHubProjectsObservesNothingItCannotSee(t *testing.T) {
 	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
 	adapter := newGitHubProjectsAdapter(t, srv, nil)
-	for _, what := range []string{core.ItemTrackerWIP, core.ItemTrackerExpedite} {
+	unobservable := []string{core.ItemTrackerWIP, core.ItemTrackerExpedite}
+	// Whether a built-in workflow is on is not something the Projects API
+	// will say either, so a person's word is the only evidence at setup and
+	// the live audit is what watches the cards afterwards (spec 07 §6).
+	for _, event := range []string{"changes_requested", "pr_merged", "issue_closed"} {
+		unobservable = append(unobservable, core.NativeItem(event))
+	}
+	for _, what := range unobservable {
 		observation, err := adapter.Observe(t.Context(), what)
 		if err != nil {
 			t.Fatalf("Observe(%s): %v", what, err)

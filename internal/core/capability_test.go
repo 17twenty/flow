@@ -116,8 +116,8 @@ func TestGitHubProjectsDeclarationIsTheResearch(t *testing.T) {
 	if got := set.Capability(core.CapWIPLimits); got.Remediation != core.RemediationCompensate || got.CompensatedBy != core.CompensatePolicyWIP {
 		t.Errorf("wip_limits remediation = %q by %q, want compensate by %q", got.Remediation, got.CompensatedBy, core.CompensatePolicyWIP)
 	}
-	if got := set.Capability(core.CapNativeTransitionPRMerged); got.Set || !got.Verify {
-		t.Error("the built-in 'pull request merged' automation cannot be configured by API, only verified")
+	if got := set.Capability(core.CapNativeTransitionPRMerged); got.Set || got.Verify || got.Remediation != core.RemediationAttest {
+		t.Error("the built-in 'pull request merged' automation can neither be configured nor read back at setup, so a person has to vouch for it")
 	}
 	if got := set.Capability(core.CapNativeTransitionPROpenedDraft); got.Verify {
 		t.Error("GitHub Projects has no draft-opened automation, so there is nothing to verify")
@@ -284,6 +284,11 @@ func TestParseCapabilitySetRejects(t *testing.T) {
 			name:   "compensated by something without compensating",
 			src:    strings.Replace(validDeploys, "remediation: follow_up", "remediation: none, compensated_by: policy.wip", 1),
 			wantIn: "only a compensated capability is compensated by something",
+		},
+		{
+			name:   "asking for a promise about something flow can see",
+			src:    strings.Replace(validDeploys, "remediation: follow_up", "remediation: attest", 1),
+			wantIn: "would never settle anything",
 		},
 		{
 			name:   "an empty permission token",

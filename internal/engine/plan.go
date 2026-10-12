@@ -195,7 +195,7 @@ func (in PlanInput) item(wanted DesiredItem) PlanItem {
 		Subject:    wanted.ID,
 		Declared:   declared,
 		Observed:   observation.Exists && len(changes) == 0,
-		Attested:   in.attested(wanted.ID),
+		Attested:   in.attested(wanted.ID, wanted.Hash()),
 	}, in.Providers[wanted.Target].Permissions)
 
 	item := PlanItem{
@@ -313,19 +313,13 @@ func CreationKind(id string) string { return strings.TrimSuffix(id, "s") }
 
 // attested reports whether a human's word still stands for this item.
 //
-// An attestation lapses when the configuration it was made against changed:
-// a promise about the workflow somebody has since rewritten is a promise
-// about something else (spec 03 §3).
-func (in PlanInput) attested(id string) bool {
-	if in.Lock == nil {
-		return false
-	}
-	if in.ConfigHash != "" && in.Lock.ConfigHash != "" && in.ConfigHash != in.Lock.ConfigHash {
-		return false
-	}
-	return slices.ContainsFunc(in.Lock.Attestations, func(a config.Attestation) bool {
-		return a.Check == id && in.Now.Before(a.ExpiresAt)
-	})
+// An attestation lapses when the thing it was made about changed: a promise
+// about the workflow somebody has since rewritten is a promise about
+// something else (spec 03 §3). That judgement is [FindAttestation]'s, and it
+// is made here rather than repeated, so that the plan and the report cannot
+// disagree about whether one promise still counts.
+func (in PlanInput) attested(id, inputs string) bool {
+	return FindAttestation(in.Lock, id, inputs, in.ConfigHash, in.Now).Valid
 }
 
 // followUpOwner routes a follow-up to whoever can actually act on it: the
@@ -390,13 +384,20 @@ func (p Plan) Changes() []core.Change {
 // ExitCode is what `flow plan` exits with: 0 when there is nothing to do, 2
 // when something is pending, 1 when the provider cannot be made to do what
 // the configuration asks (spec 02 §2, spec 05 §4).
+//
+// Pending is spec 02 §2's three: a change, a follow-up, an attestation. A
+// compensated item is none of them — the intent is enforced, by something
+// other than what the configuration named — so it counts as settled, which
+// is also what doctor says about it. A workflow whose every item is noop or
+// compensated would otherwise exit 2 for ever, and a command that can never
+// report success is a command nobody can act on.
 func (p Plan) ExitCode() int {
 	code := 0
 	for _, item := range p.Items {
 		switch item.Outcome {
 		case OutcomeUnsupported:
 			return 1
-		case OutcomeNoop:
+		case OutcomeNoop, OutcomeCompensated:
 		default:
 			code = 2
 		}

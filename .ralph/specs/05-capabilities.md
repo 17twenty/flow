@@ -211,3 +211,17 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   declaration that drift apart do not fail loudly — they resolve to
   `unsupported` (§4) and look like a provider limitation, which is the worst
   shape a bug can take here.
+- **§4 a declaration may not ask for a promise about something flow can see
+  (item 4.6).** `remediation: attest` together with `verify: true` is now a
+  parse error in a capability declaration. The two say opposite things: an
+  attestation stands in for an observation flow cannot make, so a promise
+  about a capability flow verifies would be overruled by the next observation
+  and settle nothing. Catching it where the declaration is read means no
+  provider can ship a check nobody can ever satisfy.
+- **§4 a compensated outcome is settled, not pending (item 4.6).** `flow plan`
+  exits 2 for a change, a follow-up or an attestation (spec 02 §2), and a
+  compensated item is none of them: the intent is enforced, by a mechanism
+  other than the one the configuration named, and no amount of applying will
+  change that. Counting it as pending would make a converged workflow exit 2
+  for ever, and a command that can never report success is one nobody acts on.
+  This is also what doctor already says about it.

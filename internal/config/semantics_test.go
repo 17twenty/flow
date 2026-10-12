@@ -246,7 +246,7 @@ func TestValidate(t *testing.T) {
 			change: func(c *Config) {
 				c.Workflow.Transitions[EventPROpenedDraft] = Transition{To: "in_progress", Owner: OwnerNative}
 			},
-			wantIn: "can neither configure nor verify pr_opened_draft: use owner: flow",
+			wantIn: "has no automation for pr_opened_draft: use owner: flow",
 		},
 		{
 			name: "native ownership of an event no tracker automates",

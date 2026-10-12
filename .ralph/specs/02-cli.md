@@ -203,3 +203,22 @@ Secrets never printed.
   the run then looks like it did what was asked. The flags are declared now
   rather than added later so that the shipped surface is spec 02's exactly,
   and `TestUnimplementedCommandsExitFail` holds each one until its item.
+- **§2 `flow attest` makes a plan before it writes a word (item 4.6).** Which
+  checks may be attested is not a list in the command: it is a property of
+  what the providers can be asked (spec 05 §4), and the plan already decides
+  it. An id whose plan item resolves to anything but `attest` is refused with
+  64, and the fix line says what to do instead — `flow apply` for a native
+  change, `flow doctor --fix` for a follow-up, nothing at all for something
+  that already holds. Deciding it from the same plan doctor reads is what
+  stops the two commands disagreeing about one board.
+- **§2 `--expires` is the last of three, not the first (item 4.6).** The flag
+  has no kong default. What is asked for wins, else `attestation.default_ttl`
+  from the configuration (spec 03 §2), else thirty days. A flag default would
+  have silently beaten the team's own setting on every run and made it a
+  comment. Both ends read the chain through one function, so the duration
+  doctor prints when it asks for an attestation is the duration attest writes.
+- **§2 a promise with nobody's name on it, no words in it, or no time left in
+  it is refused (item 4.6).** All three are exit 64 rather than a failure,
+  because all three are answered by typing something else. `--by` falls back
+  to the handle in the user config; when there is none, the refusal says so
+  rather than recording an unsigned promise.

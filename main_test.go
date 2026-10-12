@@ -66,12 +66,11 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 // Commands drop off this list as their plan item lands: check commit did so
 // with item 1.3, schema with item 1.9, hook with item 1.13, init with item
 // 4.1, plan and apply with item 4.2, check pr with item 4.3, check deploy
-// with item 4.4 and doctor with item 4.5. A flag whose own item has not
-// landed is on the list too, because doctor accepting it and ignoring it
-// would be the stub this test exists to forbid.
+// with item 4.4, doctor with item 4.5 and attest with item 4.6. A flag whose
+// own item has not landed is on the list too, because doctor accepting it and
+// ignoring it would be the stub this test exists to forbid.
 func TestUnimplementedCommandsExitFail(t *testing.T) {
 	cases := [][]string{
-		{"attest", "tracker.native.pr_merged", "--note", "confirmed"},
 		{"doctor", "--ci"},
 		{"doctor", "--report", "health.md"},
 		{"doctor", "--watch"},

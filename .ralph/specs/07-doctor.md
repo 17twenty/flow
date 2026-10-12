@@ -427,3 +427,20 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   remedy asks for the leave (`flow doctor --fix`) rather than for the answer
   (`--set <path>=<value>`). Flow is holding the id; telling a person to go and
   retype it puts a decision in front of them that has already been made.
+- **§8 attest writes the promise and nothing else (item 4.6).** The lock's
+  `config_hash` is left exactly as doctor stamped it. Stamping it here would
+  re-validate every older attestation that had lapsed with the configuration —
+  the ones with no `inputs`, which can only be retired by that hash moving —
+  on the word of somebody who was vouching for a single check. Doctor may
+  stamp it because doctor has looked at all of them; attest has looked at one.
+- **§8 a promise names what it covered, and lapses with that (item 4.6).**
+  Every attestation flow writes carries the canonical hash of the desired item
+  it was made about, so rewriting one part of a workflow retires the promise
+  about that part and leaves the rest standing. The coarse rule — lapse with
+  the whole configuration — survives for attestations written before flow
+  recorded this, which have no hash to compare.
+- **§8 one check has one attestation (item 4.6).** A second person vouching
+  takes the first's place rather than standing beside it, and the run says
+  whose word it displaced and whether that word still stood. Two promises
+  about one check would leave flow choosing between them with no rule to
+  choose by.

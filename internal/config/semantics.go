@@ -374,8 +374,13 @@ func (v *validator) nativeOwnership(at, event string) {
 		return
 	}
 	capability := set.Capability(name)
-	if !capability.Set && !capability.Verify {
-		v.add("%s.owner is %s, but %s can neither configure nor verify %s: use owner: %s", at, OwnerNative, v.cfg.Tracker.Type, event, OwnerFlow)
+	// An automation flow cannot read back is still an automation: the
+	// declaration says so by asking for an attestation rather than for
+	// nothing (spec 05 §4). What makes `owner: native` a lie is a tracker
+	// that has no such workflow at all, which is the declaration that
+	// offers no remedy either.
+	if !capability.Set && !capability.Verify && capability.Remediation != core.RemediationAttest {
+		v.add("%s.owner is %s, but %s has no automation for %s: use owner: %s", at, OwnerNative, v.cfg.Tracker.Type, event, OwnerFlow)
 	}
 }
 

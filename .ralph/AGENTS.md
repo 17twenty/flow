@@ -70,3 +70,7 @@ CURRENT MODE: direct
 - A reference fake can be too well-behaved to reach a branch: `coretest.FakeTracker`'s board is every ticket it holds, so `InProject` was always true. Wrap it and override the one method (`boardlessTracker`, `deletelessForge`) rather than teaching the reference implementation to misbehave.
 - Make a verdict fail by breaking the *rule's* input, not by moving the card: a ticket in Backlog still meets the Definition of Ready, so "put it somewhere else" proves nothing. Delete the acceptance criteria instead.
 - `core.UserError.Fix` is not in `Error()`. Asserting "the message says to pass --pr" must read the field, or a `WithWhy` that replaces the message silently passes.
+- Two mechanisms answering the same question in different code drift apart silently: `PlanInput.attested` re-derived what `FindAttestation` already judged, and only mutation testing showed the plan ignoring the inputs hash. Delegate, never repeat.
+- A reference fake world can make a whole family of items unreachable — the CLI fake tracker never observed `tracker.native.*` — so when a test expectation surprises you, compare the fake's behaviour against the real adapter before changing the test.
+- Mutating an *absence* means adding the line the code deliberately omits. `attest` not stamping the lock's `config_hash` had no test at all until the stamp was added and nothing failed.
+- Read files in small targeted slices (`sed -n`, `grep -n -A`). Large tool output gets elided, and an elided read is a guess.

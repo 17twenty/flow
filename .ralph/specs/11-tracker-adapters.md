@@ -315,3 +315,17 @@ reopen, pagination, error mapping.
   label through the id the plan copied off the observation, falling back to
   the name. A label that has gone since the plan was made is `ErrNotFound`
   with "run flow plan again" as the fix.
+- **§GitHub Projects: a built-in workflow is not observable at setup (item
+  4.6).** The Projects API will not say whether "Pull request merged" or "Item
+  closed" is enabled, so the declaration now reads `verify: false` for all
+  three native transitions, and `Observe` answers for them with an empty
+  observation rather than "a tracker has nothing called that". They were
+  marked `verify: true` on the strength of being checkable live, but §4 of
+  spec 05 makes `verify` a question about the setup observation, and the live
+  audit (spec 07 §6) is a different question asked of a different thing.
+- **§GitHub Projects: `owner: native` means there is an automation, not that
+  flow can read it (item 4.6).** Configuration semantics used to refuse
+  `owner: native` for any event the tracker could neither set nor verify.
+  That now also requires the declaration to offer no remedy: a capability that
+  asks for an attestation is one with a real built-in workflow behind it that
+  flow cannot see, which is precisely what `flow attest` exists for.

@@ -19,7 +19,7 @@ capabilities:
   ticket_move:        { set: true,  verify: true, requires: [project_write], remediation: follow_up }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
-  native_transition_changes_requested:   { set: false, verify: true, remediation: attest, notes: "Built-in 'Code changes requested'; verified live." }
-  native_transition_pr_merged:           { set: false, verify: true, remediation: attest, notes: "Built-in 'Pull request merged' (on by default); verified live." }
-  native_transition_issue_closed:        { set: false, verify: true, remediation: attest, notes: "Built-in 'Item closed' (on by default); verified live." }
+  native_transition_changes_requested:   { set: false, verify: false, remediation: attest, notes: "Built-in 'Code changes requested'; not listable at setup, watched by the live audit." }
+  native_transition_pr_merged:           { set: false, verify: false, remediation: attest, notes: "Built-in 'Pull request merged' (on by default); not listable at setup, watched by the live audit." }
+  native_transition_issue_closed:        { set: false, verify: false, remediation: attest, notes: "Built-in 'Item closed' (on by default); not listable at setup, watched by the live audit." }
   native_transition_deployed:            { set: false, verify: false, remediation: none, notes: "No built-in; use owner: flow." }

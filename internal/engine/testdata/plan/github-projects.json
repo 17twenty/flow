@@ -9,7 +9,7 @@
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
   "desired_hash": "sha256:ef7ca845f44a009cd7146e584df1ab7944a313b9cbfb722e37a258de4ccc1b83",
-  "lock_hash": "sha256:099a98c2532574d71e41bf514fb3b88b1c18f3b3b34772bd7ffeedcbc372fdc5",
+  "lock_hash": "sha256:d70da70a5b8fe24a26da985e89fc41ba3c5efc1dec5393d4ac790b7b70b9c34f",
   "items": [
     {
       "id": "tracker.project",
@@ -130,10 +130,22 @@
         "tracker.status_options"
       ],
       "outcome": "noop",
-      "why": "the provider already matches what was asked for",
-      "exists": true,
+      "why": "flow cannot verify this, and a human has attested that it is true",
+      "exists": false,
       "desired_hash": "sha256:9d852996510565fd17bb56be6211a4b5c50bdf73fec43f0afecb3e4898995fcf",
-      "observed_hash": "sha256:be8728f6811ace7327e4eeb5ea2a27e9f4ca6aaad88d70d5468d2a3a5760faf4"
+      "observed_hash": "sha256:1a94aaffc11714aac617db2377fe2b926e0d4b0c23dbb0963805ba3a7ef7b3f8",
+      "changes": [
+        {
+          "what": "tracker.native.pr_merged",
+          "op": "create",
+          "item": {
+            "name": "pr_merged",
+            "fields": {
+              "to": "Done"
+            }
+          }
+        }
+      ]
     },
     {
       "id": "tracker.native.issue_closed",

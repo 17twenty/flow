@@ -159,6 +159,18 @@ func (r Renderer) Deploy(deploy engine.Deploy) (string, error) {
 	}
 }
 
+// Attested renders what `flow attest` wrote down (spec 07 §8).
+func (r Renderer) Attested(attested engine.Attested) (string, error) {
+	switch r.format {
+	case FormatText:
+		return r.decorate(attested.Text()), nil
+	case FormatJSON:
+		return r.json(attested.JSON())
+	default:
+		return "", r.noRendering("an attestation")
+	}
+}
+
 // json passes the engine's serialisation through untouched. A JSON document
 // is the one rendering with no presentation in it at all: colouring it would
 // break the parser the flag exists for, and translating its glyphs would
@@ -181,9 +193,10 @@ func (r Renderer) unknownFormat() error {
 //
 // Markdown belongs to the two documents somebody reads on a web page: the
 // plan a setup PR quotes and the doctor report `--report` writes (spec 02
-// §2). An apply, a comparison and a policy result are read where they were
-// asked for, so a caller asking for markdown has made a mistake, and answering
-// with the terminal layout would put ANSI-shaped text in a comment.
+// §2). An apply, a comparison, a policy result and an attestation are read
+// where they were asked for, so a caller asking for markdown has made a
+// mistake, and answering with the terminal layout would put ANSI-shaped text
+// in a comment.
 func (r Renderer) noRendering(what string) error {
 	return fmt.Errorf("%w: there is no %q rendering of %s; flow writes it as text or json", core.ErrValidation, r.format, what)
 }

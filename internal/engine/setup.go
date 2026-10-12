@@ -677,7 +677,7 @@ func planned(id, title, category string, dependsOn ...string) Check {
 // something that used to hold and no longer does is drift rather than a plain
 // failure (spec 07 §7).
 func plannedResult(env *Env, id string) Result {
-	item, found := findItem(env.Plan, id)
+	item, found := env.Plan.Find(id)
 	if !found {
 		return Skip("this configuration does not ask for it")
 	}
@@ -691,6 +691,7 @@ func plannedResult(env *Env, id string) Result {
 		Inputs:     item.DesiredHash,
 		ConfigHash: env.Plan.ConfigHash,
 		Now:        env.Now(),
+		TTL:        AttestationTTL(env.Config),
 	})
 	return Drift(DriftInput{
 		Check:  id,
@@ -700,15 +701,6 @@ func plannedResult(env *Env, id string) Result {
 		Now:    env.Now(),
 		Record: env.Fix,
 	})
-}
-
-// findItem is the plan's entry for a desired item.
-func findItem(plan Plan, id string) (PlanItem, bool) {
-	at := slices.IndexFunc(plan.Items, func(item PlanItem) bool { return item.ID == id })
-	if at < 0 {
-		return PlanItem{}, false
-	}
-	return plan.Items[at], true
 }
 
 // outcomeResult is the mapping from what apply would do to what doctor says
