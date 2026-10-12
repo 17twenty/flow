@@ -114,8 +114,18 @@ func categoryOf(target string) string {
 // it refused to make because nobody passed --prune, are both settled: the
 // first is done and the second is flow declining to do something destructive
 // that the team can ask for at any time.
+//
+// An item apply skipped is the exception, and it has to be, because apply
+// records no changes for one — it attempted nothing. Reading that empty list
+// as "there is nothing left to do" is what closed this repository's own
+// forge.protection and forge.required_status tickets as verified while the
+// trunk sat unprotected. What a skipped item owes is what the plan says it
+// owes, not what apply did not do about it.
 func applyResult(planned PlanItem, item AppliedItem) Result {
 	owed := outstandingChanges(item)
+	if item.Skipped != "" {
+		owed = unattemptedChanges(planned)
+	}
 	if len(owed) == 0 && item.Err == nil {
 		return Result{State: StatePass, Message: item.ID + " is as the configuration asks"}
 	}
@@ -149,6 +159,34 @@ func outstandingChanges(item AppliedItem) []string {
 			step += " — " + reason
 		}
 		steps = append(steps, step)
+	}
+	return steps
+}
+
+// unattemptedChanges are what an item apply stepped over still owes.
+//
+// Only one kind of skip owes anything. `follow_up` is the plan saying flow is
+// not allowed to make this true, which is work with somebody's name on it and
+// the whole reason this file exists. The others are settled: `noop` is
+// already true, `compensated` is enforced another way, `attest` is waiting on
+// a person's word rather than on a ticket, and `unsupported` is a thing
+// nobody can make. A ticket for any of those is a ticket that can never be
+// closed.
+//
+// The changes come from the plan because apply has none to offer: it is
+// precisely the item it did not attempt. An item with no changes at all still
+// owes the item itself — "flow was not allowed to do this" is a finding even
+// when flow could not say what the doing would look like.
+func unattemptedChanges(planned PlanItem) []string {
+	if planned.Outcome != OutcomeFollowUp {
+		return nil
+	}
+	steps := make([]string, 0, len(planned.Changes))
+	for _, change := range planned.Changes {
+		steps = append(steps, changeInstruction(change))
+	}
+	if len(steps) == 0 {
+		steps = append(steps, "make "+planned.ID+" true at the provider by hand")
 	}
 	return steps
 }

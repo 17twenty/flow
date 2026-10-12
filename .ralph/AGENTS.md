@@ -78,3 +78,4 @@ CURRENT MODE: direct
 - An empty result and "nothing was wanted" must not be the same value. A skip is a success, so any code path that turns "could not look" into an empty collection turns a blind run green.
 - Grep every new helper's name across `*_test.go` before calling an item done. `followUpSummary`, `followUpSteps` and `changeInstruction` appeared in no test at all, so four mutants were waiting in forty lines of new code.
 - A title and a body are two fields, and a test that changes both proves nothing about either. Make one change at a time: the title-only rewrite was the mutant that survived.
+- "Flow did not attempt it" and "flow found nothing left to do" are the same empty slice, and the second closes tickets. Any code that judges work from a result must first ask whether the work was tried.

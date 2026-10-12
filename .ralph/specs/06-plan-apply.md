@@ -247,3 +247,14 @@ each successful mutation (atomic) and at the end. Summary.
   which target answers it is flow's problem. A filter naming nothing a
   provider declares is refused, because a typo and a converged workflow would
   otherwise print the same empty plan and the same exit 0.
+- **§3 an item apply never attempted is not an item apply verified (item
+  2.11, revisited).** Apply records changes only for the items it carried
+  out; an item the plan hands to somebody else is skipped with no changes at
+  all. Reading that empty list as "nothing is left to do" made apply close
+  this repository's own `forge.protection` and `forge.required_status`
+  follow-ups as *verified* while the trunk sat unprotected — the one thing
+  that promised nobody would have to close a ticket by hand closed two that
+  were still true. A skipped item is therefore judged from the plan rather
+  than from the apply: `follow_up` still owes the plan's changes, and `noop`,
+  `compensated`, `attest` and `unsupported` owe nothing, because a ticket for
+  any of those could never be closed.
