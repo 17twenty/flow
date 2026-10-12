@@ -260,9 +260,24 @@ func prEventAt(event string, pr core.PullRequest) time.Time {
 		return pr.CreatedAt
 	case config.EventChangesRequested:
 		return lastChangesRequested(pr)
+	case config.EventApproved:
+		return lastApproved(pr)
 	default:
 		return pr.UpdatedAt
 	}
+}
+
+// lastApproved is when somebody last approved. It is only ever asked for by
+// the catch-up: the native audit declines events it cannot date and approval
+// is not one of the five it reads.
+func lastApproved(pr core.PullRequest) time.Time {
+	var at time.Time
+	for _, review := range pr.Reviews {
+		if review.State == core.ReviewApproved && review.SubmittedAt.After(at) {
+			at = review.SubmittedAt
+		}
+	}
+	return at
 }
 
 // lastChangesRequested is when somebody last asked for changes.
@@ -281,9 +296,8 @@ func lastChangesRequested(pr core.PullRequest) time.Time {
 // A provider that will not answer is not an error here: the index is only used
 // to let a ticket off, so an empty one judges more, never less.
 func (a *audit) linkedWork(ctx context.Context, env *Env) map[string][]core.PullRequest {
-	merged, _ := a.merged(ctx, env)
-	open, _ := a.inFlight(ctx, env)
-	return prsByTicket(env, append(slices.Clone(merged), open...))
+	work, _ := a.work(ctx, env)
+	return work
 }
 
 // unfinishedWork reports that a ticket still has work in flight, which is what

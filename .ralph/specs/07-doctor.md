@@ -665,3 +665,50 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   longer than one. Two reads of overlapping spans would be two round trips for
   one history and, worse, two slightly different answers about what is
   running.
+- **§6 the catch-up is found by a live check of its own, `live.transitions.flow`
+  (item 5.5).** "Missed flow-owned transitions found by live checks" names no
+  check in the table that finds them: the native family audits the moves flow
+  declines to make, and the ticket family asks about columns rather than
+  events. Adding one check is the smallest change that makes the sentence
+  true, and it mirrors `live.transitions.native.<event>` from the other side.
+- **§6 it is one check for every event, where the native side is one per
+  event (item 5.5).** The native side can split because each event is a
+  separate claim about a separate automation. Here there is one decision —
+  `Transition` folds everything a ticket's work says about it into the single
+  column the ticket belongs in — and one act that settles it. Splitting would
+  run that fold once per event, count the same ticket as many times as it had
+  work, and leave flow deciding one event at a time what the engine is
+  careful to decide whole.
+- **§6 the catch-up delegates to the transition engine rather than restating
+  it (item 5.5).** It builds the same snapshot `flow check pr` builds and
+  performs the same `TicketMove`. Everything spec 04 §5 says therefore holds
+  without being written twice: a native transition is not flow's to perform,
+  a ticket in a column the workflow does not name is not flow's to move out
+  of, work that is still open does not finish a ticket, and nothing goes
+  backwards but a review asking for changes. A second implementation of those
+  rules would differ from the first within a release.
+- **§6 the catch-up gets the same fifteen minutes the tracker gets, measured
+  from the first event that asked for the move (item 5.5).** A pull request
+  marked ready a minute ago has a CI run in flight that is about to make the
+  move, and doctor should not race it. But where several pull requests ask for
+  one move, the grace runs from the earliest: a move owed since Monday should
+  not wait another quarter of an hour because somebody opened a second pull
+  request. Racing costs nothing in any case — both runs perform the same move
+  to the same column, which rule 5 makes idempotent.
+- **§6 a caught-up ticket counts as held, and says so in evidence (item
+  5.5).** After `--fix` the board is right, and a check that reported the
+  board as wrong anyway would make a daily `--fix` run exit non-zero for ever.
+  The evidence line stays either way — "flow moved it from In progress to In
+  review" — so a report still shows how much the audit had to put right, which
+  is the number that says whether `flow check pr` is running at all.
+- **§6 the catch-up reads the forge strictly, and the other live checks do not
+  (item 5.5).** Everything else in §6 only describes what it saw, so a pull
+  request it could not read costs it a little accuracy. This one acts, and a
+  ticket's column is decided by all of its work (spec 04 §5 rule 4) — so the
+  reading that is missing the open half of a ticket's work is exactly the
+  reading that moves it to Done too early. A partial answer is an error, not a
+  smaller audit.
+- **§6 a `deployed` transition with no records to read is an error, not a skip
+  (item 5.5).** A workflow that finishes tickets on deployment and cannot see
+  deployments has a last column nothing can ever reach. Skipping quietly would
+  report a board that is permanently one move short as correct.

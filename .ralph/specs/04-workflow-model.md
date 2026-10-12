@@ -246,3 +246,11 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   by another route. Open pull requests are still read, because §5 rule 4 needs
   to see a ticket's unfinished work before calling it done — but they are
   evidence about those tickets, not candidates of their own.
+- **§5 `owner: flow` means flow performs it eventually, not only on the event
+  (item 5.5).** The gate performs a transition when it is told about the
+  event; `flow doctor --fix` performs it when nobody did. The decision is the
+  same function over the same snapshot in both, so the two can never disagree
+  about where a ticket belongs — the only difference is what prompted the
+  question. That is what makes a missed CI run a delay rather than a hole in
+  the board, and it is why rule 5's idempotence is load-bearing rather than
+  merely tidy: two things now make these moves.

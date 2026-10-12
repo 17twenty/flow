@@ -157,10 +157,11 @@ func evidenceMentions(t *testing.T, got engine.Result, want string) {
 	t.Errorf("no evidence mentions %q: %+v", want, got.Evidence)
 }
 
-// liveCheckIDs is every check spec 07 §6 names in the three families that
-// exist: the pull requests that merged, the board they came off, and the
-// transitions the tracker promised to perform itself. The last of those is
-// one check per native event, which setupConfig gives two of.
+// liveCheckIDs is every check spec 07 §6 names in the families that exist:
+// the pull requests that merged, the board they came off, the transitions the
+// tracker promised to perform itself — one check per native event, which
+// setupConfig gives two of — and the one check for all the transitions flow
+// performs.
 func liveCheckIDs() []string {
 	return []string{
 		engine.CheckLivePRsLinked,
@@ -176,6 +177,7 @@ func liveCheckIDs() []string {
 		engine.CheckLiveTicketsReadyDoR,
 		engine.LiveTransitionCheck(config.EventPRMerged),
 		engine.LiveTransitionCheck(config.EventIssueClosed),
+		engine.CheckLiveTransitionsFlow,
 	}
 }
 

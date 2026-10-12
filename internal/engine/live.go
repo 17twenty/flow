@@ -71,7 +71,8 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsReviewed(),
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)
-	return append(checks, a.transitionChecks(cfg)...)
+	checks = append(checks, a.transitionChecks(cfg)...)
+	return append(checks, a.transitionsFlow())
 }
 
 // errNoForge is what a live check reports when it is asked to look at a forge
