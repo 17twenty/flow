@@ -131,3 +131,42 @@ Secrets never printed.
   uninstall refuses an unmarked hook outright with no override: deleting
   somebody's hook is not a thing flow should be able to do by accident.
   Installing an identical hook reports "unchanged" and rewrites nothing.
+- **§2 `init` fills the preset in place rather than generating a file (item
+  4.1).** A preset is mostly explanation — every key has a comment beside it
+  saying what the alternatives are — and spec 03 §7 ships it so a team can read
+  and edit it. Decoding to a struct and marshalling back loses every comment;
+  decoding to a `yaml.Node` and marshalling back keeps the comments but loses
+  their alignment, reflows the flow mappings and re-indents the sequences. So
+  `config.Set` parses the document only to find out where a value is, splices
+  those bytes, and verifies the result by re-reading it: the path must now hold
+  the new value and no other value in the document may have changed. A value is
+  accepted only once YAML tags it `!!str`, so a project number stays the string
+  it was configured as. A shorter value with a comment beside it is padded back
+  out to the comment's column — only a comment, never the `}` closing a flow
+  mapping.
+- **§2 `init` detects a forge only from hosts it can know without asking (item
+  4.1).** Spec 10 §1 detects a forge past `github.com` by probing
+  `/api/v3/meta`, `/api/v4/version` and `/api/v1/version`, and §2 requires init
+  to succeed offline. The two cannot both hold, so init resolves `github.com`,
+  `gitlab.com` and `codeberg.org` from the host alone and asks for `--forge`
+  otherwise. The refusal is `ErrNeedsInput` (exit 2), not usage (64): the flag
+  is needed by some repositories and not by others, so leaving it out is not a
+  malformed invocation. The probing wizard is spec 12's job (item 6.1).
+- **§2 `init` rebuilds `forge.url` from the remote's host (item 4.1).** A clone
+  URL may carry a credential (spec 15 §2) and names a transport, while
+  `forge.url` is the forge's web address, so the host is the only part copied.
+- **§2 `--force` is about `.flow.yaml` (item 4.1).** The refusal to
+  reconfigure is checked before anything is written, and it does not look at
+  what the existing file says: a configuration that happens to match the one
+  init would write is still one somebody committed. The templates are
+  scaffolding rather than configuration, so an existing one is kept whether or
+  not `--force` was given — reverting somebody's pull request template is not
+  what starting the configuration again means.
+- **§2 `init` validates before it writes (item 4.1).** The configuration is
+  parsed and checked against the capability registry first, so no combination
+  of flags can leave behind a file flow itself refuses to read.
+- **§2 the commit-msg hook cannot fail `init` (item 4.1).** The gate on the
+  pull request is the authority (spec 08) and the hook is its fast local echo,
+  so a repository with a hook manager in charge, or with somebody else's
+  commit-msg hook, is reported as `deferred` and left alone. `init` still
+  succeeds: a repository is configured whether or not it got a hook.

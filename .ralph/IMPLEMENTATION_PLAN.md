@@ -169,7 +169,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 4 — Commands (activation happens after 4.3)
 
-- [ ] 4.1 flow init (non-interactive) — specs: 02 §2 — deps: 1.10, 1.11, 1.13 (#58)
+- [x] 4.1 flow init (non-interactive) — specs: 02 §2 — deps: 1.10, 1.11, 1.13 (#58)
+  - note: config.Set edits a preset byte by byte — parse to find where a value is, then splice those bytes and no others — so the file a team opens is the preset flow ships, comments, columns and flow style intact. The edit is verified by re-reading it, and a value is only accepted once YAML agrees it is a string. init detects the forge from origin's host (github.com, gitlab.com, codeberg.org), refuses the rest as needs-input rather than probing, and validates before it writes. --force is about .flow.yaml; templates are scaffolding and are never reverted.
   - AC: scenarios A01, A02
 - [ ] 4.2 flow plan and flow apply — specs: 02 §2, 06 — deps: 2.7, 3.12 (#59)
   - AC: scenarios A03, A04

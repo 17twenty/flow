@@ -53,3 +53,9 @@ CURRENT MODE: direct
 - A transport guard must refuse without retrying. The retry loop happily asked the guard four times before the test noticed.
 - A paging test only proves paging if the thing searched for is beyond page 1. Seed the decoys first, the target last, or a read-only-the-first-page mutant survives.
 - A surviving mutant is a gap in the tests, never a harmless mutation. `ghLabelDescriptionOf` returning `&""` survived: nothing asserted that a rename leaves a description alone.
+- Mutate with `if false && (…)`, not by deleting the line: a deletion that orphans an import is a build failure, which is not the same as a test failure.
+- `git checkout` silently does nothing for an untracked file. `cp` a backup before mutating and `grep` to confirm the restore.
+- A mutant can survive because the platform, not the test, masks it: lipgloss declines a pipe on Unix, so deleting flow's own `term.IsTerminal` guard broke nothing on macOS. Inject the seam and test flow's decision, not the library's.
+- `core.Client.Do` returns `nil, err` on a failing status, so an adapter that needs GitHub's per-error `code` must read the body before writing the error.
+- `engine.AppliedChange` has a named field `Change`: it is `change.Change.Item.Name`.
+- macOS's case-insensitive filesystem masks cache-key casing bugs. Assert the key, not the file.

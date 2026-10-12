@@ -64,10 +64,9 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 // Unimplemented commands are the only permitted stub, and they must fail
 // cleanly as ErrUnsupported rather than pretending to work (plan item 0.1).
 // Commands drop off this list as their plan item lands: check commit did so
-// with item 1.3, schema with item 1.9, hook with item 1.13.
+// with item 1.3, schema with item 1.9, hook with item 1.13, init with item 4.1.
 func TestUnimplementedCommandsExitFail(t *testing.T) {
 	cases := [][]string{
-		{"init"},
 		{"plan"},
 		{"apply"},
 		{"attest", "tracker.native.pr_merged", "--note", "confirmed"},
