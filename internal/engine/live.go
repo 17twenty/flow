@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/17twenty/flow/internal/commits"
+	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
 )
 
@@ -61,14 +62,15 @@ const DefaultWindow = 14 * 24 * time.Hour
 // for exactly one run of doctor. That is the same contract [SetupChecks] has —
 // a registry is built per run — and it is what lets four checks be four
 // questions rather than four round trips.
-func LiveChecks() []Check {
+func LiveChecks(cfg *config.Config) []Check {
 	a := &audit{}
-	return append([]Check{
+	checks := append([]Check{
 		a.prsLinked(),
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
 	}, a.ticketChecks()...)
+	return append(checks, a.transitionChecks(cfg)...)
 }
 
 // errNoForge is what a live check reports when it is asked to look at a forge

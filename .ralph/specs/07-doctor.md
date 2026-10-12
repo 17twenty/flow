@@ -582,3 +582,54 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   the reason item 5.1 sorted pull requests by number: item 5.7 edits this
   evidence into an issue in place, and a list that reshuffles between runs is
   noise in every diff of it.
+- **§6 one check per native transition, not one for all of them
+  (item 5.4).** The table names `live.transitions.native` and spec 04 §5 names
+  `transitions.native.<event>`; the per-event reading wins, as
+  `live.transitions.native.pr_merged`, mirroring the setup side's
+  `tracker.native.<event>`. A tracker's built-in workflows are switched on one
+  at a time — "Item closed" on, "Pull request merged" off is an ordinary state
+  — and a single verdict could not say which, nor point at the attestation
+  that covers it.
+- **§6 the audit reads the board as it stands, not field history (item 5.4).**
+  A Projects item's history is not in the API at all; Jira keeps a changelog
+  and Linear an issue history. A check whose question changed shape per
+  tracker would be three checks wearing one id. What every tracker does say is
+  where a ticket is now, and that is enough: fifteen minutes after an event, a
+  ticket that has not reached the column the event was supposed to take it to
+  is a transition that did not happen.
+- **§6 the grace period is the whole tolerance (item 5.4).** Spec §6's fifteen
+  minutes is applied to the event, not to the move: an occurrence younger than
+  that is not judged at all, so a merge two minutes old whose webhook is still
+  in flight is invisible to doctor rather than a failure that clears itself.
+- **§6 a forward transition is verified at-or-past, a back-move at-or-before
+  (item 5.4).** The target column is where an event sends a ticket, not where
+  it must stay: work that merged and then went further on has not been left
+  behind. `changes_requested` is the one native transition that goes against
+  the board's order, so its question is the mirror — a ticket further on than
+  the column the review should have returned it to is the failure.
+- **§6 flow verifies only the events it can date (item 5.4).** `pr_merged`,
+  `issue_closed`, `pr_opened_draft` and `changes_requested` are dated exactly,
+  from the merge, the close, the open and the review. Nothing records when a
+  pull request was marked ready for review, so the last time anything happened
+  to it stands in — always at or after the real moment, which makes the grace
+  period generous rather than harsh. An event with no date at all is skipped
+  with that as its reason: a vacuous "nothing in the window" would be a green
+  tick for a question nobody asked, which is how an audit comes to mean
+  nothing.
+- **§6 the tracker is not blamed for a board it was not given (item 5.4).** A
+  ticket in a status the workflow does not name is one flow cannot place
+  (spec 04 §5 rule 3), and a ticket nobody added to the project comes back the
+  same way — one rule for "flow does not know where this is" rather than two.
+  Neither is counted, and when nothing else was, the message says so rather
+  than claiming the fortnight was quiet.
+- **§6 a ticket whose work is not finished is not a missed transition
+  (item 5.4).** Spec 04 §5 rule 4 says a ticket is done when all of its work
+  is, so an automation that left a ticket alone while a second pull request
+  was still open did the right thing. Demanding the move would be asking the
+  tracker to make the board lie.
+- **§6 the remedy for a missed native transition is never a fix (item 5.4).**
+  Last Tuesday's merge cannot be re-fired. The way out is to turn the built-in
+  workflow back on and re-attest, or to take the event off the tracker —
+  `owner: flow` — which puts it in `flow check pr` and lets doctor's catch-up
+  repair what CI misses. The remediation names the `tracker.native.<event>`
+  attestation this check is the evidence against.

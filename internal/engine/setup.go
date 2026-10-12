@@ -123,7 +123,7 @@ type SetupInput struct {
 // of spec 07 §5, then the live-health audit of §6. A registry is good for one
 // run, because the live checks share one reading of the window.
 func DoctorRegistry(in SetupInput) (*Registry, error) {
-	return NewRegistry(append(SetupChecks(in), LiveChecks()...)...)
+	return NewRegistry(append(SetupChecks(in), LiveChecks(in.Config)...)...)
 }
 
 // SetupRegistry builds the setup checks of spec 07 §5, in report order.

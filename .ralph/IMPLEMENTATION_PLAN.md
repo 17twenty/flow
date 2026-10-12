@@ -201,8 +201,9 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 5.3 live.tickets.* audits — specs: 07 §6 — deps: 4.5 (#67)
   - AC: done_merged, done_deployed, review_has_pr, progress_stale, ready_dor
   - note: the board is read once for all five and bucketed through `ColumnOf`, so the tracker's own column ids stay its business. Each check finds its column by the transition that lands work there, and skips when the workflow names none. Only Done has a window; a ticket's date is its close, falling back to its last edit because a Done column holds items the tracker still calls open. `progress_stale` warns and never fails, counts working days, and does not ask the question of a tracker that records no update time. `done_merged` stays the literal question — work pushed straight to the trunk fails it, which is what Stage B settles — and points at `forge.protection`.
-- [ ] 5.4 live.transitions.native verification — specs: 07 §6, 04 §5 — deps: 5.3 (#68)
+- [x] 5.4 live.transitions.native verification — specs: 07 §6, 04 §5 — deps: 5.3 (#68)
   - AC: scenario V03
+  - note: one check per native event — `live.transitions.native.pr_merged` — mirroring the setup side's `tracker.native.<event>`, because a tracker's built-in workflows are switched on one at a time. It reads the board as it stands against events it can date, not field history, which no two trackers expose the same way. The fifteen minutes are applied to the event, so a merge whose webhook is still in flight is not judged at all. Forward transitions are verified at-or-past the target and `changes_requested` at-or-before it. An event flow cannot date is skipped saying so, because a vacuous pass is worse than no check. A ticket flow cannot place on the board, and one whose other work is still open (rule 4), are not the tracker's fault. Verified live: `issue_closed` passes 59/59 on this repository, which is the attestation behind GitHub's "Item closed" built-in turned into evidence.
 - [ ] 5.5 Catch-up of missed flow-owned transitions in doctor --fix — specs: 07 §6 — deps: 5.3, 2.14 (#69)
   - AC: scenario V04
 - [ ] 5.6 live.flags.cleanup via git trailers — specs: 07 §6 — deps: 5.1, 1.11 (#70)

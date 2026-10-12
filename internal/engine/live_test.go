@@ -114,14 +114,14 @@ func liveRun(t *testing.T, env *engine.Env, only []string) engine.Report {
 	checks := append([]engine.Check{
 		answering(engine.CheckForgeRepo, engine.CategoryForge, engine.Pass("the repository is there")),
 		answering(engine.CheckAuthTracker, engine.CategoryAuth, engine.Pass("the tracker credential is good")),
-	}, engine.LiveChecks()...)
+	}, engine.LiveChecks(env.Config)...)
 	return doctorRun(t, env, only, checks...)
 }
 
 // liveResult runs one live check on its own and returns what it decided.
 func liveResult(t *testing.T, env *engine.Env, id string) engine.Result {
 	t.Helper()
-	for _, check := range engine.LiveChecks() {
+	for _, check := range engine.LiveChecks(env.Config) {
 		if check.ID != id {
 			continue
 		}
@@ -157,8 +157,10 @@ func evidenceMentions(t *testing.T, got engine.Result, want string) {
 	t.Errorf("no evidence mentions %q: %+v", want, got.Evidence)
 }
 
-// liveCheckIDs is every check spec 07 §6 names in the two families that
-// exist: the pull requests that merged, and the board they came off.
+// liveCheckIDs is every check spec 07 §6 names in the three families that
+// exist: the pull requests that merged, the board they came off, and the
+// transitions the tracker promised to perform itself. The last of those is
+// one check per native event, which setupConfig gives two of.
 func liveCheckIDs() []string {
 	return []string{
 		engine.CheckLivePRsLinked,
@@ -170,6 +172,8 @@ func liveCheckIDs() []string {
 		engine.CheckLiveTicketsReviewHasPR,
 		engine.CheckLiveTicketsProgressStale,
 		engine.CheckLiveTicketsReadyDoR,
+		engine.LiveTransitionCheck(config.EventPRMerged),
+		engine.LiveTransitionCheck(config.EventIssueClosed),
 	}
 }
 
