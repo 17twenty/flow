@@ -47,12 +47,19 @@ type gitHubFake struct {
 	mu       sync.Mutex
 	requests []string
 	queries  []string
+	// agents counts the User-Agent of every request, so that a call going
+	// out anonymously is visible.
+	agents map[string]int
 }
 
 // newGitHubServer stands the fake up and returns it with its server.
 func newGitHubServer(t *testing.T, fx coretest.DeployFixture) (*gitHubFake, *httptest.Server) {
 	t.Helper()
-	fake := &gitHubFake{pageSize: 2, statuses: map[int64][]map[string]any{}}
+	fake := &gitHubFake{
+		pageSize: 2,
+		statuses: map[int64][]map[string]any{},
+		agents:   map[string]int{},
+	}
 	records := slices.Clone(fx.Deployments)
 	slices.SortStableFunc(records, func(a, b core.Deployment) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	for i, record := range records {
@@ -145,8 +152,20 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, r.URL.EscapedPath())
 	f.queries = append(f.queries, r.URL.RawQuery)
+	f.agents[r.Header.Get("User-Agent")]++
 	f.mu.Unlock()
 
+	// A dated API and a media type are asked for on everything. The fake
+	// refuses a request that pins neither, so a call built without them
+	// fails every test it is in rather than only the one that looked.
+	if r.Header.Get("X-GitHub-Api-Version") != gitHubAPIVersion {
+		f.fail(w, http.StatusBadRequest, "no API version was pinned")
+		return
+	}
+	if accept := r.Header.Get("Accept"); accept != gitHubAccept {
+		f.fail(w, http.StatusNotAcceptable, "unexpected Accept "+accept)
+		return
+	}
 	if r.Method != http.MethodGet {
 		f.fail(w, http.StatusMethodNotAllowed, "a deployment source only reads")
 		return

@@ -80,6 +80,9 @@ type ghProjectsFake struct {
 	mu      sync.Mutex
 	queries []string
 	paths   []string
+	// agents counts the User-Agent of every request, so that a call going
+	// out anonymously is visible.
+	agents map[string]int
 	// labels are the repository's labels, in the order REST returns them,
 	// and labelsMade counts the ids issued so that every label created is
 	// a new one.
@@ -144,6 +147,7 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 		options:         map[int][]ghStatusOption{},
 		columns:         map[string]string{},
 		comments:        map[int][]*ghFakeComment{},
+		agents:          map[string]int{},
 		repo:            ghFixtureOwner + "/widget",
 		pageSize:        2,
 		labelPageSize:   1,
@@ -238,9 +242,23 @@ func ghScopesOf(p core.Permissions) *string {
 func (f *ghProjectsFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.paths = append(f.paths, r.URL.Path)
+	f.agents[r.Header.Get("User-Agent")]++
 	f.mu.Unlock()
 	if f.scopes != nil {
 		w.Header().Set(ghScopeHeader, *f.scopes)
+	}
+	// GitHub is asked for a dated API and a media type on everything,
+	// GraphQL included, and a request that pins neither is served by
+	// whatever GitHub happens to mean today. The fake refuses it here so
+	// that a call built without the headers fails every test it is in,
+	// rather than only the one test that remembered to look.
+	if r.Header.Get("X-GitHub-Api-Version") != ghAPIVersion {
+		f.fail(w, http.StatusBadRequest, "no API version was pinned")
+		return
+	}
+	if accept := r.Header.Get("Accept"); accept != ghAccept {
+		f.fail(w, http.StatusNotAcceptable, "unexpected Accept "+accept)
+		return
 	}
 	path := strings.Trim(r.URL.Path, "/")
 	switch {

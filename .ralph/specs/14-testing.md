@@ -93,3 +93,22 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   conditional requests with 304, it records the escaped path, and it refuses a
   request that does not pin the API version — the things an in-memory fake can
   never exercise and a live test must never be needed for.
+- **An adapter that has landed runs the suite whole, not a subset (item
+  3.12).** Subsets are for an adapter under construction: they let each plan
+  item be held to the part of the contract it claimed. Once the last method
+  lands, the call becomes `ForgeContract` / `TrackerContract` /
+  `DeployContract`, so a case added to a contract later runs against the
+  adapter without anybody remembering to add its name. The subset helpers stay
+  for the adapters still to come (Gitea, GitLab, Jira, Linear).
+- **The tracker contract is sat by both owner kinds (item 3.12).** A person's
+  projects and an organisation's are reached through different fields of
+  GitHub's schema and shown at different addresses. One suite, run twice, is
+  what makes `owner_type` a tested setting rather than a configuration people
+  discover is wrong in production.
+- **Every GitHub fake refuses a request that does not pin the API version
+  (item 3.12).** Only the forge's fake did, so the tracker and the deployment
+  source could have stopped sending `X-GitHub-Api-Version` or `Accept` and
+  nothing would have gone red — a silent promotion to whatever GitHub's REST
+  means today. All three now answer 400 and 406, and all three count the
+  `User-Agent`, which is how a repository's audit log says which tool acted.
+  Deleting the header from an adapter fails most of its package.

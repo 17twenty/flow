@@ -114,6 +114,28 @@ func TestGitHubLetsTheProviderDoTheFiltering(t *testing.T) {
 	}
 }
 
+// TestGitHubIdentifiesItselfOnEveryRequest: every call carries flow's user
+// agent, and the fake refuses one that pins no API version or asks for the
+// wrong media type — so a source that stopped sending either fails here
+// rather than against a GitHub that changed under it.
+func TestGitHubIdentifiesItselfOnEveryRequest(t *testing.T) {
+	fake, srv := newGitHubServer(t, coretest.ContractDeploys())
+	source := newGitHubSource(t, srv)
+	if _, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"}); err != nil {
+		t.Fatalf("Deployments: %v", err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.agents) != 1 {
+		t.Fatalf("user agents = %v, want exactly one", fake.agents)
+	}
+	for agent := range fake.agents {
+		if agent != core.UserAgent("v1.0.0") {
+			t.Errorf("User-Agent = %q, want %q", agent, core.UserAgent("v1.0.0"))
+		}
+	}
+}
+
 func TestGitHubStopsAtTheEdgeOfTheWindow(t *testing.T) {
 	fake, srv := newGitHubServer(t, coretest.ContractDeploys())
 	source := newGitHubSource(t, srv)

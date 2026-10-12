@@ -72,39 +72,18 @@ func contractGitHubProjects(ownerType string) coretest.NewTracker {
 	}
 }
 
-// The part of the tracker contract plan items 3.8 to 3.11 land, which is now
-// every case there is. It stays a named subset until 3.12 runs the suite
-// whole: naming the cases is what has let each plan item be held to the part
-// of the contract it claimed, and the swap to the whole suite is the item
-// that makes a case added later run without anybody remembering to list it.
+// The whole tracker contract now passes against GitHub's own shapes: every
+// method it describes has landed (plan items 3.8 to 3.11). The suite is run
+// whole rather than as a named subset, so a case added to the contract later
+// runs here without anybody remembering to list it.
 //
 // Both owner kinds sit it. A person's projects and an organisation's are
 // reached through different fields of GitHub's schema and shown at different
 // addresses, so a board under one owner proves nothing about the other.
-func TestGitHubProjectsMeetsTheContractItHasLanded(t *testing.T) {
+func TestGitHubProjectsMeetsTheTrackerContract(t *testing.T) {
 	for _, ownerType := range []string{OwnerUser, OwnerOrg} {
 		t.Run(ownerType, func(t *testing.T) {
-			coretest.TrackerContractSubset(t, contractGitHubProjects(ownerType),
-				"identity",
-				"probe reports what the credential may do",
-				"what is discovered can be parsed back",
-				"a hint narrows discovery",
-				"nonsense is not a reference",
-				"an observation is canonical and stable",
-				"observing something that is not there is not an error",
-				"applying a change is visible in the next observation",
-				"creating the same thing twice is a conflict",
-				"a thing is updated and then deleted",
-				"tickets by key, by column, and all of them",
-				"a ticket that is not there",
-				"a move is idempotent",
-				"a follow-up is filed once and found by its marker",
-				"a new follow-up carries its marker",
-				"a comment is written and edited in place",
-				"a ticket is closed, and closing it again is no work",
-				"a closed ticket is reopened",
-				"linkage uses the forge's own link",
-			)
+			coretest.TrackerContract(t, contractGitHubProjects(ownerType))
 		})
 	}
 }
@@ -637,6 +616,34 @@ func TestGitHubProjectsEndpointsFollowTheAPIRoot(t *testing.T) {
 				t.Errorf("ghSite(%q) = %q, want %q", tc.base, got, tc.site)
 			}
 		})
+	}
+}
+
+// TestGitHubProjectsIdentifiesItselfOnEveryRequest: every call — GraphQL and
+// REST alike — carries flow's user agent, so that a repository's audit log
+// says which tool acted. The fake refuses a request that pins no API version
+// or asks for the wrong media type, so reaching the answers at all is the
+// rest of the proof.
+func TestGitHubProjectsIdentifiesItselfOnEveryRequest(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	if _, err := adapter.Observe(t.Context(), core.ItemTrackerStatusOptions); err != nil {
+		t.Fatalf("Observe(status_options): %v", err)
+	}
+	if _, err := adapter.Observe(t.Context(), core.ItemTrackerLabels); err != nil {
+		t.Fatalf("Observe(labels): %v", err)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.agents) != 1 {
+		t.Fatalf("user agents = %v, want exactly one", fake.agents)
+	}
+	for agent := range fake.agents {
+		if agent != core.UserAgent("v1.0.0") {
+			t.Errorf("User-Agent = %q, want %q", agent, core.UserAgent("v1.0.0"))
+		}
 	}
 }
 
