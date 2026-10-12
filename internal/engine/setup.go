@@ -560,8 +560,14 @@ func (in SetupInput) trackerProject() Check {
 	}
 }
 
-// deploysSource is skipped by most teams, because most teams finish work on
-// merge (spec 04 §6) and never ask flow to read a deployment.
+// deploysSource is skipped by most teams, because most teams record no
+// deployments at all and never ask flow to read one.
+//
+// What switches it on is `deploys.source`, not `done_on`: a team that finishes
+// work on the merge still holds itself to `max_lag` (spec 13 §2), and that
+// audit reads the same records this check proves are readable. Gating it on
+// `done_on: deployed` would skip the readability check for exactly the
+// repositories whose live-health audit depends on it, flow's own among them.
 func (in SetupInput) deploysSource() Check {
 	return Check{
 		ID:        CheckDeploysSource,
@@ -569,7 +575,7 @@ func (in SetupInput) deploysSource() Check {
 		Category:  CategoryDeploys,
 		DependsOn: []string{CheckAuthForge},
 		Run: func(_ context.Context, env *Env) Result {
-			if watched, why := WatchesDeployments(env.Config); !watched {
+			if reads, why := ReadsDeployments(env.Config); !reads {
 				return Skip("%s", why)
 			}
 			return plannedResult(env, core.ItemDeploysRecords)

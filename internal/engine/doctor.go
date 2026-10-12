@@ -323,6 +323,10 @@ type Env struct {
 	PlanErr error
 	// Adapters are the providers. Any may be nil.
 	Adapters Adapters
+	// Ancestry answers whether a merge is contained in a deployed commit,
+	// remembering what it was told (spec 13 §3). Nil asks the forge, which
+	// is the same answer without the cache in front of it.
+	Ancestry core.Comparer
 	// Clock is where the time comes from.
 	Clock core.Clock
 	// Window is how far back the live-health audit looks (spec 07 §6).
@@ -362,6 +366,20 @@ func (e *Env) Since() time.Time {
 		window = DefaultWindow
 	}
 	return e.Now().Add(-window)
+}
+
+// Comparer is what answers whether one commit contains another. It is the
+// cache when the run was given one and the forge itself otherwise, so that a
+// check never has to know which it got — and so that two checks asking about
+// the same pair ask the same thing (spec 13 §3).
+func (e *Env) Comparer() core.Comparer {
+	if e.Ancestry != nil {
+		return e.Ancestry
+	}
+	if e.Adapters.Forge == nil {
+		return nil
+	}
+	return e.Adapters.Forge
 }
 
 // Threshold is the share of items a live check must see hold before it fails

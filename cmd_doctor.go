@@ -139,6 +139,7 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 		Lock:      s.Lock,
 		Desired:   s.Desired,
 		Adapters:  s.Adapters,
+		Ancestry:  c.ancestry(app, s),
 		Clock:     s.Clock,
 		Window:    c.Window,
 		FailBelow: failBelow(s.Config),
@@ -169,6 +170,26 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 	}
 	env.Plan = plan
 	return env
+}
+
+// ancestry is what the live-health audit asks whether a merge is running
+// with. The answers are the same ones `flow check deploy` caches, by the same
+// pair and in the same place, so a daily audit of a fortnight's merges costs
+// the forge one comparison per pair ever rather than one per day (spec 13 §3).
+//
+// A machine with nowhere to keep them, or a run with no forge to ask, gets
+// nothing and the checks fall back to asking the forge directly. A cache is
+// not worth failing a report over.
+func (c *DoctorCmd) ancestry(app *Context, s *session) core.Comparer {
+	if s.Adapters.Forge == nil {
+		return nil
+	}
+	cache, err := ancestry(s.Adapters.Forge)
+	if err != nil {
+		app.Log.Warn("doctor could not cache what it compares", "error", err)
+		return nil
+	}
+	return cache
 }
 
 // local is what flow can see in the working copy without a network.

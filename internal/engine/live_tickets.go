@@ -258,7 +258,7 @@ func (a *audit) ticketsDoneDeployed() Check {
 					// mistake as two.
 					continue
 				}
-				behind, err := notRunning(ctx, env.Adapters.Forge, theirs, running)
+				behind, err := notRunning(ctx, env.Comparer(), theirs, running)
 				if err != nil {
 					return Failed(err)
 				}

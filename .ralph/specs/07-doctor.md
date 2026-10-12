@@ -633,3 +633,35 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   `owner: flow` — which puts it in `flow check pr` and lets doctor's catch-up
   repair what CI misses. The remediation names the `tracker.native.<event>`
   attestation this check is the evidence against.
+- **§6 the deployment checks are switched on by `deploys.source`, not by
+  `done_on` (item 5.2).** A team whose work is not finished until it is
+  deployed has `live.tickets.done_deployed` for that. A library that finishes
+  work on the merge still wants to know every merge was released, which is
+  what spec 13 §2 gives `max_lag` for and what this repository uses. So the
+  only exemption is having no records to read — `deploys.source: none`, or no
+  `deploys.environment` to ask about — and `deploys.source` in the setup half
+  is now asked on the same condition, because gating the readability check on
+  `done_on` would skip it for exactly the repositories whose live audit
+  depends on it.
+- **§6 `recent` may fail and `lag` may not (item 5.2).** They divide the
+  question: `recent` asks whether the pipeline is alive at all, which is one
+  fact about an environment and a failure when the answer is no, and `lag`
+  asks whether it is keeping up, which is a share of the merges and never
+  worse than a warning. Nothing in the setup can make a release faster, and a
+  check that could fail the daily run for slowness is one a team turns off.
+- **§6 `recent` counts nothing (item 5.2).** It is a single fact about an
+  environment rather than a sample of items, and "1/1" on a dashboard would
+  say less than naming the commit and the day does.
+- **§6 a merge inside its objective is set aside; one already running is
+  credited (item 5.2).** A pull request that merged a minute ago has not
+  missed a two-hour objective, so it is not judged — the same tolerance spec
+  04 §5 gives a webhook still in flight. But being inside the objective only
+  excuses what has not shipped yet: a team that deploys in minutes merges
+  everything inside its own objective, and setting those aside first would
+  leave the check counting nothing and passing for ever.
+- **§6 both deployment checks read one history (item 5.2).** The records are
+  read once, over the longer of `--window` and `max_age`: `lag` is about the
+  merges of the window and `recent` about a gap a team may well allow to be
+  longer than one. Two reads of overlapping spans would be two round trips for
+  one history and, worse, two slightly different answers about what is
+  running.

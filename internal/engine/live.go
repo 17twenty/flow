@@ -69,7 +69,8 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
-	}, a.ticketChecks()...)
+	}, a.deployChecks()...)
+	checks = append(checks, a.ticketChecks()...)
 	return append(checks, a.transitionChecks(cfg)...)
 }
 
@@ -102,6 +103,10 @@ type audit struct {
 	boardOnce sync.Once
 	tickets   []core.Ticket
 	boardErr  error
+
+	shipOnce sync.Once
+	ships    []core.Deployment
+	shipErr  error
 }
 
 // trunk is the branch the workflow is about, which is the repository's own

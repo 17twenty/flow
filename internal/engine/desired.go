@@ -465,9 +465,12 @@ func forgeFiles(cfg *config.Config, templates fs.FS) (DesiredItem, error) {
 }
 
 // deploysRecords is the environment whose deployments flow reads. A team that
-// records no deployments wants nothing here.
+// records no deployments wants nothing here. The condition is
+// [ReadsDeployments], which the live-health audit asks as well: the plan and
+// the audit must agree about which repositories have deployments, and two
+// spellings of one test are two things to keep in step.
 func deploysRecords(cfg *config.Config) DesiredItem {
-	if cfg.Deploys.Source == "" || cfg.Deploys.Source == config.DeploySourceNone || cfg.Deploys.Environment == "" {
+	if reads, _ := ReadsDeployments(cfg); !reads {
 		return DesiredItem{}
 	}
 	return DesiredItem{

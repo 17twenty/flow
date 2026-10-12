@@ -550,19 +550,44 @@ func mustFind(t *testing.T, report engine.Report, id string) engine.Result {
 	return checked.Result
 }
 
-// Most teams finish work on merge and never ask flow to read a deployment, so
-// the deployment check is a skip that says why rather than a failure nobody
-// can act on.
-func TestDeploysSourceIsSkippedWhenNobodyWatchesDeployments(t *testing.T) {
+// Most teams record no deployments and never ask flow to read one, so the
+// deployment check is a skip that says why rather than a failure nobody can
+// act on.
+func TestDeploysSourceIsSkippedWhenThereAreNoRecords(t *testing.T) {
 	cfg := setupConfig()
-	cfg.Workflow.DoneOn = config.DoneOnMerged
+	cfg.Deploys = config.Deploys{Source: config.DeploySourceNone}
 
 	result := setupResult(t, engine.SetupInput{Config: cfg}, setupEnv(t, cfg), engine.CheckDeploysSource)
 
 	wantState(t, result, engine.StateSkip)
-	if !strings.Contains(result.Message, "done_on") {
+	if !strings.Contains(result.Message, "deploys.source") {
 		t.Errorf("the skip does not say why: %s", result.Message)
 	}
+}
+
+// A team whose work is done when it merges still holds itself to `max_lag`,
+// and that audit reads the records this check proves are readable. Gating the
+// check on `done_on: deployed` would skip it for exactly the repositories
+// whose live-health audit depends on it — flow's own among them.
+func TestDeploysSourceIsAskedOfATeamThatFinishesOnTheMerge(t *testing.T) {
+	cfg := setupConfig()
+	cfg.Workflow.DoneOn = config.DoneOnMerged
+	cfg.Deploys = config.Deploys{
+		Source:      config.DeploySourceForge,
+		Environment: "production",
+		MaxLag:      config.Duration(2 * time.Hour),
+	}
+	env := setupEnv(t, cfg)
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemDeploysRecords,
+		Target:  engine.TargetDeploys,
+		Outcome: engine.OutcomeNoop,
+		Why:     "production has deployment records flow can read",
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: cfg}, env, engine.CheckDeploysSource)
+
+	wantState(t, result, engine.StatePass)
 }
 
 // A follow-up is how flow admits it cannot do something. One nobody has acted

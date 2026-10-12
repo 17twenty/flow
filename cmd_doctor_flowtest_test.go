@@ -609,3 +609,21 @@ func ticketsOf(t *testing.T, world *fakeWorld) []core.Ticket {
 	}
 	return tickets
 }
+
+// A fortnight of merges compared afresh every morning is the same question
+// put to the forge every day for answers that cannot change: a commit's
+// parents are settled for all time (spec 13 §3). So the daily audit remembers
+// its comparisons, in the place and by the name `flow check deploy` keeps
+// them, rather than in a second cache of its own that would halve the value
+// of both.
+func TestDoctorRemembersWhatItComparedWhereCheckDeployKeepsIt(t *testing.T) {
+	dir := fakeRepo(t)
+
+	doctorJSON(t, dir, owners()...)
+
+	// The cache directory is the repository's own, because hookRepo isolates
+	// every test from the machine's.
+	if _, err := os.Stat(filepath.Join(os.Getenv(core.CacheDirEnv), core.AncestryDir)); err != nil {
+		t.Fatalf("the audit kept nothing it compared: %v", err)
+	}
+}

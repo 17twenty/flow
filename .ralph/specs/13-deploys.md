@@ -97,3 +97,22 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   machine with nowhere to keep the answers between runs gets an uncached
   `core.Ancestry`, not an error. The cache saves requests; a deployment is
   not worth refusing over a cache directory that could not be created.
+- **§2 `max_lag` is everyone's objective, not just a deployed-done team's
+  (item 5.2).** `done_on` decides when a ticket is finished; `max_lag` decides
+  how long work may sit merged and unreleased. A team that calls work done on
+  the merge still holds itself to the second, so the live-health audit asks it
+  of every workflow that records deployments.
+- **§3 the audit compares through the cache `flow check deploy` keeps
+  (item 5.2).** Same directory, same names. A fortnight of merges compared
+  afresh every morning is the same question put to the forge every day for
+  answers that cannot change, and a second cache of its own would halve the
+  value of both. A run with nowhere to keep them asks the forge directly: a
+  report is not worth failing over a cache directory.
+- **§3 a deployment is dated by when it succeeded (item 5.2).** A release that
+  takes an hour took an hour. The record keeps both moments, and dating one by
+  its creation would call a pipeline stopped while it was still finishing.
+- **§3 a rollback does not un-ship what was released on time (item 5.2).** The
+  question is whether some deployment at or before the deadline contained the
+  merge, not whether the newest one does. A deployment that took production
+  back to an earlier commit did not undo the release, and reading only the
+  latest record would blame a team for recovering from an incident.

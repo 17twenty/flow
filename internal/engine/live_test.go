@@ -167,6 +167,8 @@ func liveCheckIDs() []string {
 		engine.CheckLivePRsGated,
 		engine.CheckLivePRsConventional,
 		engine.CheckLivePRsReviewed,
+		engine.CheckLiveDeploysRecent,
+		engine.CheckLiveDeploysLag,
 		engine.CheckLiveTicketsDoneMerged,
 		engine.CheckLiveTicketsDoneDeployed,
 		engine.CheckLiveTicketsReviewHasPR,
@@ -230,9 +232,10 @@ func TestAQuietFortnightIsNotIllHealth(t *testing.T) {
 			t.Errorf("%s says %q, which reads as health rather than silence", id, result.Message)
 		}
 	}
-	if want := len(liveCheckIDs()) - 1; answered != want {
-		t.Errorf("%d live checks had an opinion about a quiet fortnight, want %d: only "+
-			"live.tickets.done_deployed does not apply to a team whose work is done when it merges", answered, want)
+	if want := len(liveCheckIDs()) - 3; answered != want {
+		t.Errorf("%d live checks had an opinion about a quiet fortnight, want %d: the two "+
+			"deployment checks and live.tickets.done_deployed do not apply to a team that "+
+			"records no deployments and finishes work on the merge", answered, want)
 	}
 }
 
