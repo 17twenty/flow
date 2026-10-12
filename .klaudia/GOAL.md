@@ -330,6 +330,45 @@ name across `*_test.go` before calling the item done. The survivor worth
 having was the title-only rewrite, which no test could see because every
 existing test changed the title and the body together.
 
+**The protection that was written and never switched on (this run).** The
+previous run's fix stopped `apply` closing #90 and #91 by mistake, and the
+reason they were wrong to close turned out to be the finding itself: somebody
+had written the whole of the ruleset flow asks for and left its enforcement
+`disabled`. GitHub creates every ruleset that way, and a disabled one is in no
+branch's effective rules, so both protection endpoints are honestly silent and
+the trunk reads exactly like a trunk nobody has thought about. The report went
+on telling a person to write what they had already written.
+
+The GitHub adapter now reads the rulesets that are *not* in force, keeps the
+ones whose conditions would cover the branch, and carries them as
+`core.Protection.Dormant`. None of it counts as protection — nothing in it is
+enforced — but "somebody has to write this" and "somebody has to switch this
+on" are a day's work and one click, and a report that cannot tell them apart
+sends a person off to rebuild what they have. Only the rules that are not in
+force are fetched in full, because an enforced one has already been answered
+by the effective-rules endpoint; a credential that may not read the rules at
+all yields no rules and no error, since the reading sharpens a remedy and
+decides nothing.
+
+They reach the report through a new, deliberately narrow channel:
+`core.Observation.Notes`, things a provider knows that flow does not compare
+it on. A note is outside the canonical encoding, so a ruleset appearing in a
+repository can never read as drift or stale a plan somebody approved — proved
+live, where the two protection hashes in `.flow.lock` did not move. It is
+shown only on a check that fails, because on a passing one it is a fact about
+a mechanism nobody is relying on, and in a follow-up it leads the steps, ahead
+of the access flow is short of and the change flow would have made.
+
+Live, #90 now opens with `switch the rule "Flow" on — it is already written,
+and only its enforcement is disabled`, with the link. **That switch is the
+whole of what is left before Stage B**: the ruleset exists, it requires
+`flow/policy`, and its enforcement is off.
+
+The mutant worth recording: removing the guard that refuses to read `**`
+survived, because `path.Match` treats `**` as `*` and the fixture branch had
+three segments, so the row matched nothing either way. A table row has to
+differ in the *answer*, not only in the input.
+
 **Single best next step:** plan item 5.8 — `--ci` annotations and `--window`
 (#72, specs 02 §2 and 07). It is the last thing standing between the daily run
 and the scheduled job that spec 07 §10 describes: `--ci --fix --report` is one
