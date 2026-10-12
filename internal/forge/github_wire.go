@@ -3,6 +3,7 @@ package forge
 import (
 	"encoding/base64"
 	"encoding/json"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -453,6 +454,93 @@ type ghPullRequestRule struct {
 	RequiredApprovals       int  `json:"required_approving_review_count"`
 	DismissStaleReviews     bool `json:"dismiss_stale_reviews_on_push"`
 	RequireThreadResolution bool `json:"required_review_thread_resolution"`
+}
+
+// ghEnforcementActive is the one enforcement value that makes a ruleset do
+// anything. `disabled` is what GitHub creates one as; `evaluate` reports
+// without blocking, which for flow's purposes is the same as off.
+const ghEnforcementActive = "active"
+
+// Ref name conditions GitHub spells with a leading `~`.
+const (
+	ghRefAll           = "~ALL"
+	ghRefDefaultBranch = "~DEFAULT_BRANCH"
+)
+
+// ghRulesetSummary is a ruleset as the list endpoint gives it: enough to know
+// whether it is worth fetching in full, and nothing else. Conditions are not
+// in the list, which is why a dormant one costs a second call.
+type ghRulesetSummary struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Enforcement string `json:"enforcement"`
+}
+
+// ghRuleset is one ruleset in full.
+type ghRuleset struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Enforcement string `json:"enforcement"`
+	Conditions  struct {
+		RefName struct {
+			Include []string `json:"include"`
+			Exclude []string `json:"exclude"`
+		} `json:"ref_name"`
+	} `json:"conditions"`
+	Links struct {
+		HTML struct {
+			Href string `json:"href"`
+		} `json:"html"`
+	} `json:"_links"`
+}
+
+// covers reports whether this ruleset would apply to a branch if it were
+// enforced.
+//
+// Only branch rulesets are considered: a tag ruleset has nothing to say about
+// a trunk. The patterns are GitHub's own — `~ALL`, `~DEFAULT_BRANCH`, or a
+// `refs/heads/` pattern — and an exclusion beats an inclusion, which is how
+// GitHub reads them too.
+func (r ghRuleset) covers(branch, defaultBranch string) bool {
+	if r.Target != "" && r.Target != "branch" {
+		return false
+	}
+	for _, pattern := range r.Conditions.RefName.Exclude {
+		if ghRefMatches(pattern, branch, defaultBranch) {
+			return false
+		}
+	}
+	for _, pattern := range r.Conditions.RefName.Include {
+		if ghRefMatches(pattern, branch, defaultBranch) {
+			return true
+		}
+	}
+	return false
+}
+
+// ghRefMatches reports whether one ref-name pattern names a branch.
+//
+// GitHub's own two names come first, and the rest is fnmatch over the branch
+// name, in which `*` stands for any run of characters within one path segment
+// — which is what [path.Match] means by it too. `**`, which crosses a slash,
+// is not read at all: a pattern flow cannot read is treated as not matching,
+// because the consequence of guessing wrong is a remedy pointing at a ruleset
+// that would never have applied, and that is somebody's afternoon.
+func ghRefMatches(pattern, branch, defaultBranch string) bool {
+	switch pattern {
+	case ghRefAll:
+		return true
+	case ghRefDefaultBranch:
+		return defaultBranch != "" && branch == defaultBranch
+	}
+	name, ok := strings.CutPrefix(pattern, "refs/heads/")
+	if !ok || strings.Contains(name, "**") {
+		return false
+	}
+	matched, err := path.Match(name, branch)
+	return err == nil && matched
 }
 
 // rulesToProtection folds the effective rules into one protection. Rules only

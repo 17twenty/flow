@@ -91,6 +91,23 @@ type Protection struct {
 	AllowForcePush bool
 	// AllowDeletions permits deleting the branch.
 	AllowDeletions bool
+	// Dormant are rules the forge holds for this branch that are not in
+	// force. Nothing in one is enforced, so none of it is protection — but
+	// the difference between "somebody has to write this" and "somebody has
+	// to switch this on" is a day's work against one click, and a report
+	// that cannot tell them apart asks for the wrong thing (spec 10 §2).
+	Dormant []DormantRule
+}
+
+// DormantRule is a rule a branch would be subject to if somebody enabled it:
+// on GitHub, a ruleset whose enforcement is `disabled` or `evaluate`.
+type DormantRule struct {
+	// Name is what the forge calls it.
+	Name string
+	// State is the forge's own word for why it is not in force.
+	State string
+	// URL is the page where it is switched on, empty when there is none.
+	URL string
 }
 
 // RequiresCheck reports whether context is already required.
@@ -119,6 +136,10 @@ func (p Protection) Merge(want Protection) Protection {
 	merged.EnforceAdmins = p.EnforceAdmins || want.EnforceAdmins
 	merged.AllowForcePush = p.AllowForcePush && want.AllowForcePush
 	merged.AllowDeletions = p.AllowDeletions && want.AllowDeletions
+	// Dormant rules are not merged. They are something observed about the
+	// branch rather than something either side is asking for, so the merge
+	// keeps what the receiver saw: a caller asking for protection can
+	// neither claim a rule is dormant nor make one stop being so.
 	return merged
 }
 

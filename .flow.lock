@@ -64,9 +64,11 @@ followups:
     ticket: '#90'
     owner: 17twenty
     opened_at: 2026-10-12T11:55:49Z
-    state: closed
+    nudged_at: 2026-10-12T23:39:28Z
+    state: open
   - check: forge.required_status
     ticket: '#91'
     owner: 17twenty
     opened_at: 2026-10-12T11:55:58Z
-    state: closed
+    nudged_at: 2026-10-12T23:39:31Z
+    state: open

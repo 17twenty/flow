@@ -760,7 +760,12 @@ func followUpSummary(item PlanItem, title string) string {
 // "flow has no steps to offer for this one" when all of that is in hand is
 // the ticket telling a person to go and rediscover it.
 func followUpSteps(item PlanItem) []string {
-	steps := make([]string, 0, len(item.Changes)+1)
+	steps := make([]string, 0, len(item.Changes)+len(item.Notes)+1)
+	// What the provider volunteered comes first. A mechanism that is already
+	// written and merely switched off is one click, and burying it under the
+	// change flow would have made from scratch is burying the cheap answer
+	// under the expensive one.
+	steps = append(steps, noteSteps(item)...)
 	if len(item.Missing) > 0 {
 		steps = append(steps, fmt.Sprintf(
 			"ask somebody whose %s credential has %s to make the change below, or give flow one",
@@ -768,6 +773,35 @@ func followUpSteps(item PlanItem) []string {
 	}
 	for _, change := range item.Changes {
 		steps = append(steps, changeInstruction(change))
+	}
+	return steps
+}
+
+// withNotes adds what the provider volunteered to a finding's evidence.
+//
+// Only a finding: a note explains why something is not true, and a note on a
+// check that passes is a fact about a mechanism nobody is relying on. The
+// dormant ruleset on a protected trunk is exactly that.
+func withNotes(result Result, item PlanItem) Result {
+	for _, note := range item.Notes {
+		result = result.Saw(note.Text, note.URL)
+	}
+	return result
+}
+
+// noteSteps are the steps the provider's own notes imply, in the order the
+// provider gave them.
+func noteSteps(item PlanItem) []string {
+	var steps []string
+	for _, note := range item.Notes {
+		if note.Fix == "" {
+			continue
+		}
+		step := note.Fix
+		if note.URL != "" {
+			step += " — " + note.URL
+		}
+		steps = append(steps, step)
 	}
 	return steps
 }
@@ -810,7 +844,7 @@ func outcomeResult(item PlanItem, title string) Result {
 		return result
 
 	case OutcomeNative:
-		result := Fail("%s", item.Why)
+		result := withNotes(Fail("%s", item.Why), item)
 		for _, change := range item.Changes {
 			result = result.Saw(describeChange(change), "")
 		}
@@ -821,7 +855,7 @@ func outcomeResult(item PlanItem, title string) Result {
 		})
 
 	case OutcomeFollowUp:
-		result := Fail("%s", item.Why)
+		result := withNotes(Fail("%s", item.Why), item)
 		if len(item.Missing) > 0 {
 			result = result.Saw("the credential is missing "+joinWords(item.Missing), "")
 		}

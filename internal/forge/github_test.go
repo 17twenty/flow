@@ -602,6 +602,190 @@ func TestGitHubKeepsTheProtectionItWasNotAskedAbout(t *testing.T) {
 	}
 }
 
+// A ruleset that is written and never switched on is the one state both
+// protection endpoints are honestly silent about: GitHub creates every
+// ruleset `disabled`, and a disabled one is in nobody's effective rules, so
+// the branch reads exactly like a branch nobody has thought about. None of it
+// is protection and none of it is reported as any — but the remedy is a
+// switch rather than a day's work, and a report that cannot tell the two
+// apart sends somebody off to build what they already have.
+func TestGitHubReportsARuleWrittenAndNeverSwitchedOn(t *testing.T) {
+	fx := coretest.ContractForge()
+	delete(fx.Protections, "main")
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRuleset(ghFakeRuleset{
+		name:        "Flow",
+		target:      "branch",
+		enforcement: "disabled",
+		include:     []string{ghRefDefaultBranch},
+	})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	protection, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if protection.Enabled {
+		t.Errorf("a ruleset nobody enabled was read as protection: %+v", protection)
+	}
+	want := []core.DormantRule{{
+		Name:  "Flow",
+		State: "disabled",
+		URL:   "https://github.com/acme/widget/rules/1",
+	}}
+	if !slices.Equal(protection.Dormant, want) {
+		t.Errorf("Dormant = %+v, want %+v", protection.Dormant, want)
+	}
+}
+
+// `evaluate` is GitHub's dry run: the ruleset reports what it would have
+// blocked and blocks nothing. For flow's purposes that is off, because the
+// question flow asks is whether the trunk can be pushed to, not whether
+// anybody would hear about it.
+func TestGitHubCountsAnEvaluatedRuleAsNotInForce(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRuleset(ghFakeRuleset{
+		name:        "Flow",
+		target:      "branch",
+		enforcement: "evaluate",
+		include:     []string{"refs/heads/ma*"},
+	})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	protection, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if len(protection.Dormant) != 1 || protection.Dormant[0].State != "evaluate" {
+		t.Errorf("Dormant = %+v, want the evaluated rule, in the forge's own word for it", protection.Dormant)
+	}
+}
+
+// A ruleset in force is already in the branch's effective rules and has
+// already been folded into the protection. Naming it again as something
+// somebody ought to switch on would be advice to flick a switch that is
+// already flicked, and the second request it would cost is one every
+// repository would pay on every run.
+func TestGitHubDoesNotCallARuleInForceDormant(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRuleset(ghFakeRuleset{
+		name:        "Flow",
+		target:      "branch",
+		enforcement: "active",
+		include:     []string{ghRefAll},
+	})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	protection, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if len(protection.Dormant) != 0 {
+		t.Errorf("Dormant = %+v, want nothing: the rule is in force", protection.Dormant)
+	}
+	if slices.Contains(fake.Requests(), "/repos/acme/widget/rulesets/1") {
+		t.Error("a rule already in force was fetched in full for nothing")
+	}
+}
+
+// Whether a ruleset covers this branch is in the ruleset and not in the list
+// of them, so flow has to ask. One that would never apply to the trunk is not
+// an answer to a question about the trunk.
+func TestGitHubIgnoresARuleThatWouldNotCoverTheBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ruleset ghFakeRuleset
+	}{
+		{"another branch", ghFakeRuleset{target: "branch", include: []string{"refs/heads/release/*"}}},
+		{"everything but this one", ghFakeRuleset{
+			target:  "branch",
+			include: []string{ghRefAll},
+			exclude: []string{"refs/heads/main"},
+		}},
+		{"tags", ghFakeRuleset{target: "tag", include: []string{ghRefAll}}},
+		{"nothing at all", ghFakeRuleset{target: "branch"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := coretest.ContractForge()
+			fake, srv := newGitHubServer(t, fx)
+			tc.ruleset.name, tc.ruleset.enforcement = "Flow", "disabled"
+			fake.addRuleset(tc.ruleset)
+			adapter := newGitHubAdapter(t, srv, fx, nil)
+
+			protection, err := adapter.Protection(t.Context(), "main")
+			if err != nil {
+				t.Fatalf("Protection: %v", err)
+			}
+			if len(protection.Dormant) != 0 {
+				t.Errorf("Dormant = %+v, want nothing: the rule does not cover main", protection.Dormant)
+			}
+		})
+	}
+}
+
+// Reading the rules of a repository is a permission of its own, and a
+// credential without it can still read the protection flow actually decides
+// on. Sharpening a remedy is worth one request and no run at all.
+func TestGitHubStillReportsProtectionWhenItMayNotReadTheRules(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			fx := coretest.ContractForge()
+			fake, srv := newGitHubServer(t, fx)
+			fake.rulesetStatus = status
+			adapter := newGitHubAdapter(t, srv, fx, nil)
+
+			protection, err := adapter.Protection(t.Context(), "main")
+			if err != nil {
+				t.Fatalf("Protection: %v", err)
+			}
+			if !protection.Enabled || !protection.RequiresCheck("ci/test") {
+				t.Errorf("Protection = %+v, want the protection that was readable", protection)
+			}
+		})
+	}
+}
+
+// The patterns are GitHub's own, and flow reads them rather than guessing: a
+// remedy pointing at a ruleset that would not have applied anyway is worse
+// than no remedy, because it is somebody's afternoon.
+func TestRulesetCoverageReadsGitHubsOwnPatterns(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		target           string
+		include, exclude []string
+		branch           string
+		want             bool
+	}{
+		{name: "every ref", target: "branch", include: []string{ghRefAll}, branch: "main", want: true},
+		{name: "a target the forge did not name", target: "", include: []string{ghRefAll}, branch: "main", want: true},
+		{name: "the default branch", target: "branch", include: []string{ghRefDefaultBranch}, branch: "main", want: true},
+		{name: "the default branch, asked about another", target: "branch", include: []string{ghRefDefaultBranch}, branch: "release/1.0", want: false},
+		{name: "by name", target: "branch", include: []string{"refs/heads/main"}, branch: "main", want: true},
+		{name: "by name, another branch", target: "branch", include: []string{"refs/heads/main"}, branch: "mane", want: false},
+		{name: "a star inside a segment", target: "branch", include: []string{"refs/heads/rel*"}, branch: "release", want: true},
+		{name: "a star does not cross a slash", target: "branch", include: []string{"refs/heads/release/*"}, branch: "release/1.0/hotfix", want: false},
+		{name: "two stars are more than flow reads", target: "branch", include: []string{"refs/heads/release/**"}, branch: "release/1.0", want: false},
+		{name: "a pattern that is not a branch", target: "branch", include: []string{"refs/tags/v*"}, branch: "v1", want: false},
+		{name: "an exclusion beats an inclusion", target: "branch", include: []string{ghRefAll}, exclude: []string{"refs/heads/main"}, branch: "main", want: false},
+		{name: "an exclusion of something else", target: "branch", include: []string{ghRefAll}, exclude: []string{"refs/heads/release/*"}, branch: "main", want: true},
+		{name: "tags have nothing to say about a trunk", target: "tag", include: []string{ghRefAll}, branch: "main", want: false},
+		{name: "no condition at all", target: "branch", include: nil, branch: "main", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ruleset ghRuleset
+			ruleset.Target = tc.target
+			ruleset.Conditions.RefName.Include = tc.include
+			ruleset.Conditions.RefName.Exclude = tc.exclude
+
+			if got := ruleset.covers(tc.branch, "main"); got != tc.want {
+				t.Errorf("covers(%q) = %v, want %v", tc.branch, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGitHubProtectsNothingTheBranchAlreadyProtects(t *testing.T) {
 	fx := coretest.ContractForge()
 	fake, srv := newGitHubServer(t, fx)
@@ -619,6 +803,31 @@ func TestGitHubProtectsNothingTheBranchAlreadyProtects(t *testing.T) {
 	}
 	if slices.Contains(fake.Methods(), "PUT") {
 		t.Error("the adapter rewrote protection a ruleset already provides; a check required either way is required")
+	}
+}
+
+// A rule nobody enabled changes nothing about what the branch requires, so it
+// must not provoke a write. Protection is read, merged with what flow wants
+// and written only if the merge differs — and a difference flow invented by
+// carrying its own reading into the comparison would rewrite the trunk's
+// protection every morning for nothing.
+func TestGitHubDoesNotRewriteProtectionOverARuleNobodyEnabled(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.addRuleset(ghFakeRuleset{
+		name:        "Flow",
+		target:      "branch",
+		enforcement: "disabled",
+		include:     []string{ghRefDefaultBranch},
+	})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	want := core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}, RequiredApprovals: 1}
+	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	if slices.Contains(fake.Methods(), "PUT") {
+		t.Error("the trunk's protection was rewritten to say what it already said")
 	}
 }
 
@@ -676,7 +885,18 @@ func TestSameProtectionComparesEveryFieldProtectionHas(t *testing.T) {
 		case reflect.Int:
 			value.SetInt(1)
 		case reflect.Slice:
-			value.Set(reflect.ValueOf([]string{"x"}))
+			// One non-zero element of whatever the slice holds. The point is
+			// that the field differs, not what it differs by.
+			element := reflect.New(field.Type.Elem()).Elem()
+			switch element.Kind() {
+			case reflect.String:
+				element.SetString("x")
+			case reflect.Struct:
+				element.Field(0).SetString("x")
+			default:
+				t.Fatalf("Protection.%s holds %s, which this test cannot vary", field.Name, element.Kind())
+			}
+			value.Set(reflect.Append(value, element))
 		default:
 			t.Fatalf("Protection.%s is a %s, which sameProtection has no way to compare", field.Name, field.Type.Kind())
 		}

@@ -196,6 +196,7 @@ func protectionObservation(p core.Protection) core.Observation {
 				FieldRequireLinearHistory: strconv.FormatBool(p.RequireLinearHistory),
 			},
 		}},
+		Notes: dormantNotes(p),
 	}
 }
 
@@ -205,7 +206,28 @@ func requiredStatus(p core.Protection) core.Observation {
 	for _, context := range p.RequiredChecks {
 		items = append(items, core.Item{Name: context})
 	}
-	return core.Observation{Exists: p.Enabled, Items: items}
+	return core.Observation{Exists: p.Enabled, Items: items, Notes: dormantNotes(p)}
+}
+
+// dormantNotes are the rules the forge holds for the trunk and is not
+// enforcing, as the report's own words.
+//
+// Both protection items carry them, because a dormant ruleset is usually the
+// explanation for both at once: the thing that would protect the branch and
+// the thing that would require a check are one ruleset with a switch off.
+func dormantNotes(p core.Protection) []core.Note {
+	notes := make([]core.Note, 0, len(p.Dormant))
+	for _, rule := range p.Dormant {
+		notes = append(notes, core.Note{
+			Text: fmt.Sprintf("the rule %q covers %s and is not in force: %s", rule.Name, p.Branch, rule.State),
+			URL:  rule.URL,
+			Fix:  fmt.Sprintf("switch the rule %q on — it is already written, and only its enforcement is %s", rule.Name, rule.State),
+		})
+	}
+	if len(notes) == 0 {
+		return nil
+	}
+	return notes
 }
 
 // mergeObservation transcribes the repository's merge settings.

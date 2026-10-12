@@ -55,6 +55,17 @@ type gitHubFake struct {
 	// rules are the effective rulesets per branch, GitHub's other
 	// mechanism. Most repositories have none.
 	rules map[string][]any
+	// rulesets are the repository's rulesets as objects, whether or not
+	// they are being enforced, and nextRuleset the identity the next one
+	// gets. A ruleset that is not enforced appears here and in no branch's
+	// effective rules, which is exactly the repository that reads as
+	// unprotected while holding the protection in full.
+	rulesets    []ghFakeRuleset
+	nextRuleset int64
+	// rulesetStatus, when set, is the status every ruleset request is
+	// refused with: a credential allowed to read a repository is not
+	// necessarily allowed to read its rules.
+	rulesetStatus int
 	// fixedMerge makes the repository ignore a change to its merge
 	// settings, as an organisation policy that pins them does.
 	fixedMerge bool
@@ -267,6 +278,10 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.protection(w, r, strings.Join(segments[1:len(segments)-1], "/"))
 	case segments[0] == "rules" && len(segments) > 2 && segments[1] == "branches":
 		f.branchRules(w, r, strings.Join(segments[2:], "/"))
+	case segments[0] == "rulesets" && len(segments) == 1:
+		f.rulesetList(w, r)
+	case segments[0] == "rulesets" && len(segments) == 2:
+		f.ruleset(w, r, segments[1])
 	case segments[0] == "git" && len(segments) == 2 && segments[1] == "refs":
 		f.createRef(w, r)
 	case segments[0] == "git" && len(segments) > 3 && segments[1] == "ref" && segments[2] == "heads":
@@ -623,6 +638,99 @@ func (f *gitHubFake) addRule(branch string, rule map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rules[branch] = append(f.rules[branch], rule)
+}
+
+// ghFakeRuleset is a ruleset as the repository holds it, in force or not.
+type ghFakeRuleset struct {
+	id          int64
+	name        string
+	target      string
+	enforcement string
+	include     []string
+	exclude     []string
+}
+
+// addRuleset writes a ruleset on the repository without putting anything in
+// force on any branch, which is what GitHub's own "create" does: every
+// ruleset starts out disabled.
+func (f *gitHubFake) addRuleset(ruleset ghFakeRuleset) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextRuleset++
+	ruleset.id = f.nextRuleset
+	f.rulesets = append(f.rulesets, ruleset)
+	return ruleset.id
+}
+
+// rulesetList serves the repository's rulesets. GitHub's list is a summary:
+// it names each one and says whether it is enforced, and says nothing about
+// what it covers or contains. Anything more costs a second request, which is
+// what makes it worth fetching only the ones that matter.
+func (f *gitHubFake) rulesetList(w http.ResponseWriter, r *http.Request) {
+	if f.rulesetStatus != 0 {
+		f.fail(w, f.rulesetStatus, "you may not read the rules of this repository")
+		return
+	}
+	f.mu.Lock()
+	summaries := make([]any, 0, len(f.rulesets))
+	for _, ruleset := range f.rulesets {
+		summaries = append(summaries, map[string]any{
+			"id":          ruleset.id,
+			"name":        ruleset.name,
+			"target":      ruleset.target,
+			"enforcement": ruleset.enforcement,
+			"source_type": "Repository",
+			"source":      f.fx.Repo.Owner + "/" + f.fx.Repo.Name,
+		})
+	}
+	f.mu.Unlock()
+	f.writePage(w, r, summaries)
+}
+
+// ruleset serves one ruleset in full, conditions and all.
+func (f *gitHubFake) ruleset(w http.ResponseWriter, r *http.Request, raw string) {
+	if f.rulesetStatus != 0 {
+		f.fail(w, f.rulesetStatus, "you may not read the rules of this repository")
+		return
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		f.fail(w, http.StatusNotFound, "no such ruleset")
+		return
+	}
+	f.mu.Lock()
+	var found ghFakeRuleset
+	for _, held := range f.rulesets {
+		if held.id == id {
+			found = held
+		}
+	}
+	f.mu.Unlock()
+	if found.id == 0 {
+		f.fail(w, http.StatusNotFound, "no such ruleset")
+		return
+	}
+	include, exclude := found.include, found.exclude
+	if include == nil {
+		include = []string{}
+	}
+	if exclude == nil {
+		exclude = []string{}
+	}
+	f.writeJSON(w, r, map[string]any{
+		"id":          found.id,
+		"name":        found.name,
+		"target":      found.target,
+		"enforcement": found.enforcement,
+		"conditions": map[string]any{
+			"ref_name": map[string]any{"include": include, "exclude": exclude},
+		},
+		"_links": map[string]any{
+			"html": map[string]any{
+				"href": "https://github.com/" + f.fx.Repo.Owner + "/" + f.fx.Repo.Name + "/rules/" + raw,
+			},
+		},
+	})
 }
 
 // patchRepo changes the repository's settings, replacing what it is given.

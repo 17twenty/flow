@@ -249,3 +249,33 @@ duplicate-pipeline hazards). MR closing issues: `GET
   Looking it up by the lock would make a proposal unfindable to anybody holding
   a different lock, and GitHub refuses a second pull request from one branch
   anyway.
+- **§2 a ruleset that is written and not enforced is read, and is not
+  protection (item 3.4, revisited).** GitHub creates every ruleset with its
+  enforcement `disabled`, and `evaluate` reports without blocking, so a
+  repository can hold a complete, correct ruleset that stops nothing. A
+  disabled ruleset is in no branch's effective rules, which means both
+  protection endpoints are honestly silent about it and the trunk reads
+  exactly like a trunk nobody has thought about. None of it is counted as
+  protection — nothing in it is enforced — but it is carried on
+  `core.Protection.Dormant`, because the remedy differs entirely: a branch
+  with no ruleset needs one written, a branch with a dormant one needs a
+  switch flicked, and a report that says the first when the second is true
+  sends somebody off to build what they already have. This repository was
+  that repository.
+- **§2 only the rules that are not in force are fetched in full (item 3.4,
+  revisited).** The list endpoint says whether each ruleset is enforced and
+  not what it covers, so coverage costs a request per ruleset. An enforced one
+  has already been answered by the effective-rules endpoint and is never
+  fetched; the usual repository therefore pays one list call and nothing else.
+- **§2 coverage is read from GitHub's own patterns, and an unreadable one
+  covers nothing (item 3.4, revisited).** `~ALL`, `~DEFAULT_BRANCH` and a
+  `refs/heads/` fnmatch pattern are understood, an exclusion beats an
+  inclusion, and a tag ruleset is skipped. `**`, which crosses a path
+  separator, is not read at all: under-reporting a nicety costs a sharper
+  remedy, while over-reporting sends somebody to a ruleset that would never
+  have applied, and that is their afternoon.
+- **§2 a credential that may not read the rules is not a failed run (item 3.4,
+  revisited).** Reading rulesets is a permission of its own. A 403 or a 404
+  from it yields no dormant rules and no error, because the reading sharpens a
+  remedy and decides nothing — the protection flow actually acts on has
+  already been read by then.

@@ -784,3 +784,12 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   a week, while correcting flow's own words costs the reader nothing and must
   not wait six days. The tracker is asked only when the text really differs,
   so a steady finding writes nothing.
+- **§4 a note belongs to a finding, and leads the steps (item 2.10,
+  revisited).** What a provider volunteered about an item is shown on the
+  checks that fail — `native` and `follow_up` — and on no check that passes: a
+  note explains why something is not true, and on a pass it is a fact about a
+  mechanism nobody is relying on, which is noise every morning. In a
+  follow-up's steps the note comes first, ahead of the access flow is short of
+  and the change flow would have made: a mechanism already written and merely
+  switched off is one click, and printing the afternoon's work above it buries
+  the cheap answer under the expensive one.

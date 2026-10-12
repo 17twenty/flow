@@ -843,6 +843,96 @@ func TestARefusedItemWithNothingToShowStillNamesTheWork(t *testing.T) {
 	}
 }
 
+// A note is the provider's own explanation of why a finding is a finding, and
+// the report is the only place it can land, because flow compares nothing on
+// it. Here it is the difference between telling somebody to write the trunk's
+// protection and telling them it is already written and switched off.
+func TestAFindingSaysWhatTheProviderVolunteered(t *testing.T) {
+	for _, outcome := range []engine.Outcome{engine.OutcomeNative, engine.OutcomeFollowUp} {
+		t.Run(string(outcome), func(t *testing.T) {
+			env := setupEnv(t, setupConfig())
+			env.Plan = engine.Plan{Items: []engine.PlanItem{{
+				ID:      core.ItemForgeProtection,
+				Target:  engine.TargetForge,
+				Outcome: outcome,
+				Why:     "the trunk takes anything anyone pushes",
+				Notes:   []core.Note{dormantNote},
+			}}}
+
+			result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+			wantState(t, result, engine.StateFail)
+			if !hasEvidence(result, `the rule "Flow" covers main and is not in force`) {
+				t.Errorf("the finding does not say what the provider volunteered:\n%+v", result.Evidence)
+			}
+		})
+	}
+}
+
+// The ticket leads with the cheapest way to close it. A mechanism that is
+// written and merely switched off is one click; the change flow would have
+// made from scratch is an afternoon, and printing the afternoon first buries
+// the click under it.
+func TestATicketLeadsWithTheCheapestWayToCloseIt(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Missing: []string{"admin"},
+		Notes:   []core.Note{dormantNote},
+		Changes: []core.Change{{
+			Op:   core.ChangeCreate,
+			What: "ruleset",
+			Item: core.Item{ID: core.ItemForgeProtection, Name: "flow"},
+		}},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	steps := result.Remediation.Steps
+	if len(steps) < 3 {
+		t.Fatalf("steps are %v, want the switch, the access and the change", steps)
+	}
+	if !strings.Contains(steps[0], `switch the rule "Flow" on`) {
+		t.Errorf("the first step is not the one that costs least: %q", steps[0])
+	}
+	if !strings.Contains(steps[0], dormantNote.URL) {
+		t.Errorf("the step does not say where the switch is: %q", steps[0])
+	}
+}
+
+// A note explains why something is not true. On a check that passes it is a
+// fact about a mechanism nobody is relying on, and a passing line that lists
+// the ways the team might also have been safe is noise every morning.
+func TestAPassDoesNotMentionAMechanismNobodyIsRelyingOn(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:        core.ItemForgeProtection,
+		Target:    engine.TargetForge,
+		Outcome:   engine.OutcomeCompensated,
+		Why:       "the trunk is protected",
+		Mechanism: "a branch rule",
+		Notes:     []core.Note{dormantNote},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	wantState(t, result, engine.StatePass)
+	if hasEvidence(result, "not in force") {
+		t.Errorf("a pass carries a note about something nobody is relying on:\n%+v", result.Evidence)
+	}
+}
+
+// dormantNote is what the GitHub adapter volunteers about a ruleset somebody
+// wrote and nobody switched on.
+var dormantNote = core.Note{
+	Text: `the rule "Flow" covers main and is not in force: disabled`,
+	URL:  "https://forge.test/acme/widget/rules/1",
+	Fix:  `switch the rule "Flow" on - it is already written`,
+}
+
 // hasEvidence reports whether any evidence line says this.
 func hasEvidence(result engine.Result, want string) bool {
 	for _, evidence := range result.Evidence {

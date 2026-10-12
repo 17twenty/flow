@@ -202,6 +202,24 @@ type Observation struct {
 	Exists bool `json:"exists"`
 	// Items are what it holds, in canonical order.
 	Items []Item `json:"items,omitempty"`
+	// Notes are things the provider said about this item that flow does not
+	// compare it on: a mechanism that is configured but switched off, a
+	// setting enforced somewhere flow cannot write. They are deliberately
+	// outside the canonical encoding, so a note can never read as drift —
+	// they change what a report says to do, never what the plan decides.
+	Notes []Note `json:"notes,omitempty"`
+}
+
+// Note is one thing a provider volunteered about an observation.
+type Note struct {
+	// Text is the fact, in one line.
+	Text string `json:"text"`
+	// URL is where to see it, empty when it is not a thing with a page.
+	URL string `json:"url,omitempty"`
+	// Fix is the step the fact implies, empty when it implies none. The
+	// adapter writes it because the mechanism is the adapter's own: only
+	// the GitHub adapter knows that a ruleset has an enforcement switch.
+	Fix string `json:"fix,omitempty"`
 }
 
 // Canonical returns the observation with its items in a fixed order: by name,

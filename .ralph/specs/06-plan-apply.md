@@ -258,3 +258,15 @@ each successful mutation (atomic) and at the end. Summary.
   than from the apply: `follow_up` still owes the plan's changes, and `noop`,
   `compensated`, `attest` and `unsupported` owe nothing, because a ticket for
   any of those could never be closed.
+- **§1 a provider may volunteer what flow does not compare it on (item 2.4,
+  revisited).** `core.Observation.Notes` carries facts an adapter knows and
+  the desired state has no field for: a mechanism that is configured and
+  switched off, a setting enforced somewhere flow cannot write. A note is the
+  adapter's own, because the mechanism is — only the GitHub adapter knows that
+  a ruleset has an enforcement switch — and it may carry the step it implies.
+- **§2 a note is outside the canonical encoding (item 2.4, revisited).** The
+  observation hash is taken over what flow compares and a note is not part of
+  it, so a disabled ruleset appearing in a repository can never read as drift
+  and can never stale a plan somebody approved. Notes ride onto
+  `PlanItem.Notes` unchanged: they change what a report tells a person to do,
+  and never what the plan decides.

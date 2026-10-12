@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -584,5 +585,57 @@ func clonePlan(p engine.Plan) engine.Plan {
 func TestPlanNeedsAConfiguration(t *testing.T) {
 	if _, err := engine.NewPlan(engine.PlanInput{}); err == nil {
 		t.Fatal("a plan was made with no configuration")
+	}
+}
+
+// A rule the forge holds for the trunk and does not enforce is a fact about
+// the repository, not a difference flow would act on. It has to reach the
+// report, because it is the difference between "somebody has to write this"
+// and "somebody has to switch this on" — and it must not reach the hashes,
+// because a plan that changed when a disabled ruleset appeared would read as
+// drift and would ask to be approved again for nothing.
+func TestARuleNobodyEnabledIsANoteAndNotADifference(t *testing.T) {
+	plain := planFor(t, githubProjectsWorld(t))
+
+	w := githubProjectsWorld(t)
+	fx := forgeFixture(t)
+	protection := fx.Protections["main"]
+	protection.Dormant = []core.DormantRule{{
+		Name:  "Flow",
+		State: "disabled",
+		URL:   "https://forge.test/acme/widget/rules/1",
+	}}
+	fx.Protections["main"] = protection
+	w.forge = coretest.NewFakeForge(fx)
+	plan := planFor(t, w)
+
+	for _, id := range []string{core.ItemForgeProtection, core.ItemForgeRequiredStatus} {
+		t.Run(id, func(t *testing.T) {
+			item, ok := plan.Find(id)
+			if !ok {
+				t.Fatalf("%s is not in the plan", id)
+			}
+			if len(item.Notes) != 1 {
+				t.Fatalf("notes are %+v, want the one rule nobody enabled", item.Notes)
+			}
+			note := item.Notes[0]
+			if !strings.Contains(note.Text, `"Flow"`) || !strings.Contains(note.Text, "disabled") {
+				t.Errorf("the note does not say which rule is not in force, or why: %q", note.Text)
+			}
+			if !strings.Contains(note.Fix, "switch") {
+				t.Errorf("the note does not say the rule is already written: %q", note.Fix)
+			}
+			if note.URL != "https://forge.test/acme/widget/rules/1" {
+				t.Errorf("the note does not say where to go: %q", note.URL)
+			}
+
+			was, _ := plain.Find(id)
+			if item.ObservedHash != was.ObservedHash {
+				t.Errorf("observed hash is %s, want %s: a note is not drift", item.ObservedHash, was.ObservedHash)
+			}
+			if item.Outcome != was.Outcome {
+				t.Errorf("outcome is %q, want %q: a note decides nothing", item.Outcome, was.Outcome)
+			}
+		})
 	}
 }

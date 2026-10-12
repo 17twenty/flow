@@ -474,16 +474,23 @@ func (g *GitHub) Protection(ctx context.Context, branch string) (core.Protection
 	if err != nil {
 		return core.Protection{}, err
 	}
+	dormant, err := g.dormantRules(ctx, branch)
+	if err != nil {
+		return core.Protection{}, err
+	}
+	var effective core.Protection
 	switch {
 	case protected && ruled:
-		return classic.Merge(rules), nil
+		effective = classic.Merge(rules)
 	case protected:
-		return classic, nil
+		effective = classic
 	case ruled:
-		return rules, nil
+		effective = rules
 	default:
-		return core.Protection{Branch: branch}, nil
+		effective = core.Protection{Branch: branch}
 	}
+	effective.Dormant = dormant
+	return effective, nil
 }
 
 // classicProtection reads branch protection, reporting whether the branch has
@@ -524,6 +531,70 @@ func (g *GitHub) ruleProtection(ctx context.Context, branch string) (core.Protec
 		return core.Protection{Branch: branch}, false, nil
 	}
 	return rulesToProtection(branch, rules), true, nil
+}
+
+// dormantRules are the rulesets that cover this branch and are not being
+// enforced: GitHub creates every ruleset with its enforcement `disabled`, and
+// `evaluate` reports without blocking, so a repository can hold a complete,
+// correct ruleset that does nothing at all.
+//
+// None of it is protection and none of it is reported as such. It is read
+// because the remedy differs entirely: a branch with no ruleset needs one
+// written, and a branch with a dormant one needs a switch flicked, and a
+// report that says the first when the second is true sends somebody to build
+// what they already have.
+//
+// Only the ones that are not in force are fetched in full — the enforced ones
+// have already been answered by the effective-rules endpoint — so the usual
+// repository pays for one list call and nothing else.
+func (g *GitHub) dormantRules(ctx context.Context, branch string) ([]core.DormantRule, error) {
+	var summaries []ghRulesetSummary
+	req := core.Request{
+		Path:  g.path("rulesets"),
+		Query: url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+	}
+	err := paginate(ctx, g, req, func(summary ghRulesetSummary) bool {
+		if summary.Enforcement != ghEnforcementActive {
+			summaries = append(summaries, summary)
+		}
+		return true
+	})
+	if err != nil {
+		// Reading rulesets is a nicety: it sharpens a remedy and decides
+		// nothing. A credential that may not look is not a failed run.
+		if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission) {
+			return nil, nil
+		}
+		return nil, core.Explain(err, "read the rulesets of %s", g.Slug())
+	}
+	if len(summaries) == 0 {
+		return nil, nil
+	}
+
+	trunk, err := g.Repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var dormant []core.DormantRule
+	for _, summary := range summaries {
+		var ruleset ghRuleset
+		path := g.path("rulesets", strconv.FormatInt(summary.ID, 10))
+		if _, err := g.do(ctx, core.Request{Path: path, Out: &ruleset}); err != nil {
+			if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission) {
+				continue
+			}
+			return nil, core.Explain(err, "read ruleset %q of %s", summary.Name, g.Slug())
+		}
+		if !ruleset.covers(branch, trunk.DefaultBranch) {
+			continue
+		}
+		dormant = append(dormant, core.DormantRule{
+			Name:  ruleset.Name,
+			State: ruleset.Enforcement,
+			URL:   ruleset.Links.HTML.Href,
+		})
+	}
+	return dormant, nil
 }
 
 // SetProtection applies protection additively: what the branch already
@@ -585,7 +656,8 @@ func sameProtection(a, b core.Protection) bool {
 		a.RequireConversationResolution == b.RequireConversationResolution &&
 		a.EnforceAdmins == b.EnforceAdmins &&
 		a.AllowForcePush == b.AllowForcePush &&
-		a.AllowDeletions == b.AllowDeletions
+		a.AllowDeletions == b.AllowDeletions &&
+		slices.Equal(a.Dormant, b.Dormant)
 }
 
 // SetMergeSettings sets the repository's merge strategies. They are one

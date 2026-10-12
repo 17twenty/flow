@@ -115,6 +115,11 @@ type PlanItem struct {
 	// item by item.
 	DesiredHash  string `json:"desired_hash"`
 	ObservedHash string `json:"observed_hash"`
+	// Notes are what the provider volunteered about the item without flow
+	// comparing it on them (spec 06 §1). They change what a report tells a
+	// person to do and never what the plan decides, which is why they are
+	// outside the canonical encoding the hashes are taken over.
+	Notes []core.Note `json:"notes,omitempty"`
 	// Changes are the mutations that would make the provider agree, in the
 	// order apply makes them. A compensated, attested or unsupported item
 	// still lists them: they are what would have to happen, and a human
@@ -212,6 +217,7 @@ func (in PlanInput) item(wanted DesiredItem) PlanItem {
 		ObservedHash: HashObservation(observation),
 		Changes:      changes,
 		Hazards:      declared.Hazards,
+		Notes:        observation.Notes,
 	}
 	if item.Outcome == OutcomeFollowUp {
 		item.Owner = followUpOwner(in.Config, wanted.Target)
