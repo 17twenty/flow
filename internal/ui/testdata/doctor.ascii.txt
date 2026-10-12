@@ -1,0 +1,36 @@
+config
+  + config.syntax  .flow.yaml is valid
+
+forge
+  x forge.protection  main may be pushed to directly
+      fix: protect main
+      run: flow apply
+  || forge.required_checks  forge.protection did not hold
+
+tracker
+  ? tracker.project  which board is this team's?
+      fix: name the board
+      run: flow doctor --fix --set tracker.project=<id>
+  ... tracker.automation  asked 9 days ago
+      fix: the follow-up is open (@platform)
+  * tracker.saved_view  nobody has vouched for this yet
+      fix: say what you see
+      run: flow attest tracker.saved_view --note '...'
+
+live
+  ! live.prs.linked 12/19  some pull requests name no ticket
+      - #101 tidy the loader  https://example.invalid/101
+      - #104 bump deps  https://example.invalid/104
+      - #109 fix the flake  https://example.invalid/109
+      - #112 rename a field  https://example.invalid/112
+      - #115 drop dead code  https://example.invalid/115
+      ... and 2 more
+      fix: ask for the ticket key in the title
+      1. agree the convention
+      2. turn the rule on in .flow.yaml
+  E live.deploys.recent  unavailable
+
+meta
+  . meta.lock  no lock is written in CI
+
+4 actions for you - 1 waiting on others - 1 attestation due - exit 1

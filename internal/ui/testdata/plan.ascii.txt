@@ -1,0 +1,26 @@
+flow.plan/v1
+forge    github
+tracker  github-projects
+deploys  github-deployments
+
++ native  forge.branch_protection (branch_protection)
+    main is unprotected and the credential may protect it
+    update "main" required_checks="flow/policy" reviews="1"
+    hazard: rewriting protection clears any rule flow does not send
+
+~ compensated -> a saved view  tracker.columns (status_options)
+    the board cannot name its own columns through the API
+
+! follow-up -> @platform  tracker.automation (transitions)
+    the credential may not change this board's workflow
+
+* attest -> flow attest tracker.saved_view  tracker.saved_view (views)
+    no API reports whether the view exists -- a human must say
+
+x unsupported  deploys.environments (environments)
+    this deployment source has no environments to configure
+
+. up to date  forge.pr_template
+    the template is already what the configuration asks for
+
+6 items - 1 up to date - 1 native - 1 compensated - 1 follow-up - 1 attest - 1 unsupported

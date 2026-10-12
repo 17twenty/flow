@@ -67,7 +67,8 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [x] 1.11 internal/git — specs: 01 §1, 10 §1 — deps: 0.2 (#24)
   - note: read-only exec git. Remote parsing drops credentials from the URL; an unborn HEAD is an empty log rather than an error; detached HEAD reports no branch; trailers come from git itself, which does not treat BREAKING CHANGE as one. Forge detection's probing half stays with the adapters (3.1, 3.7).
   - AC: root, remote parsing (SSH/HTTPS/subgroups), log range, hooks path, ls-files tracked, interpret-trailers parsing
-- [ ] 1.12 UI styles and plain/markdown/JSON renderers — specs: 12 — deps: 0.3 (#25)
+- [x] 1.12 UI styles and plain/markdown/JSON renderers — specs: 12 — deps: 0.3 (#25)
+  - note: internal/ui decorates the engine's own text line by line rather than laying it out again, so colour off is byte-for-byte the plain view. Markdown reshapes findings into tables; JSON passes through untouched; an unknown format is refused. The ASCII table is injective — `!` becomes `E` because `⚠` falls back to `!` — and glyphs translate token-wise while punctuation translates per line. DarkBackground guards the query behind term.IsTerminal on both files, with the check injected so the guard is testable where lipgloss would have declined anyway.
   - AC: golden renders for sample plan and doctor results; ASCII + NO_COLOR
 - [x] 1.13 flow hook install/uninstall — specs: 02 §2, 08 — deps: 1.3, 1.11 (#26)
   - note: cmd_hook.go; writes through a temp file, recognises its own work by a marker, defers to lefthook/husky/pre-commit with exit 2. The shipped templates called `flow hook run`, a command that never existed — rewritten to spec 02's `flow check commit --fix`, prepare-commit-msg deleted, and a test now runs every template's invocation with --help.
