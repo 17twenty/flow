@@ -32,8 +32,8 @@ tests, dependencies limited to spec 01 §4.
 - [ ] `AGENT_CMD=… ./loop.sh` completes one iteration in `direct` mode without stopping for a broken build.
 
 ### Binary and specs
-- [ ] `go build -o bin/flow .` succeeds; `flow --help` lists the Setup/Verify/CI/Meta groups of spec 02; no command returns `ErrUnsupported`.
-- [ ] Every command in spec 00 §5 (`init`, `plan`, `apply`, `attest`, `doctor`, `check pr|deploy|commit`, `hook install|uninstall`, `schema`, `version`) implemented with `--json` and the exit codes of spec 02 §4.
+- [x] `go build -o bin/flow .` succeeds; `flow --help` lists the Setup/Verify/CI/Meta groups of spec 02; no command returns `ErrUnsupported`.
+- [x] Every command in spec 00 §5 (`init`, `plan`, `apply`, `attest`, `doctor`, `check pr|deploy|commit`, `hook install|uninstall`, `schema`, `version`) implemented with `--json` and the exit codes of spec 02 §4.
 - [ ] GitHub forge and GitHub Projects adapters pass their contract suites against `httptest` fakes; Jira Cloud, Linear, Gitea/Forgejo and GitLab adapters pass theirs (plan Phase 7).
 - [x] `go test ./... -race -count=1` green with no network access from tests and the transport guard active; no test skipped or weakened to pass.
 - [x] `gofmt -l .` empty; `go vet ./...`, `staticcheck ./...` and `govulncheck ./...` clean.
@@ -71,7 +71,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 3 — Offline core (plan Phase 1): commit parser/linter, config, lock, schema, git, UI, hooks
 - [x] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
-- [ ] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
+- [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
 - [ ] Phase 8 — Live health (plan Phase 5): PR/deploy/ticket/transition audits, report, health issue
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
@@ -80,12 +80,15 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 
 ### Status notes
 
-*(updated after plan item 4.4, commit `40d5c6e`, CI green)*
+*(updated after the first live `flow doctor` run on this repository, commit
+`bd712ed`, CI green)*
 
-**Done.** Plan Phases 0–3 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12),
-their issues closed and their phase parents (#6, #13, #27, #44) closed with
-them. Phase 4 is four items in: 4.1 `init`, 4.2 `plan`/`apply`, 4.3 `check pr`
-and now 4.4 `check deploy`.
+**Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
+4.1–4.6), their issues closed and their phase parents (#6, #13, #27, #44)
+closed with them. Every command in spec 00 §5 is implemented; the only
+`ErrUnsupported` left in the shipped surface is three `doctor` flags whose own
+items are in Phases 5 and 6 (`--report` 5.7, `--ci` 5.8, `--watch` 6.3), which
+are refused rather than parsed and ignored.
 
 - *Offline core.* `internal/commits` parser, linter and safe autofix behind
   `flow check commit` and the git hooks; `internal/config` with strict YAML,
@@ -102,48 +105,62 @@ and now 4.4 `check deploy`.
   `coretest`'s contract suites whole against `httptest` fakes that refuse a
   request missing `X-GitHub-Api-Version` or `Accept`.
 - *Commands.* `init` (editing a preset byte-by-byte so comments and alignment
-  survive), `plan` and `apply` over an idempotent fake world, `check pr` (the
-  gate judges, publishes a status and a comment, and moves the card), and
-  `check deploy`.
-- *`flow check deploy` (item 4.4, this run).* `workflow.done_on: merged` is
-  the default, so the common answer is "nothing to do" and it is reached from
-  configuration alone — no credential, no event payload. Where a deployment
-  *is* the status, the deployment record is the evidence and the event only
-  prompts; merges are walked back as far as `deploys.max_lag` and proven
-  contained with `core.Ancestry` in front of the forge; the transition engine
-  decides about each ticket a running merge is linked to.
+  survive), `plan` and `apply` over an idempotent fake world, `check pr`,
+  `check deploy`, `doctor`'s setup half, and `attest`.
+- *The first live run (this run).* `flow doctor` was pointed at this
+  repository with the bot's own credential, and exited 0 having observed none
+  of it. Two faults, one behind the other, and neither reachable from the
+  fakes. `--fix` resolved the board's number into the lock but the tracker had
+  been built before that and went on pointing at project zero, so the run that
+  found the answer was the one run that could not use it. Observing then
+  failed and the failure was swallowed into an empty plan — and an empty plan
+  and a plan that wants nothing are the same bytes, which every check reads as
+  a skip, and a skip is a success. The providers are now rebuilt after
+  resolution; the error is carried as `Env.PlanErr` and reported, except where
+  a pending placeholder already explains it and already holds the run at exit
+  2. The CLI fakes now refuse, with no board number, exactly the two questions
+  `GitHubProjects` refuses, so the order flow resolves things in is testable.
 
-**Bootstrap Stage A is done apart from the loop.** Verified from the API this
-run: the user-owned Project 2 has Status options Backlog · Ready · In progress
-· In review · Done, all seven built-in workflows enabled, the labels `agent`,
-`blocked`, `incident`, `flow-followup` and `phase` present, a phase parent
-issue per plan phase, and 74 plan lines carrying `(#N)`.
+**Bootstrap Stage A is done apart from the loop.** The user-owned Project 2
+has Status options Backlog · Ready · In progress · In review · Done, all seven
+built-in workflows enabled, the labels `agent`, `blocked`, `incident`,
+`flow-followup` and `phase`, a phase parent issue per plan phase, and 74 plan
+lines carrying `(#N)`.
 
-**What currently verifies.** The spec's Verify command still cannot run
-end-to-end, because `doctor` is item 4.5. Today's equivalent, all green, with
-zero tests skipped in a real run:
+**What currently verifies.** The spec's Verify command now runs end to end.
+Everything up to the last line is green with zero tests skipped:
 
 ```sh
 test -z "$(gofmt -l .)" && go vet ./... && go vet -tags flowtest ./... && \
   go build -o bin/flow . && go build -tags flowtest ./... && \
   go test ./... -race -count=1 && go test -tags flowtest ./... -race -count=1 && \
   go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./... && \
-  go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+  go run golang.org/x/vuln/cmd/govulncheck@latest ./... && \
+  ./bin/flow doctor --json | jq -e '.exit_code == 0'
 ```
+
+The last line is `exit_code: 2`, and the report says exactly why — which is
+the point of it. Flow's own repository is not yet converged: two follow-ups
+are open on a person (#90 `forge.protection`, #91 `forge.required_status` —
+the bot has `push`, not admin), `forge.files` wants
+`.github/workflows/flow.yml` created, `tracker.labels` wants two labels, and
+four native behaviours are waiting on an attestation. That is Stage B's work,
+not a defect. `.flow.lock` is committed, and a second `--fix` leaves it byte
+for byte identical.
 
 **Still open, and why.**
 
-1. *Phase 4 has two items left:* 4.5 `flow doctor` setup checks (#62, scenarios
-   A05–A07) and 4.6 `flow attest` (#63). `doctor` is the one the Verify command
-   and every live-health check wait on, and it is the larger of the two.
-2. *H.1 is a human gate.* Stage B activation (spec 17 §5): run `flow apply` to
-   create the `main` ruleset requiring `flow/policy` and `ci / test`, land
-   `.github/workflows/flow.yml`, and set `.ralph/AGENTS.md` to
-   `CURRENT MODE: pr`. Identity is no longer a blocker — the agent is the
-   machine user `flow-bot-gh`, a repo collaborator with `push` and a WRITER on
-   the Project, so `agents.authors: [flow-bot-gh]` makes `agent.human_review`
-   satisfiable with `@17twenty` reviewing.
-3. *Why the board shows Backlog → Done and nothing between.* Not a
+1. *H.1 is the human gate, and it now has a concrete shape.* Stage B
+   activation (spec 17 §5) is the four things doctor is already asking for:
+   somebody with admin creates the `main` ruleset requiring `flow/policy` and
+   `ci / test` (or grants the bot admin so `flow apply` can), `flow apply`
+   lands `.github/workflows/flow.yml` and the two labels, the four native
+   transitions are attested, and `.ralph/AGENTS.md` goes to `CURRENT MODE: pr`.
+   Identity is not a blocker — the agent is the machine user `flow-bot-gh`, a
+   repo collaborator with `push` and a WRITER on the Project, so
+   `agents.authors: [flow-bot-gh]` makes `agent.human_review` satisfiable with
+   `@17twenty` reviewing.
+2. *Why the board shows Backlog → Done and nothing between.* Not a
    misconfiguration. Spec 04 §5 gives `pr_opened_draft` → In progress and
    `pr_ready_for_review` → In review to `owner: flow`, performed by
    `flow check pr`; in `direct` mode no pull request is ever opened, so those
@@ -151,16 +168,16 @@ test -z "$(gofmt -l .)" && go vet ./... && go vet -tags flowtest ./... && \
    `issue_closed` are `owner: native` and GitHub's built-ins are enabled.
    Backlog → Ready is nobody's: flow judges readiness, it never promotes.
    Stage B is what makes the middle of the board move.
-4. *Phases 5–8:* live health, TUI, the remaining adapters, and the proof.
+3. *Phases 5–8:* live health, TUI, the remaining adapters, and the proof.
 
-**Single best next step:** plan item 4.5 — `flow doctor` setup checks (#62,
-spec 07 §5, scenarios A05–A07). Everything it needs exists: the check registry
-with placeholder resolution (2.9), follow-ups (2.10), drift and attestations
-(2.11), both adapters (3.12) and the `ui` doctor rendering (1.12). It is the
-command the spec's own Verify line calls, the last thing standing between the
-repo and a reproducible green proof, and the foundation every Phase 5 live
-check is registered against. Wire it as the setup half only — `live.*` audits
-are items 5.1–5.3 — and hold it to spec 19's A05 (exactly one user project,
-so `doctor --fix` resolves the `${pending:project}` placeholder), A06 (a forge
-token without admin files a ruleset follow-up rather than failing) and A07 (a
-status option renamed behind flow's back reads as `drift`, exit 2).
+**Single best next step:** plan item 5.1 — the `live.prs.*` audits (#65, spec
+07 §6). Doctor's setup half answers "is the configuration what it should be";
+Phase 5 is the half that answers "and is the team actually working this way",
+which is the whole claim of the project and the thing the 14-day proof is
+measured on. 5.1 is the first and the one the rest hang off: every pull
+request merged inside `--window` is read for a linked ticket, a `flow/policy`
+status, a Conventional Commit title and a review, and each becomes a check
+registered alongside the setup ones. It needs nothing that is not already
+there — the forge adapter pages pull requests, the gate already judges one,
+and `engine.Check` already carries evidence and remediation — and it is what
+makes `--report` (5.7) and the pinned health issue have anything to say.
