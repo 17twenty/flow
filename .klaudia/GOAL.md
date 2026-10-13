@@ -83,12 +83,11 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 *(updated after Stage B went live and the first gated pull request found the
 column-vocabulary bug, commit `950a80d`)*
 
-**Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
-4.1–4.6) and Phase 5 is five items of eight (5.1–5.5), their issues closed and
-their phase parents (#6, #13, #27, #44) closed with them. Every command in spec 00 §5 is implemented; the only
-`ErrUnsupported` left in the shipped surface is three `doctor` flags whose own
-items are in Phases 5 and 6 (`--report` 5.7, `--ci` 5.8, `--watch` 6.3), which
-are refused rather than parsed and ignored.
+**Done.** Plan Phases 0–5 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
+4.1–4.6, 5.1–5.8), their issues closed and their phase parents (#6, #13, #27,
+#44, #64) closed with them. Every command in spec 00 §5 is implemented; the only
+`ErrUnsupported` left in the shipped surface is `doctor --watch`, whose item
+is 6.3, and it is refused rather than parsed and ignored.
 
 - *Offline core.* `internal/commits` parser, linter and safe autofix behind
   `flow check commit` and the git hooks; `internal/config` with strict YAML,
@@ -617,15 +616,80 @@ and said in those words, rather than passing "all 0 flags were fine". It is
 [#105](https://github.com/17twenty/flow/pull/105), green on `test`, `policy`
 and `setup checks`.
 
-**Single best next step:** `@17twenty` approves and squash-merges
-[#105](https://github.com/17twenty/flow/pull/105), which closes Phase 5. Then,
-in order: attest the four native behaviours
-(`tracker.native.{changes_requested,issue_closed,pr_merged}` and
-`tracker.expedite`) so the exit code depends only on real findings; settle
-[#102](https://github.com/17twenty/flow/issues/102) (an archived repository
-should be refused once, in the engine) and
-[#100](https://github.com/17twenty/flow/issues/100) (`pr_closed_unmerged`
-cannot be configured to mean what it means); and then Phase 6, the TUI. The
-fourteen-day clock starts the first morning the scheduled run exits 0 —
-`live.tickets.done_merged` is the only check still failing, and it ages out of
-the window on its own.
+### The gate judged the title; the trunk gets the header (this run — issue #106)
+
+[#105](https://github.com/17twenty/flow/pull/105) is merged and Phase 5 is
+closed. This run fixed the bug that closing it exposed.
+
+GitHub squashes with `squash_merge_commit_title: PR_TITLE`, which appends
+` (#<number>)` to the title. The gate linted the title. So a 66-character
+title passed `cc.header.length`, landed as a 73-character header, and
+`live.prs.conventional` reported it a fortnight later — the gate and the audit
+contradicting each other about the same commit, which is the one thing a tool
+whose whole claim is "provably true" cannot do. Two commits on the trunk are
+the evidence: `e628fb8` at 73 characters and `e4291ab` at 75.
+
+The reading that settles it: the convention is a rule about the trunk's
+history, and the trunk gets whatever the forge writes, so the gate must judge
+that. Only the adapter knows what its forge will write — GitHub and Gitea
+append the number, GitLab appends nothing — so `core.PullRequest` gained
+`SquashHeader`, the forge contract requires it of every pull request an
+adapter produces (from a listing as well as from its own endpoint: a number
+and a title are all it is made of), and `MergeHeader()` falls back to the
+title for a pull request nobody asked a forge about. GitHub's adapter
+composes it for open pull requests too, because judging a header before the
+commit exists is the gate's whole job.
+
+Two smaller judgements. The two strings differ only at the end, so every rule
+about the front of a header — type, scope, the breaking marker — reads the
+same string either way and only the length rule changes its answer; nothing
+else in the gate needed touching. And a verdict passed on a string the author
+cannot see has to say so: the finding carries one line of evidence naming the
+header that lands and the characters the forge added, because "73 characters"
+is unanswerable to a person counting their own title to 66. When the two are
+the same string it says nothing, which is what keeps that line from being
+noise on every failing title.
+
+Nine mutants, one survivor on the first pass — the fake remembering a
+fixture's stale header instead of deriving a fresh one, which would have let a
+test rename a pull request and still be handed the header the old name would
+have landed. It bought
+`TestFakeForgeDerivesTheSquashHeaderRatherThanRememberingIt`. Landed as
+[#107](https://github.com/17twenty/flow/pull/107), approved by `@17twenty`,
+squash-merged green — its own header is exactly 72 characters, counted by the
+rule it added.
+
+**Where the exit code stands.** `./bin/flow doctor` against this repository
+exits 2 on six checks, and none of them is a defect in flow:
+
+- four attestations nobody has made yet — `tracker.native.pr_merged`,
+  `tracker.native.issue_closed`, `tracker.native.changes_requested` and
+  `tracker.expedite`. Spec 17 §5 puts these in a human's hands and
+  `docs/cookbook.md` §6.1 (new this run) now gives the four exact commands.
+- `live.tickets.done_merged`, 66 of 73 — every ticket closed in `direct` mode
+  before Stage B, none of which had a pull request behind it. It ages out of
+  the fourteen-day window on its own as PR-mode work replaces it.
+- `live.prs.conventional` warns at 2 of 88: the two commits above. A warn does
+  not set the exit code, and both age out of the window too.
+
+So the fourteen-day clock has a shape now: the attestations are the only part
+of it waiting on a decision rather than on the calendar, and the earliest the
+streak can *start* is the morning the last direct-mode ticket leaves the
+window.
+
+**Single best next step:** settle
+[#102](https://github.com/17twenty/flow/issues/102) — an archived repository
+is read and then written to anyway. Spec 10's Decision for issue #103 already
+says where it belongs (the engine, once, rather than item by item in each
+adapter) and `core.Repository.Archived` is already filled in by the GitHub
+adapter with nothing reading it, so this is a bounded change with its reading
+already done. Then [#100](https://github.com/17twenty/flow/issues/100)
+(`pr_closed_unmerged` cannot be configured to mean what it means), then Phase
+6, the TUI (#74–#77).
+
+In parallel, and only `@17twenty` can do it: run the four `flow attest`
+commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows
+panel (the **…** menu on <https://github.com/users/17twenty/projects/2>; it is
+an overlay with no URL of its own), and land the resulting `.flow.lock`
+through a pull request. Until then the scheduled daily
+run cannot exit 0, and the streak cannot begin.
