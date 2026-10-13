@@ -469,6 +469,64 @@ func TestTransitionApproval(t *testing.T) {
 	}
 }
 
+// A ticket that is closed is finished work, whatever column the board has it
+// in — and the board does lag, which is what doctor's transitions.native
+// checks are for. This is the live bug: a pull request opened against an
+// already-closed ticket took it from In progress back to In review, 15
+// minutes after it was closed and merged.
+func TestTransitionDoesNotTouchAClosedTicket(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	snapshot := work(cfg, "in_progress", linked(openPR(7)))
+	snapshot.Ticket.Closed = true
+
+	move := engine.Transition(snapshot)
+
+	if move.Moves() {
+		t.Fatalf("flow moved a closed ticket to %s: %+v", move.To, move)
+	}
+	got := step(t, move, config.EventPRReadyForReview)
+	if got.Reason != engine.ReasonClosed {
+		t.Errorf("reason = %q, want %q", got.Reason, engine.ReasonClosed)
+	}
+	if !strings.Contains(got.Why, "closed") {
+		t.Errorf("why = %q, want it to say the ticket is closed", got.Why)
+	}
+}
+
+// Refusing is not the same as not looking: the pull requests are still
+// considered, so a dry run can say which ones it declined and why.
+func TestTransitionStillExplainsThePullRequestsOfAClosedTicket(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	snapshot := work(cfg, "in_progress", linked(openPR(7)))
+	snapshot.Ticket.Closed = true
+
+	move := engine.Transition(snapshot)
+
+	if !slices.Contains(events(move), config.EventPRReadyForReview) {
+		t.Errorf("events = %v, want the pull request's events considered and refused", events(move))
+	}
+	for _, s := range move.Steps {
+		if s.Moved {
+			t.Errorf("step %s moved a closed ticket: %+v", s.Event, s)
+		}
+	}
+}
+
+// Closing is still the one event finished work acts on, so a workflow that
+// owns it still reaches done even though every other event has been refused.
+func TestTransitionClosesAClosedTicketAnyway(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventIssueClosed] = config.Transition{To: "done", Owner: config.OwnerFlow}
+	snapshot := work(cfg, "in_progress", linked(mergedPR(7)))
+	snapshot.Ticket.Closed = true
+
+	move := engine.Transition(snapshot)
+
+	if move.From != "in_progress" || move.To != "done" || move.Event != config.EventIssueClosed {
+		t.Fatalf("move = %s → %s on %s, want in_progress → done on issue_closed", move.From, move.To, move.Event)
+	}
+}
+
 func TestTransitionFollowsTheTicketBeingClosed(t *testing.T) {
 	cfg := preset(t, "lean-kanban")
 	cfg.Workflow.Transitions[config.EventIssueClosed] = config.Transition{To: "done", Owner: config.OwnerFlow}
