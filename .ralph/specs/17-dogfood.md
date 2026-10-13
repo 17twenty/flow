@@ -298,3 +298,24 @@ Each iteration, as the agent identity:
   own access list, set with the `updateProjectV2Collaborators` mutation (or
   Project → Settings → Manage access). This is a Stage A step; `docs/cookbook.md`
   carries the recipe.
+- **§5 the first gated pull request is the one carrying the gate (item H.1).**
+  Stage B's ordering looks circular — `main` requires `flow/policy`, and
+  nothing produces `flow/policy` until `.github/workflows/flow.yml` is on the
+  trunk — but it is not. A `pull_request` workflow runs from the pull
+  request's own branch, so the file that adds the gate runs on the change that
+  adds it, posts the status, and is merged by it. Nothing has to be waved
+  through, and the repository is never in a state where a commit reached the
+  trunk ungated.
+- **§5 flow's own workflow builds flow, it does not install it (item H.1).**
+  The shipped template does `go install github.com/17twenty/flow@<version>`,
+  which is right for a team adopting flow and wrong for flow: a pull request
+  would then be judged by a release made before it, and a change to the gate
+  could not be tested by the gate. Here every job builds `./bin/flow` from the
+  checkout, and the toolchain comes from `go-version-file: go.mod` rather than
+  `stable`, for the reason CI already learned once — an unpinned toolchain
+  turns every push red with no change to the repository.
+- **§5 the repository secret was the missing half of Stage A step 5 (item
+  H.1).** `FLOW_PROJECT_TOKEN` had never been stored, so the gate would have
+  had a forge and no tracker and could not have judged `ticket.ready` at all.
+  It is the bot's own PAT, the same one credential the loop uses everywhere
+  else; a gate that reads the board needs the board's token wherever it runs.

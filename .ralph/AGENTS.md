@@ -1,7 +1,13 @@
 # AGENTS.md — operational guide (< 150 lines)
 
-CURRENT MODE: direct
-<!-- Stage B is unblocked by the `flow-bot-gh` identity but still needs `flow check pr` (item 4.3) and the ruleset; the switch to `pr` happens then (specs/17-dogfood.md §5 Decisions). -->
+CURRENT MODE: pr
+<!-- Stage B is live: @17twenty enabled the `Flow` ruleset, so `main` refuses a push whose commit has no `flow/policy` success. Work lands through a pull request gated by the flow in it (specs/17-dogfood.md §5-6). -->
+
+## Landing work (PR mode)
+- `main` is protected: `git push origin HEAD:main` is **rejected** unless `flow/policy` already passed on that exact commit. Branch and open a PR.
+- Branch `klaudia/<item>`, push it, then `POST /repos/17twenty/flow/pulls` with `Closes #N` in the body and the `agent` label. `.github/workflows/flow.yml` builds flow from the PR's own checkout and runs `flow check pr`, which posts `flow/policy` and moves the ticket.
+- `flow/policy` stays red until `@17twenty` approves: `agents.authors` holds `flow-bot-gh`, so `agent.human_review` wants a human. That is the gate working, not a fault. Ask, then wait.
+- Merge with squash once it is green. Then move the board item and close the issue as before.
 
 ## Identity
 - The agent is the machine user **`flow-bot-gh`** (id 341252896), a repo collaborator with `push` and a WRITER on the Project. The human is `@17twenty`. See `docs/cookbook.md`.

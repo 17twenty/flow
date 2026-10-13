@@ -189,7 +189,8 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: refuses API-verifiable checks with 64
   - note: the first live run against this repository, after 4.6 landed, found two things the fakes could not reach. `--fix` resolving the board's number wrote it to the lock and left the tracker it had already built pointing at project zero, so the run that found the answer was the one run that could not use it; the providers are now rebuilt after resolution. And the plan that then failed was swallowed into an empty plan, which reads to every check as "nothing was wanted" — a skip, and a report of twenty skips exits 0. The failure is carried as `Env.PlanErr` and reported, except where a pending placeholder already explains it (spec 07 Decisions).
 
-- [ ] H.1 HUMAN: bootstrap Stage B activation (specs/17-dogfood.md §5); set AGENTS.md `CURRENT MODE: pr`
+- [x] H.1 HUMAN: bootstrap Stage B activation (specs/17-dogfood.md §5); set AGENTS.md `CURRENT MODE: pr`
+  - note: @17twenty enabled the `Flow` ruleset, and `main` now refuses a push whose commit has no `flow/policy` success — which is how this item announced itself: the close-out push for 5.8 was rejected. `forge.protection` and `forge.required_status` went from two follow-ups on a person to `noop`, and `tracker.labels` with them. The two things left were flow's to do and are in this change: the repository secret `FLOW_PROJECT_TOKEN` (Stage A step 5, never stored), and `.github/workflows/flow.yml`, which spec 17 §5 says must land through a pull request gated by `flow/policy` — so the first gated pull request is the one carrying the gate. It is adapted from the shipped template rather than copied: flow is what is in the checkout, so each job builds the binary from the commit it is judging, and the toolchain comes from `go.mod` rather than `stable`. The native transitions still want attesting; that is a `flow attest` away and not a human's.
 
 ## Phase 5 — Live health
 
