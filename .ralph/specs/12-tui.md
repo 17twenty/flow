@@ -115,3 +115,40 @@ Render functions are pure and golden-tested; models tested via `Update`.
   message besides a key press that the model keeps, and the table is rendered
   to it. Until the program has said, the table is unconstrained: guessing
   eighty columns would fold a plan that fits.
+- **§2 the picker answers a question; it does not decide there is one
+  (item 6.2).** The ladder in spec 03 §1.1 is the engine's, and the rung this
+  screen stands on is "a provider offered more than one answer". So the root
+  hands `engine.ResolveInput` a `Chooser` and the engine decides when to call
+  it. A chooser is supplied only when flow would draw a screen at all; a nil
+  one is a rung the engine steps over, and the plain equivalent is the one it
+  already writes — the candidates in the report with the `--set` that records
+  an answer.
+- **§2 a person who declines to pick has not answered (item 6.2).** Escape
+  and `q` leave the question open, which the chooser reports as
+  `core.ErrNeedsInput` naming the `--set` that would settle it, rather than as
+  a failure or as a candidate nobody chose. The zero `Picker` has picked
+  nothing for the same reason the zero `Confirmation` refuses: an interrupt, a
+  terminal closing and a model that came back as something else all land on
+  the safe reading without anybody enumerating them.
+- **§2 a key belongs to the filter before it belongs to the screen
+  (item 6.2).** Return applies a filter and escape abandons one, so a picker
+  that read either as an answer would make typing a name impossible. The rule
+  is inherited rather than restated: the screen asks the list what state it is
+  in and which of its own bindings are live, which is also why the key line
+  can only name keys that would do something.
+- **§2 only the name is filtered on (item 6.2).** A fuzzy match reports which
+  characters it matched so they can be underlined, and underlining them means
+  the string filtered and the string drawn are the same string. A person who
+  has the identifier does not need a picker — they have `--set`.
+- **§2 the rows are drawn by flow and browsed by the library (item 6.2).**
+  bubbles ships a delegate with a palette of its own, and flow has seven
+  styles and a mode with no colour at all. So the list is given flow's styles,
+  its filter input and its pagination marks, and the rows are rendered here:
+  two characters of cursor in both alphabets, a name cut to the terminal
+  rather than folded, and a detail line only when a candidate has one — a row
+  that lies about its height fills a page with twice the candidates it can
+  show.
+- **§2 the list guesses eighty by twenty-four until the program says
+  otherwise (item 6.2).** The apply confirmation can be drawn unconstrained
+  and left for the terminal to fold; a list cannot, because its height is how
+  many candidates it shows and zero of them is an empty screen.

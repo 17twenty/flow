@@ -539,18 +539,56 @@ func (a *Context) confirm(question string) (bool, error) {
 // deadline — is the run failing, and answering "nothing was applied" would
 // report the symptom and hide the cause. A model that came back as something
 // else cannot be read at all, and the safe reading of an unreadable answer is
-// the one a confirmation defaults to.
-func (a *Context) onScreen(screen ui.Confirmation) (bool, error) {
+// the zero screen: every one of flow's screens reads as "nobody said yes".
+//
+// It is a function rather than a method because the type of the answer is the
+// type of the screen, and a method cannot say so.
+func onScreen[M tea.Model](a *Context, what string, screen M) (M, error) {
+	var nobody M
 	final, err := tea.NewProgram(screen,
 		tea.WithContext(a.Ctx),
 		tea.WithInput(a.Stdin),
 		tea.WithOutput(a.Stdout),
 	).Run()
 	if err != nil {
-		return false, fmt.Errorf("ask for confirmation: %w", err)
+		return nobody, fmt.Errorf("%s: %w", what, err)
 	}
-	answered, ok := final.(ui.Confirmation)
-	return ok && answered.Approved(), nil
+	answered, ok := final.(M)
+	if !ok {
+		return nobody, nil
+	}
+	return answered, nil
+}
+
+// chooser is how a placeholder with more than one possible answer gets one
+// (spec 07 §3, spec 12 §2). Nil is the answer when there is nobody to ask,
+// and the engine reads nil as a rung of the ladder it cannot stand on.
+//
+// A terminal that cannot draw is not a terminal that cannot be asked, but it
+// is this question: the candidates are a list to browse and filter, and the
+// plain equivalent is the one the engine already writes — the candidates in
+// the report, with the `--set` command that records the answer.
+func (a *Context) chooser(s *session) engine.Chooser {
+	if !a.tui() {
+		return nil
+	}
+	return func(_ context.Context, p engine.Placeholder, candidates []core.Candidate) (core.Candidate, error) {
+		question := fmt.Sprintf("which of these should %s be?", p.Path)
+		screen := a.renderer(s.Settings).Picker(question, candidates)
+		picked, err := onScreen(a, "ask which to use", screen)
+		switch {
+		case err != nil:
+			return core.Candidate{}, err
+		case !picked.Picked():
+			// Escape, ctrl-c, or a screen nobody ever answered. None of
+			// them is a failure: the placeholder is simply still a
+			// question, and resolution falls through to saying so.
+			return core.Candidate{}, core.Errorf(core.ErrNeedsInput, "choose %s", p.Path).
+				WithWhy("nobody picked one").
+				WithFix("run flow doctor --fix --set %s=<the one you meant>", p.Path)
+		}
+		return picked.Chosen(), nil
+	}
 }
 
 // adapterBuilder builds the providers a command acts through. It is a

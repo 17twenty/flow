@@ -126,7 +126,8 @@ func (c *ApplyCmd) approve(app *Context, s *session, plan engine.Plan) (bool, er
 	}
 	question := fmt.Sprintf("apply %d changes?", changes)
 	if app.tui() {
-		return app.onScreen(app.renderer(s.Settings).Confirmation(plan, question))
+		answer, err := onScreen(app, "ask for confirmation", app.renderer(s.Settings).Confirmation(plan, question))
+		return answer.Approved(), err
 	}
 	if err := app.render(s, func(r ui.Renderer) (string, error) { return r.Plan(plan) }); err != nil {
 		return false, err

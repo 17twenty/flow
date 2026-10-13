@@ -316,6 +316,7 @@ func (c *DoctorCmd) resolve(app *Context, s *session) ([]engine.Answer, error) {
 		Lock:        s.Lock,
 		Set:         parseSet(c.Set),
 		Fix:         c.Fix,
+		Choose:      app.chooser(s),
 		Log:         app.Log,
 	})
 	if err != nil {

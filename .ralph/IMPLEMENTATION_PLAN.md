@@ -223,8 +223,23 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 - [ ] 6.1 Init wizard — specs: 12 — deps: 4.1 (#74)
   - AC: plain equivalent produces identical config
-- [ ] 6.2 Picker for placeholders — specs: 12 — deps: 4.5 (#75)
+- [x] 6.2 Picker for placeholders — specs: 12 — deps: 4.5 (#75)
   - AC: Update-driven model tests
+  - note: the decision was already in the engine — `Placeholders` walks the
+    ladder, reaches the rung where a provider offered more than one answer and
+    calls an `engine.Chooser` — so this item is what a terminal makes of that
+    call and nothing else. `ui.Picker` is a `tea.Model` over `bubbles/list`:
+    the mechanism for browsing, filtering and paging is the library's, and
+    which candidate a key press means, what the rows are painted in and what
+    the key line says are this package's. The root supplies the chooser only
+    when it would draw a screen, because a nil chooser is a rung the engine
+    already knows how to step over — it falls through to naming the candidates
+    in the report with the `--set` that records an answer, which is the plain
+    equivalent spec 12 asks every screen for. `onScreen` became a generic
+    function during the item, since the type of the answer is the type of the
+    screen and a method cannot say so, and both screens now read "a model that
+    came back as something else" as the zero screen: nobody said yes, nobody
+    picked one.
 - [ ] 6.3 Doctor inline spinners and --watch — specs: 12 — deps: 5.7 (#76)
   - AC: golden renders; key bindings tested via Update
 - [x] 6.4 Apply confirmation — specs: 12 — deps: 4.2 (#77)

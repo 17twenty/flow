@@ -125,7 +125,7 @@ func (c Confirmation) View() tea.View {
 	out.WriteString("\n\n")
 	out.WriteString(c.renderer.styles.Accent.Render(c.question))
 	out.WriteString("\n")
-	out.WriteString(c.renderer.styles.Muted.Render(c.renderer.helpLine(c.keys)))
+	out.WriteString(c.renderer.styles.Muted.Render(c.renderer.helpLine(c.keys.yes, c.keys.no)))
 	out.WriteString("\n")
 	return tea.NewView(out.String())
 }
@@ -141,10 +141,15 @@ func (c Confirmation) Answered() bool { return c.answered }
 // than proceed.
 func (c Confirmation) Approved() bool { return c.approved }
 
-// helpLine is the key line: what each answer is called and what it does.
-func (r Renderer) helpLine(keys confirmKeys) string {
+// helpLine is the key line: what each key is called and what it does. Every
+// screen flow draws explains itself in the same words in the same order, so
+// there is one of these.
+func (r Renderer) helpLine(bindings ...key.Binding) string {
 	var offered []string
-	for _, binding := range []key.Binding{keys.yes, keys.no} {
+	for _, binding := range bindings {
+		if !binding.Enabled() {
+			continue
+		}
 		help := binding.Help()
 		offered = append(offered, fmt.Sprintf("%s %s", help.Key, help.Desc))
 	}

@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/engine"
 	"github.com/17twenty/flow/internal/ui"
 )
@@ -122,11 +124,11 @@ func TestWhatAPersonPressesIsWhatTheApplyDoes(t *testing.T) {
 				Stdout: &out,
 			}
 			screen := ui.New(ui.Options{}).Confirmation(engine.Plan{}, "apply 1 change?")
-			approved, err := app.onScreen(screen)
+			answered, err := onScreen(app, "ask for confirmation", screen)
 			if err != nil {
 				t.Fatalf("ask on screen: %v", err)
 			}
-			if approved != tc.approved {
+			if approved := answered.Approved(); approved != tc.approved {
 				t.Errorf("approved = %v, want %v", approved, tc.approved)
 			}
 			if out.Len() == 0 {
@@ -150,11 +152,82 @@ func TestAQuestionNobodyCouldAnswerApprovesNothing(t *testing.T) {
 
 	var out bytes.Buffer
 	app := &Context{Ctx: ctx, CLI: &CLI{}, Stdin: strings.NewReader(""), Stdout: &out}
-	approved, err := app.onScreen(ui.New(ui.Options{}).Confirmation(engine.Plan{}, "apply 1 change?"))
-	if approved {
+	answered, err := onScreen(app, "ask for confirmation", ui.New(ui.Options{}).Confirmation(engine.Plan{}, "apply 1 change?"))
+	if answered.Approved() {
 		t.Error("a cancelled run approved the apply")
 	}
 	if err == nil {
 		t.Error("a cancelled run reported nothing at all")
+	}
+}
+
+// TestWhatAPersonPicksIsWhatTheRunResolves is the picker's half of the same
+// wiring: that the candidate a key press lands on is the candidate the engine
+// is told about, and that a person who declines to pick leaves the
+// placeholder a question rather than answering it badly.
+func TestWhatAPersonPicksIsWhatTheRunResolves(t *testing.T) {
+	candidates := []core.Candidate{
+		{What: core.ItemTrackerProject, ID: "PVT_1", Name: "Delivery"},
+		{What: core.ItemTrackerProject, ID: "PVT_2", Name: "Platform"},
+	}
+	for _, tc := range []struct {
+		name   string
+		typed  string
+		wantID string
+	}{
+		{name: "enter takes the one under the cursor", typed: "\r", wantID: "PVT_1"},
+		{name: "a filter moves the cursor first", typed: "/plat\r\r", wantID: "PVT_2"},
+		{name: "quitting picks nothing", typed: "q"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CI", "")
+			t.Setenv("TERM", "")
+			var out bytes.Buffer
+			stdin := io.Reader(strings.NewReader(tc.typed))
+			stdout := io.Writer(&out)
+			terminals(t, stdin, stdout)
+			app := &Context{Ctx: context.Background(), CLI: &CLI{}, Stdin: stdin, Stdout: stdout}
+
+			choose := app.chooser(&session{})
+			if choose == nil {
+				t.Fatal("a person at a terminal was offered no picker")
+			}
+			picked, err := choose(context.Background(), engine.Placeholder{Path: core.ItemTrackerProject}, candidates)
+			if tc.wantID == "" {
+				if err == nil {
+					t.Fatalf("picking nothing resolved %q", picked.ID)
+				}
+				if !errors.Is(err, core.ErrNeedsInput) {
+					t.Errorf("picking nothing failed with %v, want a request for input", err)
+				}
+				var user *core.UserError
+				if errors.As(err, &user) && !strings.Contains(user.Fix, "--set "+core.ItemTrackerProject) {
+					t.Errorf("the way out is %q, which does not say how to answer by hand", user.Fix)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ask which to use: %v", err)
+			}
+			if picked.ID != tc.wantID {
+				t.Errorf("picked %q, want %q", picked.ID, tc.wantID)
+			}
+		})
+	}
+}
+
+// TestWithNoTerminalThereIsNobodyToAsk states that flow does not offer a
+// picker it cannot draw. The engine reads a nil chooser as a rung of the
+// ladder it cannot stand on and falls through to naming the candidates in the
+// report, which is the whole of the plain equivalent (spec 12 §2).
+func TestWithNoTerminalThereIsNobodyToAsk(t *testing.T) {
+	t.Setenv("CI", "")
+	t.Setenv("TERM", "")
+	stdin, stdout := io.Reader(strings.NewReader("")), io.Writer(&bytes.Buffer{})
+	terminals(t)
+	app := &Context{Ctx: context.Background(), CLI: &CLI{}, Stdin: stdin, Stdout: stdout}
+
+	if app.chooser(&session{}) != nil {
+		t.Error("flow offered to draw a picker on something that is not a terminal")
 	}
 }
