@@ -23,6 +23,8 @@ type Forge interface {
 	// summary and the issues the forge says it closes.
 	PullRequest(ctx context.Context, number int) (PullRequest, error)
 	// PullRequests returns the pull requests matching a query, newest first.
+	// A listing is a summary: reviews and closing issues are separate reads
+	// (spec 10 §2), so a caller that needs either asks PullRequest for it.
 	PullRequests(ctx context.Context, q PRQuery) ([]PullRequest, error)
 	// Commits returns commits on a branch, newest first.
 	Commits(ctx context.Context, q CommitQuery) ([]Commit, error)

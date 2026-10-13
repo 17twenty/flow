@@ -365,6 +365,30 @@ func (g *Gate) move(ctx context.Context, in GateInput, snapshot PolicySnapshot) 
 	return nil
 }
 
+// detailed re-reads each pull request for what a listing leaves out.
+//
+// Spec 10 §2 lists three reads where flow wants one: the window, from the
+// forge's list endpoint; the reviews, from the pull request's own; and the
+// linked tickets, from a query per number. No forge puts reviews or linkage
+// in a list, so anything judging a merge — did it name a ticket, did a person
+// approve it — has to ask for the pull request itself. A caller that forgets
+// does not get an error: it gets a pull request with no reviews and no links,
+// which reads exactly like one nobody reviewed and nobody linked.
+//
+// One read per pull request is the price of the answer being true, and the
+// count is bounded by the window rather than by the repository's history.
+func detailed(ctx context.Context, forge core.Forge, prs []core.PullRequest) ([]core.PullRequest, error) {
+	out := make([]core.PullRequest, 0, len(prs))
+	for _, pr := range prs {
+		full, err := forge.PullRequest(ctx, pr.Number)
+		if err != nil {
+			return nil, core.Explain(err, "read pull request #%d", pr.Number)
+		}
+		out = append(out, full)
+	}
+	return out, nil
+}
+
 // linkedPRs is every pull request that might have a say about one of these
 // tickets: the open ones, and the one under judgement.
 //
@@ -378,6 +402,10 @@ func (g *Gate) linkedPRs(ctx context.Context, in GateInput, snapshot PolicySnaps
 	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
 	if err != nil {
 		return nil, core.Explain(err, "read the open pull requests")
+	}
+	open, err = detailed(ctx, in.Adapters.Forge, open)
+	if err != nil {
+		return nil, err
 	}
 	required := g.requiredApprovals(ctx, in, snapshot.PR.BaseRef)
 	linked := []LinkedPR{{PR: snapshot.PR, RequiredApprovals: required}}

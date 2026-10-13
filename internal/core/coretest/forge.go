@@ -163,13 +163,25 @@ func (f *FakeForge) PullRequests(ctx context.Context, q core.PRQuery) ([]core.Pu
 		if !q.UpdatedSince.IsZero() && pr.UpdatedAt.Before(q.UpdatedSince) {
 			continue
 		}
-		out = append(out, pr)
+		out = append(out, summarised(pr))
 	}
 	slices.SortStableFunc(out, func(a, b core.PullRequest) int { return b.UpdatedAt.Compare(a.UpdatedAt) })
 	if q.Limit > 0 && len(out) > q.Limit {
 		out = out[:q.Limit]
 	}
 	return out, nil
+}
+
+// summarised is one pull request as a listing describes it. Reviews and
+// closing issues are separate reads on every forge flow speaks to (spec 10
+// §2), so a fake that handed them out with the list would let a caller read
+// what no adapter would ever have given it — which is exactly how the live
+// audit came to judge approvals it had never fetched.
+func summarised(pr core.PullRequest) core.PullRequest {
+	pr.Reviews = nil
+	pr.ClosingIssues = nil
+	pr.Files.Paths = nil
+	return pr
 }
 
 // Commits returns commits on a branch, newest first.

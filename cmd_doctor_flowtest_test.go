@@ -877,9 +877,16 @@ func proposals(t *testing.T, world *fakeWorld) []core.PullRequest {
 	}
 	var mine []core.PullRequest
 	for _, pr := range open {
-		if pr.HeadRef == (core.FileProposal{ID: "lock"}).Branch() {
-			mine = append(mine, pr)
+		if pr.HeadRef != (core.FileProposal{ID: "lock"}).Branch() {
+			continue
 		}
+		// A listing does not carry the files, so ask for the pull request
+		// itself — which is what anything judging one has to do.
+		full, err := world.forge.PullRequest(t.Context(), pr.Number)
+		if err != nil {
+			t.Fatalf("read pull request #%d: %v", pr.Number, err)
+		}
+		mine = append(mine, full)
 	}
 	return mine
 }

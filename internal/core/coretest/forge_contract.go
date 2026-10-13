@@ -37,6 +37,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "the tickets a pull request closes", Run: forgeClosingIssues},
 		{Name: "a pull request that is not there", Run: forgeMissingPullRequest},
 		{Name: "pull requests in a window, newest first", Run: forgePullRequestWindow},
+		{Name: "a listing is a summary and says so", Run: forgePullRequestListIsSummary},
 		{Name: "commits on the trunk, newest first", Run: forgeCommits},
 		{Name: "ancestry proves a merge reached an environment", Run: forgeCompare},
 		{Name: "files on the trunk", Run: forgeFile},
@@ -203,6 +204,50 @@ func forgePullRequestWindow(t *testing.T, newForge NewForge) {
 	}
 	if len(one) != 1 {
 		t.Errorf("a limit of 1 returned %d pull requests", len(one))
+	}
+}
+
+// forgePullRequestListIsSummary: a listing carries what a list endpoint
+// carries, and no more.
+//
+// Spec 10 §2 reads a window from the forge's list endpoint and a pull
+// request's reviews and linked tickets from two further reads, one per number.
+// No forge puts them in a list. An adapter that quietly filled them in would
+// be hiding a per-pull-request cost from its caller; a fake that filled them
+// in would let a caller read what no adapter would ever have given it, which
+// is how flow's live audit came to judge approvals and ticket links it had
+// never fetched. So the listing is empty on both, deliberately, and a caller
+// that needs either asks for the pull request itself.
+func forgePullRequestListIsSummary(t *testing.T, newForge NewForge) {
+	forge := newForge(t, ContractForge())
+	prs, err := forge.PullRequests(t.Context(), core.PRQuery{State: core.PRStateMerged})
+	if err != nil {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	var found bool
+	for _, pr := range prs {
+		if pr.Number != 2 {
+			continue
+		}
+		found = true
+		if len(pr.Reviews) != 0 {
+			t.Errorf("the listing carries %d reviews for #2; a list endpoint has none", len(pr.Reviews))
+		}
+		if len(pr.ClosingIssues) != 0 {
+			t.Errorf("the listing carries %v as #2's closing issues; the linkage is its own read", pr.ClosingIssues)
+		}
+	}
+	if !found {
+		t.Fatalf("the merged listing does not hold #2, which is the one with reviews and links")
+	}
+
+	full, err := forge.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if len(full.Reviews) == 0 || len(full.ClosingIssues) == 0 {
+		t.Errorf("reading #2 on its own gave %d reviews and %v closing issues; both are what the listing left out",
+			len(full.Reviews), full.ClosingIssues)
 	}
 }
 

@@ -275,11 +275,14 @@ type PullRequest struct {
 	MergeSHA string
 	// Labels are the labels on the pull request.
 	Labels []string
-	// Reviews are the reviews submitted on it, oldest first.
+	// Reviews are the reviews submitted on it, oldest first. A listing does
+	// not carry them: spec 10 §2 reads reviews from the pull request's own
+	// endpoint, so only [Forge.PullRequest] fills this in.
 	Reviews []Review
 	// ClosingIssues are the tickets the forge itself says this closes — for
 	// GitHub, closingIssuesReferences. Trackers that have no such link leave
-	// it empty and fall back to their own convention (spec 04 §3).
+	// it empty and fall back to their own convention (spec 04 §3). Like
+	// Reviews, it is a separate read and a listing leaves it empty.
 	ClosingIssues []string
 	// Files summarises what it changes.
 	Files FileSummary
