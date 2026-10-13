@@ -315,8 +315,17 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 - [ ] 8.1 All acceptance scenarios present and passing — specs: 19 — deps: 5.8, 6.4, 7.6 (#86)
   - AC: one test per scenario id; gaps recorded under Spec issues, never skipped
-- [ ] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
+- [x] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
   - AC: README states current doctor streak from the health issue
+  - note: the section links the board, the pinned health issue, the agent's own
+    pull requests and the workflow that gates them, and reads spec 17 §7's
+    expectations against what the audit says today. The streak is stated with
+    the date it was read and a sentence saying the issue is the record — a
+    number in a README is a claim and the issue is the thing that is true. Two
+    tests keep it: one reads every forge link in the section against
+    `.flow.yaml` and the board number in `.flow.lock`, so pointing flow at
+    another repository breaks the demo that claims to be of it, and one
+    requires the streak and its date to still be there.
 
 - [ ] H.2 HUMAN: confirm 14 consecutive green daily doctor runs → tag v1.0.0
 

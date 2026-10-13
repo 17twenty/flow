@@ -319,6 +319,21 @@ Each iteration, as the agent identity:
   had a forge and no tracker and could not have judged `ticket.ready` at all.
   It is the bot's own PAT, the same one credential the loop uses everywhere
   else; a gate that reads the board needs the board's token wherever it runs.
+- **§7 the README states the streak and the health issue holds it (item
+  8.2).** A number in a README is a claim somebody has to remember to update,
+  and the one thing this repository is for is not needing to be remembered. So
+  the demo section states the streak *with the date it was read* and says in
+  the same breath that the issue is the record — a dated claim is honestly
+  stale, where an undated one is just wrong. Nothing generates the line:
+  flow writes tickets and statuses, not the README of the repository it is
+  configured for, and a `doctor` that edited the working tree would be a
+  different and much larger promise.
+
+  What is checked mechanically is the part that can rot without anybody
+  noticing: every forge link in the section is read against `.flow.yaml` and
+  the board number resolved in `.flow.lock`, so a flow pointed at another
+  repository or another board fails the test that says the demo is of this
+  one. The streak line itself is required to exist and to carry a date.
 
 - **The required context is `test`, not `ci / test`** (item 7.0). A GitHub
   ruleset matches a check by the name the check run goes by, which for GitHub
