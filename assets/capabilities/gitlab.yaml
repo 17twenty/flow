@@ -11,6 +11,7 @@ capabilities:
   branch_protection:      { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
   required_status_checks: { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "Ultimate: external status check; else pipelines must succeed." }
   merge_settings:         { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
+  squash_text:            { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "squash_commit_template on the project." }
   file_proposal:          { set: true,  verify: true, requires: [developer], remediation: follow_up }
   pr_comments:            { set: true,  verify: true, requires: [developer], remediation: follow_up }
   deployments_read:       { set: false, verify: true, remediation: none }

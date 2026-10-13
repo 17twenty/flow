@@ -27,6 +27,9 @@ const (
 	ItemForgeRequiredStatus = "forge.required_status"
 	// ItemForgeMergeSettings is how a pull request is allowed to land.
 	ItemForgeMergeSettings = "forge.merge_settings"
+	// ItemForgeSquashText is where a squash commit's header and body come
+	// from.
+	ItemForgeSquashText = "forge.squash_text"
 	// ItemForgeFiles is the files flow proposes to the repository.
 	ItemForgeFiles = "forge.files"
 	// ItemDeploysRecords is the deployment history flow reads.

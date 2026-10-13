@@ -13,7 +13,8 @@
 | `forge.default_branch` | (resolve) | — |
 | `forge.protection` | branch_protection | forge.default_branch |
 | `forge.required_status` | required_status_checks | forge.protection |
-| `forge.merge_settings` | merge_settings (squash only, title = PR title) | — |
+| `forge.merge_settings` | merge_settings (the one strategy the team configured) | — |
+| `forge.squash_text` | squash_text (header = PR title, body = PR body) | forge.merge_settings |
 | `forge.files` | file_proposal (CI workflow, PR template, issue form) | — |
 | `deploys.records` | deploy_records (verify only) | forge.default_branch |
 
@@ -280,3 +281,10 @@ each successful mutation (atomic) and at the end. Summary.
   compensated item. The two now read the same list: `noop` and `compensated`
   owe nothing in either command, and `native` owes nothing once it has been
   applied.
+- **§1 two items may share one write (item 7.3).** `forge.squash_text` is a
+  separate desired item from `forge.merge_settings` because it is a separate
+  capability, but a forge has one merge setting and writing half of it turns
+  the other half off. Apply therefore reads both desired items and makes one
+  call, exactly as `forge.protection` and `forge.required_status` already do,
+  and the squash text depends on the strategies so that the order a person
+  reads the plan in is the order the call is made in.

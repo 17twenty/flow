@@ -11,6 +11,7 @@ capabilities:
   branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Prefer rulesets; read effective rules." }
   required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Additive." }
   merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
+  squash_text:            { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "squash_merge_commit_title/message." }
   file_proposal:          { set: true,  verify: true, requires: [contents_write, pulls_write], remediation: follow_up }
   pr_comments:            { set: true,  verify: true, requires: [pulls_write], remediation: follow_up }
   deployments_read:       { set: false, verify: true, remediation: none }

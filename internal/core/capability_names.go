@@ -43,6 +43,11 @@ const (
 	CapRequiredStatusChecks = "required_status_checks"
 	// CapMergeSettings is the repository's allowed merge strategies.
 	CapMergeSettings = "merge_settings"
+	// CapSquashText is where a squash commit takes its header and body
+	// from. It is separate from the strategies because a forge can offer
+	// one without the other: Gitea allows a repository to choose its merge
+	// styles through the API and composes the squash commit itself.
+	CapSquashText = "squash_text"
 	// CapFileProposal is proposing a file change as a pull request.
 	CapFileProposal = "file_proposal"
 	// CapPRComments is flow's own marked comments on a pull request.
@@ -100,6 +105,7 @@ var forgeCapabilities = []string{
 	CapBranchProtection,
 	CapRequiredStatusChecks,
 	CapMergeSettings,
+	CapSquashText,
 	CapFileProposal,
 	CapPRComments,
 	CapDeploymentsRead,

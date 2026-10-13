@@ -167,3 +167,13 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   volunteered. The fake now reads the item selection out of the document it
   was sent and drops what is not named, which is what GraphQL does and what
   makes a missing field a test failure rather than a live one.
+- **A contract case reads the adapter's declaration and asserts honest
+  silence, rather than skipping (item 7.3).** A behaviour no provider offers
+  is still a contract: the adapter must not invent it. So where a capability
+  is declared absent, the case asserts the absence — a forge that cannot read
+  the link between a pull request and a ticket must report no closing issues,
+  so the tracker fallback runs instead of being silenced by a guess, and a
+  forge that cannot be told where a squash takes its words must report the
+  same answer after being asked as before. A skipped case would let either
+  adapter quietly answer from a pattern of its own, which is the one thing
+  the suite exists to catch.
