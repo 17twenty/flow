@@ -194,6 +194,7 @@ func protectionObservation(p core.Protection) core.Observation {
 				FieldAllowForcePush:       strconv.FormatBool(p.AllowForcePush),
 				FieldAllowDeletions:       strconv.FormatBool(p.AllowDeletions),
 				FieldRequireLinearHistory: strconv.FormatBool(p.RequireLinearHistory),
+				FieldStrictChecks:         strconv.FormatBool(p.StrictChecks),
 			},
 		}},
 		Notes: dormantNotes(p),
@@ -334,6 +335,7 @@ func ProtectionFor(branch string, protection core.Item, checks []core.Item) core
 		RequireLinearHistory: protection.Field(FieldRequireLinearHistory) == "true",
 		AllowForcePush:       protection.Field(FieldAllowForcePush) == "true",
 		AllowDeletions:       protection.Field(FieldAllowDeletions) == "true",
+		StrictChecks:         protection.Field(FieldStrictChecks) == "true",
 	}
 	for _, check := range checks {
 		wanted.RequiredChecks = append(wanted.RequiredChecks, check.Name)

@@ -47,7 +47,7 @@ deploys  forge_deployments
 
 ✓ native  forge.protection (branch_protection)
     flow can set it through the provider's API
-    update "protection" allow_deletions="false" allow_force_push="false" enabled="true" require_linear_history="true"
+    update "protection" allow_deletions="false" allow_force_push="false" enabled="true" require_linear_history="true" strict_checks="true"
 
 ✓ native  forge.required_status (required_status_checks)
     flow can set it through the provider's API

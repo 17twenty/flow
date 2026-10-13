@@ -333,3 +333,38 @@ duplicate-pipeline hazards). MR closing issues: `GET
   two calls to learn one thing could also be answered differently each time,
   leaving a run told yes and then no about the repository it is half way
   through.
+
+- **§2 flow wants the trunk up to date wherever it requires a check (issue
+  #116).** `core.Protection.StrictChecks` was read from both GitHub protection
+  endpoints, written to both, and merged across rulesets — and the engine
+  never asked for it, so `flow apply` never switched it on and `flow doctor`
+  could not see it off. It is in `forgeProtection`'s fields now, set when
+  `policy.status_context` is — the same condition that makes
+  `forge.required_status` a desired item at all.
+
+  The reasoning is about what a status means. A status is about the commit it
+  was posted on, so a check that passed on a branch which has since fallen
+  behind was passed on a tree that is not the one landing. Two pull requests
+  each green against the trunk they left can be red together, which is how
+  this repository's own `main` broke (issue #114). Requiring the branch to be
+  current is what makes the commit the gate judged the commit that lands, and
+  flow claims the gate proves something about the trunk.
+
+  Strictness hangs off the protection item rather than off the required
+  checks, because it is a property of the branch — `core.Protection`'s own
+  member, next to `allow_force_push` and `require_linear_history` — and
+  because the two desired items are one setting at the forge anyway (the
+  applier writes them together). Where flow requires no check of its own it
+  asks for `false` rather than leaving the field out: an absent field and a
+  field that says no are the same value to the comparer, and the one flow
+  means is "I am not asking for this", which is what `false` says to a person
+  reading the plan.
+
+  Two consequences worth stating. The observation gains a field, so the
+  protection hash in an existing `.flow.lock` moves and the first run after
+  the upgrade reports drift on `forge.protection` — that is the finding and
+  not a bug, and `flow apply` is the remedy. And §3 and §4 inherit the
+  obligation: Gitea's `status_check_contexts` and GitLab's "pipelines must
+  succeed" each need the nearest thing their forge has to currency, or they
+  must observe `StrictChecks` as false and let flow report it as unsupported
+  rather than quietly true.
