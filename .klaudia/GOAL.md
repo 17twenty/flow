@@ -74,7 +74,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
-- [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
+- [ ] Phase 9 — TUI (plan Phase 6): picker and apply confirmation done; init wizard and doctor watch to go
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
@@ -659,6 +659,40 @@ have landed. It bought
 squash-merged green — its own header is exactly 72 characters, counted by the
 rule it added.
 
+**The picker (item 6.2, this run).** The second of the four screens spec 12
+allows. The decision was already in the engine and stays there: `Placeholders`
+walks the ladder of spec 03 §1.1, reaches the rung where a provider offered
+more than one answer, and calls an `engine.Chooser`. This item is only what a
+terminal makes of that call — `ui.Picker`, a `tea.Model` over `bubbles/list`.
+
+Three things decided the shape. Browsing, filtering and paging a list is a
+solved problem and bubbles is on the dependency list precisely so that flow
+does not solve it again, so the mechanism is the library's and what belongs
+here is which candidate a key press means, what the rows are painted in, and
+what the key line says. A key belongs to the filter before it belongs to the
+screen — return applies a filter and escape abandons one — so the rule is
+inherited by asking the list what state it is in rather than restated, which
+is also what keeps the key line from naming keys that would do nothing. And a
+person who declines to pick has not answered: escape reports
+`core.ErrNeedsInput` naming the `--set` that would settle it, and the zero
+screen has picked nothing, so an interrupt, a terminal closing and a model
+that came back as something else all land on the safe reading without anybody
+enumerating them.
+
+The root offers a chooser only when it would draw a screen at all. A nil one
+is a rung the engine already steps over, and what it falls through to — the
+candidates named in the report with the `--set` that records an answer — is
+exactly the plain equivalent spec 12 asks every screen for, so there was
+nothing to write for the half of the world that has no terminal.
+
+Eighteen mutants, five survivors on the first pass and four of them real: a
+row that lied about its height (which fills a page with twice the candidates
+it can show and overflows the terminal), the ellipsis being underlined as if
+the filter had matched it, the key line offering keys the list had switched
+off, and the filter input left in the library's colours on a screen asked for
+none. Each bought a test. The fifth is equivalent — the zero value of a type
+parameter is the zero value either way.
+
 **Where the exit code stands.** `./bin/flow doctor` against this repository
 exits 2 on six checks, and none of them is a defect in flow:
 
@@ -677,15 +711,26 @@ of it waiting on a decision rather than on the calendar, and the earliest the
 streak can *start* is the morning the last direct-mode ticket leaves the
 window.
 
-**Single best next step:** settle
-[#102](https://github.com/17twenty/flow/issues/102) — an archived repository
-is read and then written to anyway. Spec 10's Decision for issue #103 already
-says where it belongs (the engine, once, rather than item by item in each
-adapter) and `core.Repository.Archived` is already filled in by the GitHub
-adapter with nothing reading it, so this is a bounded change with its reading
-already done. Then [#100](https://github.com/17twenty/flow/issues/100)
-(`pr_closed_unmerged` cannot be configured to mean what it means), then Phase
-6, the TUI (#74–#77).
+**Single best next step:** the rest of Phase 6, the TUI. Two screens are left
+of the four spec 12 allows: 6.1 the init wizard
+([#74](https://github.com/17twenty/flow/issues/74)), whose acceptance
+criterion is that its plain equivalent produces an identical `.flow.yaml`, and
+6.3 doctor's inline spinners and `--watch`
+([#76](https://github.com/17twenty/flow/issues/76)). `--watch` is the last
+`ErrUnsupported` in the shipped surface, so finishing it is also what makes
+spec 02's command surface whole. After that, Phase 7's adapters (#79–#82) and
+Phase 8's proof (#86, #87).
+
+The two issues this section named last run are both settled:
+[#102](https://github.com/17twenty/flow/issues/102), an archived repository
+read and then written to anyway, landed as
+[#109](https://github.com/17twenty/flow/pull/109), and
+[#100](https://github.com/17twenty/flow/issues/100) with it.
+
+Two pull requests are open and waiting on review, neither depending on the
+other: [#117](https://github.com/17twenty/flow/pull/117), which makes flow ask
+for a branch that is up to date with the trunk before it may merge, and the
+picker above.
 
 In parallel, and only `@17twenty` can do it: run the four `flow attest`
 commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows
