@@ -682,6 +682,17 @@ func fixOf(t *testing.T, err error) string {
 	return user.Fix
 }
 
+// whyOf is the explanation a refusal carries, which a [core.UserError] keeps
+// apart from both the message and the next action.
+func whyOf(t *testing.T, err error) string {
+	t.Helper()
+	var user *core.UserError
+	if !errors.As(err, &user) {
+		t.Fatalf("%v is not a core.UserError, so it explains nothing", err)
+	}
+	return user.Why
+}
+
 // ptr is the address of a value, for the fields a test sets to "this, and not
 // nothing".
 func ptr[T any](v T) *T { return &v }
@@ -765,6 +776,49 @@ func TestGitHubProjectsRefusesSomethingThatIsNotAKey(t *testing.T) {
 	}
 }
 
+// The fake answers a document with the fields that document asked for, because
+// a server volunteering one lets the adapter read a field it never selected —
+// which is exactly how `isArchived` could have been missing from both shipped
+// queries with every test still green. Both queries go through the same reader,
+// so one that drifts out of the shape it can parse fails here rather than
+// passing everywhere.
+func TestTheProjectsFakeAnswersOnlyWhatTheQueryAsked(t *testing.T) {
+	fake, _ := newGitHubProjectsServer(t, coretest.ContractTracker())
+	asked := []string{"id", "isArchived", "updatedAt", "fieldValueByName"}
+
+	for _, document := range []string{ghItemsQuery(OwnerUser), ghIssueItemQuery} {
+		doc := fake.itemJSON(document, fake.items[0])
+		for _, field := range asked {
+			if _, ok := doc[field]; !ok {
+				t.Errorf("the fake left %s out of its answer to a query that selected it", field)
+			}
+		}
+	}
+
+	unasked := fake.itemJSON(strings.Replace(ghItemsQuery(OwnerUser), " isArchived", "", 1), fake.items[0])
+	if _, ok := unasked["isArchived"]; ok {
+		t.Error("the fake volunteered isArchived to a query that did not select it, so no test could tell whether flow asks for it")
+	}
+}
+
+// A write that changed nothing is not a write that worked. An item archived
+// between the read and the write is answered with no errors and no item, and
+// flow would otherwise report a move the board never made.
+func TestGitHubProjectsRefusesAMoveTheProjectPerformedNothingFor(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.nullOnMoves = true
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	err := adapter.Move(t.Context(), "#10", coretest.ColumnDone)
+
+	if !errors.Is(err, core.ErrConflict) {
+		t.Fatalf("a move the project performed nothing for = %v, want ErrConflict", err)
+	}
+	if why := whyOf(t, err); !strings.Contains(why, "nothing was written") {
+		t.Errorf("the reason is %q, want it to say the board did not change", why)
+	}
+}
+
 // Without a repository of its own, flow cannot say which repository "#7" is
 // in, and says so rather than guessing.
 func TestGitHubProjectsCannotReadABareKeyWithNoRepository(t *testing.T) {
@@ -783,7 +837,7 @@ func TestGitHubProjectsCannotReadABareKeyWithNoRepository(t *testing.T) {
 // tickets: there is no key to refer to them by and nothing a check can read.
 func TestGitHubProjectsSkipsAnItemThatIsNotAnIssue(t *testing.T) {
 	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
-	want := len(fake.items)
+	want := fake.count()
 	fake.items = append(fake.items, &ghFakeItem{id: "PVTI_draft", draft: true, updatedAt: coretest.ContractNow})
 	adapter := newGitHubProjectsAdapter(t, srv, nil)
 

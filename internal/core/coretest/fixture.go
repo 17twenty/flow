@@ -147,9 +147,9 @@ const (
 )
 
 // ContractTracker is the world every tracker contract runs against: a board
-// with the lean columns, five tickets spread across them — one of them closed,
-// one of them already carrying a follow-up marker — and two projects to
-// discover between.
+// with the lean columns, six tickets spread across them — one of them closed,
+// one of them already carrying a follow-up marker, one of them archived — and
+// two projects to discover between.
 func ContractTracker() TrackerFixture {
 	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
 	return TrackerFixture{
@@ -242,6 +242,19 @@ func ContractTracker() TrackerFixture {
 				Size:      4 * time.Hour,
 				UpdatedAt: ContractNow.Add(-2 * 24 * time.Hour),
 			},
+			{
+				// Archived: still an item, still in a column, and off
+				// the board. A listing leaves it out and a lookup by
+				// key finds it, which is the one place two readings of
+				// the same tracker are meant to disagree.
+				Key: "#15", ID: "I_15", URL: "https://tracker.test/issues/15",
+				Title:     "Replace the icons again",
+				Body:      "## Acceptance criteria\n\n- the icons are replaced\n",
+				Status:    core.Status{ID: string(ColumnInReview), Name: "In review"},
+				ColumnID:  ColumnInReview,
+				Archived:  true,
+				UpdatedAt: ContractNow.Add(-30 * 24 * time.Hour),
+			},
 		},
 		Clock: NewClock(ContractNow),
 	}
@@ -251,6 +264,22 @@ func ContractTracker() TrackerFixture {
 // already carries, so that a suite can prove filing it again finds it.
 func ContractFollowUpMarker() core.Marker {
 	return core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
+}
+
+// ContractArchivedKey is the contract tracker's archived item: an issue the
+// project still holds and the board no longer shows.
+const ContractArchivedKey = "#15"
+
+// onTheBoard is what a listing of the contract tracker reports, which is every
+// ticket the fixture holds except the archived one.
+func onTheBoard() []core.Ticket {
+	var out []core.Ticket
+	for _, ticket := range ContractTracker().Tickets {
+		if !ticket.Archived {
+			out = append(out, ticket)
+		}
+	}
+	return out
 }
 
 // ContractDeploys is the world every deployment contract runs against: three

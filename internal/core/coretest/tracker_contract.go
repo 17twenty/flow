@@ -40,6 +40,7 @@ func TrackerContractCases() []TrackerContractCase {
 		{Name: "a thing is updated and then deleted", Run: trackerApplyUpdateDelete},
 		{Name: "tickets by key, by column, and all of them", Run: trackerTickets},
 		{Name: "a ticket that is not there", Run: trackerMissingTicket},
+		{Name: "an archived item is off the board and takes no change", Run: trackerArchived},
 		{Name: "a move is idempotent", Run: trackerMove},
 		{Name: "a move names a column the way the configuration does", Run: trackerMoveByName},
 		{Name: "a follow-up is filed once and found by its marker", Run: trackerFollowUp},
@@ -327,13 +328,14 @@ func trackerTickets(t *testing.T, newTracker NewTracker) {
 		}
 	}
 
-	// Every ticket, which for a real adapter means every page of them.
+	// Every ticket, which for a real adapter means every page of them —
+	// except the archived one, which is not on the board at all.
 	all, err := tracker.Tickets(t.Context(), core.TicketQuery{})
 	if err != nil {
 		t.Fatalf("Tickets: %v", err)
 	}
-	if len(all) != len(ContractTracker().Tickets) {
-		t.Errorf("got %d tickets, want all %d: a page was dropped", len(all), len(ContractTracker().Tickets))
+	if want := len(onTheBoard()); len(all) != want {
+		t.Errorf("got %d tickets, want all %d: a page was dropped", len(all), want)
 	}
 
 	window, err := tracker.Tickets(t.Context(), core.TicketQuery{UpdatedSince: ContractNow.Add(-24*time.Hour - time.Minute)})
@@ -357,6 +359,73 @@ func trackerMissingTicket(t *testing.T, newTracker NewTracker) {
 	if err := tracker.Move(t.Context(), "#4040", ColumnDone); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("Move(#4040) = %v, want it to wrap ErrNotFound", err)
 	}
+}
+
+// trackerArchived: an archived item is off the board, still reachable by key,
+// and refuses every change.
+//
+// Archiving is how a board stops showing work without closing it or throwing
+// it away, and the two readings of the same item are meant to disagree: the
+// listing is the board, so it leaves the item out, while the issue still has
+// the item behind it and reports the column it was archived in. A move is
+// refused rather than quietly dropped, because a tracker that accepted one
+// would have flow report a move the board never made (spec 11 §5).
+func trackerArchived(t *testing.T, newTracker NewTracker) {
+	tracker := newTracker(t, ContractTracker())
+	archived, err := tracker.Ticket(t.Context(), ContractArchivedKey)
+	if err != nil {
+		t.Fatalf("Ticket(%s): %v", ContractArchivedKey, err)
+	}
+	if !archived.Archived {
+		t.Errorf("Ticket(%s).Archived is false, so nothing downstream can tell it is off the board", ContractArchivedKey)
+	}
+	if archived.ColumnID != ColumnInReview {
+		t.Errorf("Ticket(%s).ColumnID = %q, want %q: archiving does not take an item out of its column",
+			ContractArchivedKey, archived.ColumnID, ColumnInReview)
+	}
+
+	byKey, err := tracker.Tickets(t.Context(), core.TicketQuery{Keys: []string{ContractArchivedKey}})
+	if err != nil {
+		t.Fatalf("Tickets by key: %v", err)
+	}
+	if len(byKey) != 1 {
+		t.Errorf("asking for %s by key returned %d tickets, want the archived one: a key is a question about an issue, not about the board",
+			ContractArchivedKey, len(byKey))
+	}
+
+	for _, q := range []core.TicketQuery{{}, {Column: ColumnInReview}} {
+		listing, err := tracker.Tickets(t.Context(), q)
+		if err != nil {
+			t.Fatalf("Tickets(%+v): %v", q, err)
+		}
+		for _, ticket := range listing {
+			if sameKey(ticket.Key, ContractArchivedKey) {
+				t.Errorf("Tickets(%+v) reported %s, which is archived and not on the board", q, ticket.Key)
+			}
+		}
+	}
+
+	err = tracker.Move(t.Context(), ContractArchivedKey, ColumnDone)
+	if !errors.Is(err, core.ErrConflict) {
+		t.Errorf("Move of an archived item = %v, want it to wrap ErrConflict: the item takes no change", err)
+	}
+	var user *core.UserError
+	if errors.As(err, &user) && !strings.Contains(user.Why, "archiv") {
+		t.Errorf("the refusal explains itself as %q, want it to name the archiving: a person reading it has one thing to undo", user.Why)
+	}
+	after, err := tracker.Ticket(t.Context(), ContractArchivedKey)
+	if err != nil {
+		t.Fatalf("Ticket after a refused Move: %v", err)
+	}
+	if after.ColumnID != ColumnInReview {
+		t.Errorf("the archived item is now in %q: a refused move wrote to the board anyway", after.ColumnID)
+	}
+}
+
+// sameKey compares two ticket keys the way people write them, which is
+// sometimes with the # and sometimes without.
+func sameKey(a, b string) bool {
+	return strings.EqualFold(strings.TrimPrefix(a, "#"), strings.TrimPrefix(b, "#"))
 }
 
 // trackerMove: a move lands the ticket in the column with a name a human would

@@ -388,13 +388,24 @@ const (
 const ghStatusValue = `fieldValueByName(name:"` + ghStatusFieldName + `"){` +
 	`...on ProjectV2ItemFieldSingleSelectValue{optionId name}}`
 
+// ghItemSelection is what both queries that read a board item ask of it. It is
+// one string for the same reason [ghIssueFields] is: the two must build the
+// same item, and a field present in one and missing from the other would make
+// an item mean two things depending on how it was asked for.
+//
+// `isArchived` is the field that makes the point. `ProjectV2.items` leaves
+// archived items out of the listing and `Issue.projectItems` returns them, so
+// without asking, the same item is on the board or off it depending on which
+// question flow happened to put.
+const ghItemSelection = "id isArchived updatedAt " + ghStatusValue
+
 // ghItemsQuery reads one page of the board's items, each with the issue behind
 // it and the column it sits in.
 func ghItemsQuery(ownerType string) string {
 	return "query($login:String!,$number:Int!,$first:Int!,$after:String){" +
 		ghOwnerField(ownerType) + "(login:$login){projectV2(number:$number){" +
 		"items(first:$first,after:$after){" +
-		"nodes{id updatedAt " + ghStatusValue + " content{...on Issue{" + ghIssueFields + "}}}" +
+		"nodes{" + ghItemSelection + " content{...on Issue{" + ghIssueFields + "}}}" +
 		"pageInfo{hasNextPage endCursor}}}}}"
 }
 
@@ -404,7 +415,7 @@ func ghItemsQuery(ownerType string) string {
 const ghIssueItemQuery = "query($owner:String!,$name:String!,$number:Int!){" +
 	"repository(owner:$owner,name:$name){issue(number:$number){" + ghIssueFields +
 	" projectItems(first:" + ghIssueItemPage + "){" +
-	"nodes{id updatedAt " + ghStatusValue + " project{number}}}}}}"
+	"nodes{" + ghItemSelection + " project{number}}}}}}"
 
 // ghMoveMutation sets one item's Status to one option.
 const ghMoveMutation = "mutation($project:ID!,$item:ID!,$field:ID!,$option:String!){" +
@@ -412,11 +423,13 @@ const ghMoveMutation = "mutation($project:ID!,$item:ID!,$field:ID!,$option:Strin
 	"value:{singleSelectOptionId:$option}}){projectV2Item{id}}}"
 
 // ghItemFields is what both queries report about a board item: which item it
-// is, when it last changed, and the column it is in.
+// is, whether the board still shows it, when it last changed, and the column
+// it is in.
 type ghItemFields struct {
-	ID        string        `json:"id"`
-	UpdatedAt time.Time     `json:"updatedAt"`
-	Status    *ghItemStatus `json:"fieldValueByName"`
+	ID         string        `json:"id"`
+	IsArchived bool          `json:"isArchived"`
+	UpdatedAt  time.Time     `json:"updatedAt"`
+	Status     *ghItemStatus `json:"fieldValueByName"`
 }
 
 // optionID is the column the item sits in, empty when its Status is unset.
@@ -583,6 +596,7 @@ func ghTicket(issue ghIssue, item ghItemFields, here string) core.Ticket {
 		Title:     issue.Title,
 		Body:      issue.Body,
 		Closed:    strings.EqualFold(issue.State, ghIssueClosed),
+		Archived:  item.IsArchived,
 		ClosedAt:  issue.ClosedAt,
 		UpdatedAt: issue.UpdatedAt,
 	}
@@ -678,10 +692,12 @@ func ghParseKey(key, here string) (owner, name string, number int, err error) {
 	return repoOwner, repoName, parsed, nil
 }
 
-// ghMoveResult is the answer to [ghMoveMutation]. Nothing is read from it: the
-// mutation either happened or came back as a GraphQL error, and the item's new
-// value is what the next observation reports. It is named so that the refusal
-// is decoded against a document rather than discarded.
+// ghMoveResult is the answer to [ghMoveMutation]. The item it returns is read,
+// because "the mutation either happened or came back as a GraphQL error" is
+// not true: asked to set the Status of an archived item, GitHub answers
+// `{"updateProjectV2ItemFieldValue": null}` with no errors at all and changes
+// nothing. The id coming back is the only evidence in the response that the
+// write landed.
 type ghMoveResult struct {
 	UpdateProjectV2ItemFieldValue struct {
 		ProjectV2Item struct {

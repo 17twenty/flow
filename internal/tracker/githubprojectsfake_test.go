@@ -60,6 +60,10 @@ type ghProjectsFake struct {
 	// deafToMoves makes setting an item's value answer without doing it,
 	// which is the one thing a restore has to notice.
 	deafToMoves bool
+	// nullOnMoves makes setting an item's value answer with no item at
+	// all, which is what GitHub does for an item archived between the read
+	// and the write: accepted, no errors, nothing written.
+	nullOnMoves bool
 	// optionsMade counts the options the fake has issued ids for, so that
 	// every option it creates is a new one.
 	optionsMade int
@@ -120,10 +124,14 @@ type ghFakeItem struct {
 	// something that is not an issue at all, and offBoard an issue the
 	// repository has that the project does not hold — which is what an
 	// issue looks like between being filed and being added.
+	// archived is an item the board has put out of sight: GitHub leaves it
+	// out of ProjectV2.items, returns it from Issue.projectItems, and
+	// silently declines to write to it.
 	repo       string
 	parentRepo string
 	draft      bool
 	offBoard   bool
+	archived   bool
 }
 
 // in returns the repository an item's issue is in, which is the board's own
@@ -199,6 +207,7 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 			number:    number,
 			optionID:  string(ticket.ColumnID),
 			updatedAt: ticket.UpdatedAt,
+			archived:  ticket.Archived,
 			ticket:    ticket,
 		})
 	}
@@ -312,7 +321,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		var answer any
 		switch {
 		case strings.Contains(query.Query, "projectItems("):
-			answer = f.issueLookup(query.Variables)
+			answer = f.issueLookup(query.Query, query.Variables)
 		case strings.Contains(query.Query, "comments(first:"):
 			answer = f.commentPage(query.Variables)
 		default:
@@ -343,7 +352,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(query.Query, "items(first:"):
 		f.writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{field: map[string]any{"projectV2": f.itemPage(query.Variables)}},
+			"data": map[string]any{field: map[string]any{"projectV2": f.itemPage(query.Query, query.Variables)}},
 		})
 	case strings.Contains(query.Query, "projectsV2("):
 		f.writeJSON(w, http.StatusOK, map[string]any{
@@ -435,7 +444,7 @@ func (f *ghProjectsFake) count() int {
 	}
 	held := 0
 	for _, item := range f.items {
-		if !item.offBoard {
+		if !item.offBoard && !item.archived {
 			held++
 		}
 	}
@@ -503,7 +512,7 @@ func (f *ghProjectsFake) visited(path string) int {
 // itemPage renders one page of the board's items, each with the issue behind
 // it. It pages at the fake's own small size: an adapter that read the first
 // page and stopped would pass against a server that always answered in full.
-func (f *ghProjectsFake) itemPage(variables map[string]any) any {
+func (f *ghProjectsFake) itemPage(document string, variables map[string]any) any {
 	if number, ok := variables["number"].(float64); !ok || int(number) != 1 {
 		return nil
 	}
@@ -520,9 +529,10 @@ func (f *ghProjectsFake) itemPage(variables map[string]any) any {
 	// looks like until it is added.
 	board := make([]*ghFakeItem, 0, len(f.items))
 	for _, item := range f.items {
-		if !item.offBoard {
-			board = append(board, item)
+		if item.offBoard || item.archived {
+			continue
 		}
+		board = append(board, item)
 	}
 	rest := board[min(from, len(board)):]
 	more := len(rest) > f.pageSize
@@ -531,7 +541,7 @@ func (f *ghProjectsFake) itemPage(variables map[string]any) any {
 	}
 	nodes := make([]any, 0, len(rest))
 	for _, item := range rest {
-		doc := f.itemJSON(item)
+		doc := f.itemJSON(document, item)
 		doc["content"] = f.issueJSON(item)
 		nodes = append(nodes, doc)
 	}
@@ -547,7 +557,7 @@ func (f *ghProjectsFake) itemPage(variables map[string]any) any {
 // issueLookup answers the issue→item query: one issue of one repository, and
 // the board items holding it. A repository the fake does not serve and an
 // issue nobody filed are both null, which is how GraphQL says not found.
-func (f *ghProjectsFake) issueLookup(variables map[string]any) any {
+func (f *ghProjectsFake) issueLookup(document string, variables map[string]any) any {
 	owner, _ := variables["owner"].(string)
 	name, _ := variables["name"].(string)
 	raw, ok := variables["number"].(float64)
@@ -570,7 +580,7 @@ func (f *ghProjectsFake) issueLookup(variables map[string]any) any {
 			doc["projectItems"] = map[string]any{"nodes": []any{}}
 			return map[string]any{"issue": doc}
 		}
-		node := f.itemJSON(item)
+		node := f.itemJSON(document, item)
 		node["project"] = map[string]any{"number": 1}
 		// The issue is on another board too, so that an adapter taking
 		// the first item it is handed is caught.
@@ -713,6 +723,15 @@ func (f *ghProjectsFake) setItemValue(w http.ResponseWriter, query core.GraphQLQ
 		if item.id != itemID {
 			continue
 		}
+		if item.archived || f.nullOnMoves {
+			// Exactly what GitHub does with an archived item: the
+			// mutation is accepted, no error is reported, a null item
+			// comes back and nothing is written.
+			f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+				ghUpdateItemFieldOp: map[string]any{"projectV2Item": nil},
+			}})
+			return
+		}
 		if f.deafToMoves {
 			f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 				ghUpdateItemFieldOp: map[string]any{"projectV2Item": map[string]any{"id": item.id}},
@@ -734,11 +753,20 @@ func (f *ghProjectsFake) setItemValue(w http.ResponseWriter, query core.GraphQLQ
 // query reports and a move has to send back.
 const ghFakeStatusFieldID = "PVTSSF_status"
 
-// itemJSON renders the part of an item both queries ask for. The caller adds
-// whichever of content and project its own document named.
-func (f *ghProjectsFake) itemJSON(item *ghFakeItem) map[string]any {
+// itemJSON renders the part of an item both queries ask for, and only the part
+// they ask for. The caller adds whichever of content and project its own
+// document named.
+//
+// Honouring the selection is the whole point of rendering it from the document
+// rather than from the fake's own idea of an item: GraphQL answers with the
+// fields that were asked for, so a fake that volunteers one lets the adapter
+// read a field it never selected, and no test can tell. That is exactly how
+// `isArchived` could have been left out of both queries with every test still
+// green.
+func (f *ghProjectsFake) itemJSON(document string, item *ghFakeItem) map[string]any {
 	doc := map[string]any{
 		"id":               item.id,
+		"isArchived":       item.archived,
 		"updatedAt":        item.updatedAt.Format(time.RFC3339),
 		"fieldValueByName": nil,
 	}
@@ -748,7 +776,33 @@ func (f *ghProjectsFake) itemJSON(item *ghFakeItem) map[string]any {
 			"name":     f.optionName(item.optionID),
 		}
 	}
+	selection := ghItemSelectionOf(document)
+	for field := range doc {
+		if !strings.Contains(selection, field) {
+			delete(doc, field)
+		}
+	}
 	return doc
+}
+
+// ghItemSelectionOf is the fields a document asks of a board item: everything
+// between the `nodes{` of the one item list it reads and the first nested
+// object, which in both queries is the issue or the project behind the item.
+// It is a reader for two known shapes rather than a GraphQL parser, so a query
+// that stops matching it reports every field as unasked-for and fails loudly.
+func ghItemSelectionOf(document string) string {
+	const list = "nodes{"
+	at := strings.Index(document, list)
+	if at < 0 {
+		return ""
+	}
+	rest := document[at+len(list):]
+	for _, nested := range []string{"content{", "project{"} {
+		if at := strings.Index(rest, nested); at >= 0 {
+			rest = rest[:at]
+		}
+	}
+	return rest
 }
 
 // optionName is what the column with that id is called: the board's own

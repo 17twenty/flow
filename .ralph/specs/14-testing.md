@@ -160,3 +160,10 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   strips what a listing cannot carry, and `ForgeContractCases` holds the rule
   as a case of its own, so an adapter and a fake that disagree about it fail
   rather than diverge quietly.
+- **§2 a fake answers the fields the document selected, and no others.** The
+  GitHub Projects fake rendered every field of a board item whatever the query
+  asked for, so `isArchived` could have been left out of both shipped queries
+  with the whole suite green: the adapter would decode a field the server had
+  volunteered. The fake now reads the item selection out of the document it
+  was sent and drops what is not named, which is what GraphQL does and what
+  makes a missing field a test failure rather than a live one.
