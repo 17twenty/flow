@@ -61,34 +61,14 @@ func TestTestCommandsAreBuildTagged(t *testing.T) {
 	}
 }
 
-// Unimplemented commands are the only permitted stub, and they must fail
-// cleanly as ErrUnsupported rather than pretending to work (plan item 0.1).
-// Commands drop off this list as their plan item lands: check commit did so
-// with item 1.3, schema with item 1.9, hook with item 1.13, init with item
-// 4.1, plan and apply with item 4.2, check pr with item 4.3, check deploy
-// with item 4.4, doctor with item 4.5, attest with item 4.6,
-// doctor --report with item 5.7 and doctor --ci with item 5.8. A flag whose
-// own item has not landed is on the list too, because doctor accepting it and
-// ignoring it would be the stub this test exists to forbid.
-func TestUnimplementedCommandsExitFail(t *testing.T) {
-	cases := [][]string{
-		{"doctor", "--watch"},
-	}
-	for _, args := range cases {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			code, stdout, stderr := exec(t, args...)
-			if want := core.ExitCode(core.ErrUnsupported); code != want {
-				t.Errorf("exited %d, want %d (stderr: %s)", code, want, stderr)
-			}
-			if stdout != "" {
-				t.Errorf("a failing command wrote to stdout: %q", stdout)
-			}
-			if !strings.Contains(stderr, "error:") || !strings.Contains(stderr, "fix:") {
-				t.Errorf("error output lacks the what/why/fix shape (P10):\n%s", stderr)
-			}
-		})
-	}
-}
+// The CLI contract has no stub left in it. Every command and every flag in
+// spec 02 does what it says: `check commit` landed with item 1.3, schema with
+// 1.9, hook with 1.13, init with 4.1, plan and apply with 4.2, check pr with
+// 4.3, check deploy with 4.4, doctor with 4.5, attest with 4.6,
+// doctor --report with 5.7, --ci with 5.8 and --watch with 6.3 — which took
+// the last entry off the list this test used to walk, and `unimplemented`
+// with it. What replaces it is spec 02's own surface test: a command flow
+// does not have is a parse error, not a stub (TestParseErrorsExitUsage).
 
 // Kong parse failures are usage errors (spec 02 §4).
 func TestParseErrorsExitUsage(t *testing.T) {

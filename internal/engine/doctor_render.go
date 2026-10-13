@@ -60,10 +60,43 @@ func (r Report) Text() string {
 	return out.String()
 }
 
+// Detail is one check on its own and in full: what it found, the question it
+// was asked, everything it saw and what to do about it.
+//
+// It is what the watch screen's pane shows (spec 12 §3), and it is the one
+// rendering that does not cap the evidence. [EvidenceShown] exists because a
+// report that scrolled a hundred pull requests past a reader would have told
+// them nothing; a pane a person opened on one check, and can scroll, is the
+// case that cap was protecting them from.
+func (c Checked) Detail() string {
+	var out strings.Builder
+	out.WriteString(c.Line())
+	out.WriteString("\n")
+	if c.Title != "" {
+		out.WriteString("      ")
+		out.WriteString(c.Title)
+		out.WriteString("\n")
+	}
+	writeAllEvidence(&out, c)
+	writeRemedy(&out, c.Result.Remediation)
+	return out.String()
+}
+
 // writeEvidence lists what a check saw, up to [EvidenceShown] of it.
 func writeEvidence(out *strings.Builder, checked Checked) {
+	writeSomeEvidence(out, checked, EvidenceShown)
+}
+
+// writeAllEvidence lists everything a check saw.
+func writeAllEvidence(out *strings.Builder, checked Checked) {
+	writeSomeEvidence(out, checked, len(checked.Result.Evidence))
+}
+
+// writeSomeEvidence lists what a check saw, up to a limit, and says how much
+// it left out.
+func writeSomeEvidence(out *strings.Builder, checked Checked, limit int) {
 	evidence := checked.Result.Evidence
-	shown := min(len(evidence), EvidenceShown)
+	shown := min(len(evidence), limit)
 	for _, item := range evidence[:shown] {
 		out.WriteString("      - ")
 		out.WriteString(item.Text)

@@ -240,8 +240,28 @@ Human-only steps use ids `H.<n>` (never seeded).
     screen and a method cannot say so, and both screens now read "a model that
     came back as something else" as the zero screen: nobody said yes, nobody
     picked one.
-- [ ] 6.3 Doctor inline spinners and --watch — specs: 12 — deps: 5.7 (#76)
+- [x] 6.3 Doctor inline spinners and --watch — specs: 12 — deps: 5.7 (#76)
   - AC: golden renders; key bindings tested via Update
+  - note: two screens, and the difference between them is the whole item. A
+    doctor run reads a fortnight of pull requests, a board, a branch's
+    protection and a deployment history before it prints a word, because the
+    report is one document and half a document is not one — so the inline
+    display fills that silence and then empties itself, leaving the report in
+    the scrollback where the rest of the shell session is. `--watch` is the
+    other thing to want: it takes the alternate screen, keeps asking, and
+    nothing it draws is kept. The run tells whoever is drawing through an
+    `engine.DoctorProgress` callback that reports both moments of a check —
+    reached, then answered — since the gap between them is the wait that made
+    somebody wonder whether flow had hung. The watch screen acts through a
+    `ui.Runner` the root implements by running the same two commands a person
+    would have typed, so what may be attested and for how long stay the
+    attest command's rules. Mutation testing found the defect worth having
+    the item for: a clock wound by every run that finished left a second
+    chain of ticks behind each manual rerun, so a window open all afternoon
+    would have asked a forge faster and faster. There is one clock now, wound
+    when the screen opens and by itself. `--watch` was also the last entry in
+    the test that walked the unimplemented commands, so `Context.unimplemented`
+    went with it: there is no stub left in the CLI.
 - [x] 6.4 Apply confirmation — specs: 12 — deps: 4.2 (#77)
   - AC: non-TTY without --auto-approve exits 64
   - note: the outcome-grouped table is `ui.Confirmation`, a `tea.Model` whose

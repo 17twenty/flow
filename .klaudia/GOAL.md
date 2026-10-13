@@ -74,7 +74,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
-- [ ] Phase 9 — TUI (plan Phase 6): picker and apply confirmation done; init wizard and doctor watch to go
+- [ ] Phase 9 — TUI (plan Phase 6): picker, apply confirmation and doctor watch done; init wizard to go
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
@@ -85,9 +85,9 @@ column-vocabulary bug, commit `950a80d`)*
 
 **Done.** Plan Phases 0–5 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
 4.1–4.6, 5.1–5.8), their issues closed and their phase parents (#6, #13, #27,
-#44, #64) closed with them. Every command in spec 00 §5 is implemented; the only
-`ErrUnsupported` left in the shipped surface is `doctor --watch`, whose item
-is 6.3, and it is refused rather than parsed and ignored.
+#44, #64) closed with them. Every command and every flag in spec 02 is
+implemented: with item 6.3 the last `ErrUnsupported` left the shipped
+surface, and `Context.unimplemented` went with it.
 
 - *Offline core.* `internal/commits` parser, linter and safe autofix behind
   `flow check commit` and the git hooks; `internal/config` with strict YAML,
@@ -711,15 +711,24 @@ of it waiting on a decision rather than on the calendar, and the earliest the
 streak can *start* is the morning the last direct-mode ticket leaves the
 window.
 
-**Single best next step:** the rest of Phase 6, the TUI. Two screens are left
-of the four spec 12 allows: 6.1 the init wizard
-([#74](https://github.com/17twenty/flow/issues/74)), whose acceptance
-criterion is that its plain equivalent produces an identical `.flow.yaml`, and
-6.3 doctor's inline spinners and `--watch`
-([#76](https://github.com/17twenty/flow/issues/76)). `--watch` is the last
-`ErrUnsupported` in the shipped surface, so finishing it is also what makes
-spec 02's command surface whole. After that, Phase 7's adapters (#79–#82) and
-Phase 8's proof (#86, #87).
+**This run** finished 6.3, doctor's inline display and `--watch`
+([#76](https://github.com/17twenty/flow/issues/76)), which is what makes spec
+02's command surface whole: every command and flag the spec names now does
+what it says. Two screens, because a run being waited on and a run being
+watched want opposite things from the terminal — the first leaves the report
+in the scrollback and takes its display away, the second takes the alternate
+buffer and leaves nothing. The run reports both moments of a check, reached
+and answered, through a nil-able `engine.DoctorProgress` callback, since the
+gap between them is the wait the display exists to fill. Mutation testing
+found the defect worth having the item for: a clock wound by whatever
+finished a round left a second chain of ticks behind every manual refresh, so
+a window open all afternoon would have asked the forge faster and faster.
+
+**Single best next step:** 6.1, the init wizard
+([#74](https://github.com/17twenty/flow/issues/74)), the last screen of the
+four spec 12 allows, whose acceptance criterion is that its plain equivalent
+produces an identical `.flow.yaml`. After that, Phase 7's adapters
+(#79–#82) and Phase 8's proof (#86, #87).
 
 The two issues this section named last run are both settled:
 [#102](https://github.com/17twenty/flow/issues/102), an archived repository
@@ -727,10 +736,10 @@ read and then written to anyway, landed as
 [#109](https://github.com/17twenty/flow/pull/109), and
 [#100](https://github.com/17twenty/flow/issues/100) with it.
 
-Two pull requests are open and waiting on review, neither depending on the
-other: [#117](https://github.com/17twenty/flow/pull/117), which makes flow ask
-for a branch that is up to date with the trunk before it may merge, and the
-picker above.
+The two pull requests this section named last run are both merged:
+[#117](https://github.com/17twenty/flow/pull/117), which makes flow ask for a
+branch that is up to date with the trunk before it may merge, and
+[#118](https://github.com/17twenty/flow/pull/118), the picker.
 
 In parallel, and only `@17twenty` can do it: run the four `flow attest`
 commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows

@@ -152,3 +152,67 @@ Render functions are pure and golden-tested; models tested via `Update`.
   otherwise (item 6.2).** The apply confirmation can be drawn unconstrained
   and left for the terminal to fold; a list cannot, because its height is how
   many candidates it shows and zero of them is an empty screen.
+- **§3 a run that is being watched and a run that is being waited on are
+  different screens (item 6.3).** `flow doctor` draws an inline display and
+  leaves the report under it; `--watch` takes the alternate screen and leaves
+  nothing. The report is a document somebody will scroll back to, so the
+  display that preceded it has to be a few lines of their session rather than
+  a window that took the terminal and handed it back empty. The watch screen
+  is the opposite case — a display of something that keeps changing, where a
+  minute's worth of stale reports in the scrollback would be worse than
+  nothing — so it is the one rendering flow produces that is not a document.
+- **§3 the run says where it has got to; it does not know who is listening
+  (item 6.3).** `engine.DoctorInput.Progress` is a callback and may be nil,
+  which is a run nobody is watching. A channel would have a size, and the size
+  would decide whether the engine blocks on a terminal. Both moments of a
+  check are reported — reached, then answered — because the gap between them
+  is exactly the wait the display exists to fill, and a screen that only spoke
+  when a check finished would be silent for the whole of a live check reading
+  a fortnight of pull requests.
+- **§3 the display empties itself and the screen is told, not killed
+  (item 6.3).** The last thing the terminal holds is the report, so a finished
+  `ui.Progress` draws nothing: a display left above the document would be the
+  same findings twice. The root sends `ui.Finished` rather than cancelling the
+  program, because a screen that is killed cannot take itself off the
+  terminal. A run that failed before its first check still sends it.
+- **§3 what the screen draws is the engine's line, cut rather than folded
+  (item 6.3).** A finding is one line by construction, so both screens render
+  `Checked.Line()` and truncate it to the width the program reported. A line
+  that folded would make the inline display taller every time it redrew, and
+  would make the watch screen's list lie about how many findings fit on a
+  page. What the waiting line is cut to is the check's id, not the count:
+  the number somebody is watching is how many are left.
+- **§3 one clock, wound when the screen opens and by itself (item 6.3).**
+  `WatchEvery` is a rate limit as much as a refresh — a run reads a fortnight
+  of pull requests from a forge — so there is exactly one chain of ticks. A
+  clock wound by each run that finished instead would leave a second chain
+  behind every time somebody pressed `r`, and a window left open all
+  afternoon would ask faster and faster for no reason anybody asked for. A
+  tick that declines to act, because a run is in flight or a note is half
+  written, still winds the clock.
+- **§3 a run that went wrong keeps what was true (item 6.3).** A failed run
+  answers with no report at all, and putting that on the screen would replace
+  something known with nothing. The screen says the asking went wrong and
+  leaves the findings where they are; the exit code is the last run that
+  *finished*, and a window closed before any run came back exits on the reason
+  there is no verdict rather than on 0.
+- **§3 the pane is the one rendering that does not cap the evidence
+  (item 6.3).** `EvidenceShown` exists because a report that scrolled a
+  hundred pull requests past a reader would have told them nothing. A pane
+  somebody opened on one check, and can scroll, is the case that cap was
+  protecting them from, so `Checked.Detail` shows all of it.
+- **§3 the screen asks flow for things by running the commands (item 6.3).**
+  `f` and `a` go through a `ui.Runner` the root implements with the same
+  `DoctorCmd` and `AttestCmd` a person would have typed, so what may be
+  attested, how long a word stands and whose it is stay spec 07 §8's rules in
+  one place. Which checks the `a` key will even open a note on is the
+  engine's judgement too, carried on the result as `RemedyAttest`: a screen
+  that let somebody vouch for anything would be a way to silence a failure
+  flow could have proved.
+- **§3 a flag that cannot be honoured is refused (item 6.3).** `--watch`
+  with `--report` is a usage error, because a session that keeps asking has no
+  last run to write down and the file would hold whichever run happened to be
+  on the screen when somebody closed the window. `--watch` with no terminal is
+  a usage error for the same kind of reason: it is a request to keep asking,
+  and a report printed once is not that. Neither quietly becomes the other
+  command.
