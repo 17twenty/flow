@@ -459,6 +459,23 @@ Live, both checks now pass. It is [#96](https://github.com/17twenty/flow/issues/
 open as [#95](https://github.com/17twenty/flow/pull/95) and waiting on a human
 approval, which is the gate working.
 
+**flow was the thing making the board untrue (this run).** You asked why
+[#72](https://github.com/17twenty/flow/issues/72) had not been autoclosed. It
+had — [#94](https://github.com/17twenty/flow/pull/94) closed it at 00:59 — but
+at 01:15 the gate ran on the next pull request, which named #72 in a closing
+reference because its own issue did not exist yet, and moved the ticket from
+In progress back to In review. Three live checks had been reporting it since,
+and the thing they were reporting was flow. Spec 04 §5 rule 2, "never move
+work out of done", guarded the *column*, and the column is the one thing that
+can be wrong: `issue_closed` is `owner: native`, so a ticket whose tracker
+automation lagged was still in a working column for the next pull request to
+drag forward. A closed ticket now refuses every event but its own closing,
+which still applies under the ordinary rules and so still reaches done. It is
+[#97](https://github.com/17twenty/flow/issues/97), open as
+[#98](https://github.com/17twenty/flow/pull/98). #72's card was put back in
+Done by hand, because that move belongs to GitHub's automation and flow will
+not perform it.
+
 **Where the exit code stands.** `flow doctor` exits 2 on one check and four
 attestations. The check is `live.tickets.done_merged 1/67`: sixty-six tickets
 reached Done in `direct` mode, before Stage B, with no pull request behind
@@ -470,7 +487,7 @@ direct-mode close — today. The four attestations are
 which a person has to actually look at first.
 
 **Single best next step:** `@17twenty` approves and squash-merges
-[#95](https://github.com/17twenty/flow/pull/95). Then, in order: attest the
+[#98](https://github.com/17twenty/flow/pull/98). Then, in order: attest the
 four native behaviours so the exit code depends only on real findings, and
 land plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a
 single self-contained check: git trailers, a marker, and a ticket filed under
