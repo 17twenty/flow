@@ -337,8 +337,22 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 8 — Proof
 
-- [ ] 8.1 All acceptance scenarios present and passing — specs: 19 — deps: 5.8, 6.4, 7.6 (#86)
+- [x] 8.1 All acceptance scenarios present and passing — specs: 19 — deps: 5.8, 6.4, 7.6 (#86)
   - AC: one test per scenario id; gaps recorded under Spec issues, never skipped
+  - note: spec 19 says each scenario becomes a test named `TestScenario_<ID>_…`,
+    so the names are the index and `TestEveryAcceptanceScenarioHasATest` reads
+    this spec and the source of every test in the repository and refuses to let
+    them disagree in either direction. All twenty-one ids are kept; most were
+    already tested under other names and were renamed, and reading each one
+    against its scenario found three promises nobody was keeping in full. A04
+    asserted a plan after the attestations rather than the second apply —
+    which is what uncovered `Applied.ExitCode` calling a compensated item
+    outstanding where `Plan.ExitCode` calls it done, so one world had a plan
+    exiting 0 and an apply exiting 2 for ever. G02 did not assert the
+    `flow:policy` marker that is how the next run finds that comment to edit.
+    V01 named the merge that never shipped without asserting the evidence
+    links to it.
+- [ ] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
 - [x] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
   - AC: README states current doctor streak from the health issue
   - note: the section links the board, the pinned health issue, the agent's own

@@ -270,3 +270,13 @@ each successful mutation (atomic) and at the end. Summary.
   and can never stale a plan somebody approved. Notes ride onto
   `PlanItem.Notes` unchanged: they change what a report tells a person to do,
   and never what the plan decides.
+- **§3 an apply and a plan settle the same outcomes (item 8.1).**
+  `Plan.ExitCode` has always counted a `compensated` item as nothing left to
+  do — the intent is enforced, by something other than the setting the
+  configuration named, and no second run will change that — but
+  `Applied.ExitCode` counted it as outstanding. One world therefore had a plan
+  that exited 0 and an apply that exited 2, for ever, which is scenario A04's
+  "the second apply exits 0" made unreachable on any workflow holding a
+  compensated item. The two now read the same list: `noop` and `compensated`
+  owe nothing in either command, and `native` owes nothing once it has been
+  applied.

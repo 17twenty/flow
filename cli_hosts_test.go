@@ -71,9 +71,9 @@ func TestTheProvidersOwnHostIsNotAQuestion(t *testing.T) {
 	}
 }
 
-// TestAnUnapprovedHostWithNobodyToAskStopsTheRun is scenario S02: no terminal,
+// TestScenario_S02_AnUnapprovedHostWithNobodyToAskStopsTheRun is scenario S02: no terminal,
 // so the run exits 77 and says the one line that would let it through.
-func TestAnUnapprovedHostWithNobodyToAskStopsTheRun(t *testing.T) {
+func TestScenario_S02_AnUnapprovedHostWithNobodyToAskStopsTheRun(t *testing.T) {
 	app := hostContext(t, CLI{})
 	s := hostSession()
 
@@ -285,11 +285,11 @@ func portOf(t *testing.T, raw string) string {
 	return parsed.Port()
 }
 
-// TestAWholeRunStopsAtAnUnapprovedHost is scenario S02 end to end: the
+// TestScenario_S02_AWholeRunStopsAtAnUnapprovedHost is scenario S02 end to end: the
 // configuration names an API nobody approved, nothing in the environment is
 // a terminal, and flow exits 77 before it even asks for the credential —
 // which is why the message is about the host rather than the missing token.
-func TestAWholeRunStopsAtAnUnapprovedHost(t *testing.T) {
+func TestScenario_S02_AWholeRunStopsAtAnUnapprovedHost(t *testing.T) {
 	dir := configuredRepo(t)
 	path := filepath.Join(dir, ".flow.yaml")
 	source, err := os.ReadFile(path)

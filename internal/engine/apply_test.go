@@ -594,6 +594,37 @@ func TestApplyReadsTheRepositoryOnce(t *testing.T) {
 	}
 }
 
+// TestWhatCountsAsNothingLeftToDo is [engine.Plan.ExitCode]'s table asked of
+// an apply, because the two commands are asked about one world and must not
+// answer differently. The case that matters is compensated: the intent is
+// enforced, by something other than the setting the configuration named, and
+// no second run will ever change that. An apply reporting it as outstanding
+// would exit 2 for ever on a workflow a plan already called done — which is
+// scenario A04's exit 0 made unreachable.
+func TestWhatCountsAsNothingLeftToDo(t *testing.T) {
+	for _, tc := range []struct {
+		outcome engine.Outcome
+		exit    int
+	}{
+		{engine.OutcomeNoop, 0},
+		{engine.OutcomeCompensated, 0},
+		{engine.OutcomeNative, 0},
+		{engine.OutcomeFollowUp, 2},
+		{engine.OutcomeAttest, 2},
+		{engine.OutcomeUnsupported, 1},
+	} {
+		t.Run(string(tc.outcome), func(t *testing.T) {
+			applied := engine.Applied{Items: []engine.AppliedItem{
+				{ID: core.ItemTrackerProject, Outcome: engine.OutcomeNoop},
+				{ID: core.ItemTrackerLabels, Outcome: tc.outcome},
+			}}
+			if got := applied.ExitCode(); got != tc.exit {
+				t.Errorf("an apply whose only unconverged item is %s exits %d, want %d", tc.outcome, got, tc.exit)
+			}
+		})
+	}
+}
+
 // actionsOf is what a plan proposes for each item, which is the part of it a
 // test comparing two worlds cares about: the timestamps and the version
 // differ between runs and mean nothing here.

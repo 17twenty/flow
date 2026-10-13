@@ -185,7 +185,7 @@ func editFlowConfig(t *testing.T, dir, old, replacement string) {
 	}
 }
 
-// TestGateGreenPullRequestMovesItsCard is scenario G01: a draft pull request
+// TestScenario_G01_GateGreenPullRequestMovesItsCard is scenario G01: a draft pull request
 // that breaks no rule, linked to a Ready ticket with acceptance criteria and a
 // parent, and the two transitions flow owns.
 //
@@ -194,7 +194,7 @@ func editFlowConfig(t *testing.T, dir, old, replacement string) {
 // tick — on work somebody is still writing says something nobody asked. Both
 // are asserted here as what they agree on: every rule passes, and the status
 // turns green the moment the pull request is offered for review.
-func TestGateGreenPullRequestMovesItsCard(t *testing.T) {
+func TestScenario_G01_GateGreenPullRequestMovesItsCard(t *testing.T) {
 	dir, worldOf := gateRepo(t, func(w *fakeWorld) {
 		pr := gatePR(7, "feat(engine): add x")
 		pr.Draft = true
@@ -259,11 +259,11 @@ func assertMove(t *testing.T, doc gateDocument, want gateMove) {
 	t.Errorf("the gate's moves are %+v, want one of %+v", doc.Moves, want)
 }
 
-// TestGateExplainsItsFailuresInOneComment is scenario G02: two rules fail, the
+// TestScenario_G02_GateExplainsItsFailuresInOneComment is scenario G02: two rules fail, the
 // status names both within its 140 characters, and however often the gate runs
 // there is one comment on the pull request — which goes away when the problems
 // do.
-func TestGateExplainsItsFailuresInOneComment(t *testing.T) {
+func TestScenario_G02_GateExplainsItsFailuresInOneComment(t *testing.T) {
 	dir, worldOf := gateRepo(t, func(w *fakeWorld) {
 		pr := gatePR(8, "Added x")
 		pr.ClosingIssues = []string{"#13"}
@@ -300,6 +300,13 @@ func TestGateExplainsItsFailuresInOneComment(t *testing.T) {
 	if !strings.Contains(first[0].Body, engine.RuleTicketReady) {
 		t.Errorf("the comment does not explain %s:\n%s", engine.RuleTicketReady, first[0].Body)
 	}
+	// The scenario says one `flow:policy` comment, and the marker is what
+	// makes it that comment rather than one that happens to be the only one
+	// here: it is how the next run finds this one to edit, and how a person
+	// reading the thread knows which comments are flow's (spec 09 §2).
+	if marker := engine.PolicyMarker().String(); !strings.Contains(first[0].Body, marker) {
+		t.Errorf("the comment carries no %s marker, so nothing can find it again:\n%s", marker, first[0].Body)
+	}
 
 	// Run again against the same world: the explanation is edited, never
 	// added to.
@@ -333,9 +340,9 @@ func TestGateExplainsItsFailuresInOneComment(t *testing.T) {
 	}
 }
 
-// TestGateLetsAnUnlinkedChoreThrough is scenario G03: the plumbing a
+// TestScenario_G03_GateLetsAnUnlinkedChoreThrough is scenario G03: the plumbing a
 // repository needs does not have to be invented a ticket first.
-func TestGateLetsAnUnlinkedChoreThrough(t *testing.T) {
+func TestScenario_G03_GateLetsAnUnlinkedChoreThrough(t *testing.T) {
 	dir, _ := gateRepo(t, func(w *fakeWorld) {
 		w.forge.SetPullRequest(gatePR(9, "ci: cache modules"))
 	})
@@ -353,9 +360,9 @@ func TestGateLetsAnUnlinkedChoreThrough(t *testing.T) {
 	}
 }
 
-// TestGateHoldsAgentWorkUntilAPersonApproves is scenario G04: an agent's pull
+// TestScenario_G04_GateHoldsAgentWorkUntilAPersonApproves is scenario G04: an agent's pull
 // request is blocked until somebody who is not an agent has approved it.
-func TestGateHoldsAgentWorkUntilAPersonApproves(t *testing.T) {
+func TestScenario_G04_GateHoldsAgentWorkUntilAPersonApproves(t *testing.T) {
 	const agent = "17twenty-flow-agent[bot]"
 
 	dir, worldOf := gateRepo(t, func(w *fakeWorld) {
@@ -388,10 +395,10 @@ func TestGateHoldsAgentWorkUntilAPersonApproves(t *testing.T) {
 	}
 }
 
-// TestGateOnAForkPostsNothing is scenario G05: a pull request from a fork runs
+// TestScenario_G05_GateOnAForkPostsNothing is scenario G05: a pull request from a fork runs
 // with a credential that may not write, and the gate reports its verdict and
 // succeeds rather than failing a job nobody can fix.
-func TestGateOnAForkPostsNothing(t *testing.T) {
+func TestScenario_G05_GateOnAForkPostsNothing(t *testing.T) {
 	dir, worldOf := gateRepo(t, func(w *fakeWorld) {
 		pr := gatePR(11, "Added x")
 		w.forge.SetPullRequest(pr)
@@ -423,9 +430,9 @@ func TestGateOnAForkPostsNothing(t *testing.T) {
 	}
 }
 
-// TestGateDoesNotRepeatAStatusItAlreadyPosted is scenario G06: the same
+// TestScenario_G06_GateDoesNotRepeatAStatusItAlreadyPosted is scenario G06: the same
 // evaluation twice is one line on the pull request's timeline, not two.
-func TestGateDoesNotRepeatAStatusItAlreadyPosted(t *testing.T) {
+func TestScenario_G06_GateDoesNotRepeatAStatusItAlreadyPosted(t *testing.T) {
 	dir, worldOf := gateRepo(t, func(w *fakeWorld) {
 		w.forge.SetPullRequest(gatePR(12, "ci: cache modules"))
 	})

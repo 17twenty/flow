@@ -37,7 +37,7 @@ tests, dependencies limited to spec 01 §4.
 - [ ] GitHub forge and GitHub Projects adapters pass their contract suites against `httptest` fakes; Jira Cloud, Linear, Gitea/Forgejo and GitLab adapters pass theirs (plan Phase 7).
 - [x] `go test ./... -race -count=1` green with no network access from tests and the transport guard active; no test skipped or weakened to pass.
 - [x] `gofmt -l .` empty; `go vet ./...`, `staticcheck ./...` and `govulncheck ./...` clean.
-- [ ] One test exists and passes per acceptance scenario id in `specs/19-acceptance-scenarios.md` (A01–A07, G01–G06, V01–V05, S01–S03).
+- [x] One test exists and passes per acceptance scenario id in `specs/19-acceptance-scenarios.md` (A01–A07, G01–G06, V01–V05, S01–S03).
 - [ ] Every item in `.ralph/IMPLEMENTATION_PLAN.md` Phases 0–8 is checked off and its issue closed; "Spec issues" records any gap rather than a skip.
 
 ### Self-hosting proof
@@ -76,7 +76,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [ ] Phase 9 — TUI (plan Phase 6): picker, apply confirmation and doctor watch done; init wizard to go
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
-- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
+- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing — done; README demo and 14 green doctor days to go
 
 ### Status notes
 
@@ -694,6 +694,31 @@ off, and the filter input left in the library's colours on a screen asked for
 none. Each bought a test. The fifth is equivalent — the zero value of a type
 parameter is the zero value either way.
 
+**The acceptance scenarios (item 8.1, this run).** Spec 19 is the list this
+whole program is answerable to, and the one thing a list of promises must not
+be able to do is lose an entry. The spec opens by saying each scenario becomes
+a test named `TestScenario_<ID>_…`, so the names are the index:
+`TestEveryAcceptanceScenarioHasATest` reads the spec and the source of every
+test in the repository and refuses to let the two disagree in either
+direction — a scenario nobody keeps, and a test claiming an id the spec does
+not list, both fail. It also refuses to let its own reading rot: every bullet
+in the scenario section must carry an id the expression recognises, so a
+heading written a new way cannot silently drop a promise.
+
+All twenty-one ids are kept. Most were already tested under other names, but
+reading each test against the sentence it claims to keep found three promises
+nobody was keeping in full. A04 asserted a *plan* after the attestations
+rather than the second apply — and apply is the command somebody runs twice.
+Making that assertion of the apply uncovered a real disagreement:
+`Plan.ExitCode` has always counted a `compensated` item as nothing left to do,
+because the intent is enforced by something other than the setting the
+configuration named and no second run will change that, while
+`Applied.ExitCode` counted it as outstanding. One world therefore had a plan
+exiting 0 and an apply exiting 2, for ever. G02 did not assert the
+`flow:policy` marker, which is how the next run finds that comment to edit
+rather than adding another. V01 named the merge that never shipped without
+asserting the evidence links to it, which is the difference between a report
+and a number.
 **The init wizard (item 6.1, this run).** The last of the four screens spec
 12 allows, and the one with the sharpest acceptance criterion: its plain
 equivalent has to produce an identical `.flow.yaml`. That is met by not having

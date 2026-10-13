@@ -136,11 +136,11 @@ func owners() []string {
 	}
 }
 
-// TestDoctorTakesTheOnlyBoardThereIs is the first half of scenario A05: where
+// TestScenario_A05_DoctorTakesTheOnlyBoardThereIs is the first half of scenario A05: where
 // a placeholder has exactly one possible answer, `--fix` takes it and writes
 // it down. Nothing is guessed — one candidate is not a choice — and the next
 // run reads the answer out of the lock rather than discovering it again.
-func TestDoctorTakesTheOnlyBoardThereIs(t *testing.T) {
+func TestScenario_A05_DoctorTakesTheOnlyBoardThereIs(t *testing.T) {
 	dir := initRepo(t, "git@github.com:acme/api.git")
 	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
 		t.Fatalf("flow init exited %d: %s", code, stderr)
@@ -243,11 +243,11 @@ func TestDoctorWillNotCallAnUnseenProviderHealthy(t *testing.T) {
 	}
 }
 
-// TestDoctorAsksWhichBoardWhenThereAreTwo is the second half of A05. Two
+// TestScenario_A05_DoctorAsksWhichBoardWhenThereAreTwo is the second half of A05. Two
 // candidates is a question only a person can settle, so flow does not choose:
 // it reports `input`, says exactly how to answer, blocks everything that
 // depends on the answer rather than failing it, and exits 2.
-func TestDoctorAsksWhichBoardWhenThereAreTwo(t *testing.T) {
+func TestScenario_A05_DoctorAsksWhichBoardWhenThereAreTwo(t *testing.T) {
 	dir := initRepo(t, "git@github.com:acme/api.git")
 	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
 		t.Fatalf("flow init exited %d: %s", code, stderr)
@@ -312,12 +312,12 @@ var adminAccess = core.Permissions{
 	Evidence: []string{"repository permission: admin"},
 }
 
-// TestDoctorFilesARulesetFollowUpAndSettlesIt is scenario A06 forwards: a
+// TestScenario_A06_DoctorFilesARulesetFollowUpAndSettlesIt is scenario A06 forwards: a
 // token that cannot protect the trunk makes `forge.protection` somebody
 // else's work rather than a red mark, the ticket is filed once however many
 // times doctor runs, and when that somebody has done it flow says so on the
 // ticket and closes it.
-func TestDoctorFilesARulesetFollowUpAndSettlesIt(t *testing.T) {
+func TestScenario_A06_DoctorFilesARulesetFollowUpAndSettlesIt(t *testing.T) {
 	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
 
 	first, code := doctorJSON(t, dir, append([]string{"--fix"}, owners()...)...)
@@ -379,11 +379,11 @@ func TestDoctorFilesARulesetFollowUpAndSettlesIt(t *testing.T) {
 	}
 }
 
-// TestDoctorReopensAFollowUpClosedWithTheWorkUndone is the rest of A06.
+// TestScenario_A06_DoctorReopensAFollowUpClosedWithTheWorkUndone is the rest of A06.
 // Closing the ticket is not a way to make the check pass: flow reopens it and
 // says what it still sees, because a workflow whose checks can be silenced by
 // closing a ticket proves nothing.
-func TestDoctorReopensAFollowUpClosedWithTheWorkUndone(t *testing.T) {
+func TestScenario_A06_DoctorReopensAFollowUpClosedWithTheWorkUndone(t *testing.T) {
 	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
 	doctorJSON(t, dir, append([]string{"--fix"}, owners()...)...)
 
@@ -422,11 +422,11 @@ func TestDoctorReopensAFollowUpClosedWithTheWorkUndone(t *testing.T) {
 	}
 }
 
-// TestDoctorCallsARenamedColumnDrift is scenario A07. Something that passed,
+// TestScenario_A07_DoctorCallsARenamedColumnDrift is scenario A07. Something that passed,
 // looks different and no longer holds is `drift` rather than a plain failure:
 // the distinction is between a workflow nobody finished setting up and one
 // somebody changed behind flow's back, and only the second is news.
-func TestDoctorCallsARenamedColumnDrift(t *testing.T) {
+func TestScenario_A07_DoctorCallsARenamedColumnDrift(t *testing.T) {
 	dir, world := gateRepo(t, func(w *fakeWorld) {
 		w.tracker.SetCandidates(core.ItemTrackerProject,
 			core.Candidate{ID: "2", Name: "flow", URL: "https://github.test/users/acme/projects/2"})

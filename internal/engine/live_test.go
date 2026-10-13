@@ -161,6 +161,24 @@ func evidenceMentions(t *testing.T, got engine.Result, want string) {
 	t.Errorf("no evidence mentions %q: %+v", want, got.Evidence)
 }
 
+// evidenceLinks fails unless the piece of evidence naming want also links to
+// it. A finding that names a pull request and does not say where it is leaves
+// a person to search for it, which is the difference between a report and a
+// number.
+func evidenceLinks(t *testing.T, got engine.Result, want, url string) {
+	t.Helper()
+	for _, seen := range got.Evidence {
+		if !strings.Contains(seen.Text, want) {
+			continue
+		}
+		if seen.URL != url {
+			t.Errorf("the evidence naming %q links to %q, want %q", want, seen.URL, url)
+		}
+		return
+	}
+	t.Errorf("no evidence mentions %q: %+v", want, got.Evidence)
+}
+
 // liveCheckIDs is every check spec 07 §6 names in the families that exist:
 // the pull requests that merged, the board they came off, the transitions the
 // tracker promised to perform itself — one check per native event, which
@@ -307,10 +325,10 @@ func TestWithNoTrackerTheForgesOwnLinksAreWhatThereIs(t *testing.T) {
 	evidenceMentions(t, result, "#8")
 }
 
-// TestAnUngatedMergeFailsHoweverFewThereAre is scenario V02. One merge in ten
+// TestScenario_V02_AnUngatedMergeFailsHoweverFewThereAre is scenario V02. One merge in ten
 // is 90%, which is exactly the threshold a warning lives above — and the point
 // of marking a check critical is that the threshold does not apply to it.
-func TestAnUngatedMergeFailsHoweverFewThereAre(t *testing.T) {
+func TestScenario_V02_AnUngatedMergeFailsHoweverFewThereAre(t *testing.T) {
 	var prs []core.PullRequest
 	for number := 1; number <= 10; number++ {
 		prs = append(prs, landedPR(number, "feat(api): number", daysAgo(number)))

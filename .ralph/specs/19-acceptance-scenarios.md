@@ -67,3 +67,21 @@ The final acceptance is spec 17 §5 Stage C on the real repo.
   login into `.flow.yaml` rather than labelling the pull request, because
   `agent.human_review` firing on a label makes dropping the label a way to pass
   the rule vacuously.
+- **The scenario ids are checked against the tests, not against a list
+  somebody maintains (item 8.1).** This file opens by saying each scenario
+  becomes a test named `TestScenario_<ID>_…`, so the tests carry the id in
+  their names and `TestEveryAcceptanceScenarioHasATest` reads both this file
+  and the source of every test in the repository. A scenario nobody keeps and
+  a test claiming an id this file does not list are both failures. Several
+  scenarios are kept by more than one test, because a scenario is a sentence
+  about a run and a test is an assertion about one thing: A04's two halves,
+  A01's two refusals and V05's finding and its fix are each worth their own
+  name.
+- **A04's exit 0 is asserted of the apply, not only of a plan after it (item
+  8.1).** The scenario's words are that the second apply has no native changes
+  and exits 0, and a plan agreeing is a different statement: apply is the
+  command somebody runs twice. Making the assertion of the apply is what found
+  `Applied.ExitCode` disagreeing with `Plan.ExitCode` about a compensated item
+  (spec 06 Decisions), and what made the test seed a deployment — a
+  repository nothing has ever been deployed to owes a genuine follow-up, which
+  is A06's business and not this one's.

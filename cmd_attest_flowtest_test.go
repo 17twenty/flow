@@ -204,8 +204,24 @@ func TestAttestRefusesAPromiseThatStandsForNoTime(t *testing.T) {
 // Scenario A04's second half (spec 19): an applied workflow whose outstanding
 // attestations have been made has nothing left to report, and the run that
 // says so exits 0.
-func TestAnAppliedAndAttestedWorkflowIsDone(t *testing.T) {
+//
+// The environment has been deployed to, because scenario A04's exit 0 is the
+// exit code of the whole run and `deploys.records` is the one item in this
+// configuration nobody may switch on — a deployment is the deployer's event
+// and flow only has to be able to see one (spec 13 §3). A repository where
+// nothing has ever been deployed has a genuine follow-up outstanding, which
+// is A06's business; this scenario is about what is left when there is none.
+func TestScenario_A04_AnAppliedAndAttestedWorkflowIsDone(t *testing.T) {
 	dir := fakeRepo(t)
+	seedFakeWorld(dir, func(w *fakeWorld) {
+		w.deploys.Record(core.Deployment{
+			ID:          "1",
+			Environment: "production",
+			SHA:         strings.Repeat("a", 40),
+			State:       core.DeploySuccess,
+			CreatedAt:   time.Now(),
+		})
+	})
 
 	if _, code := applyJSON(t, dir, "--auto-approve"); code != core.ExitActionRequired {
 		t.Fatalf("the first apply exited %d, want %d: attestations are still pending", code, core.ExitActionRequired)
@@ -227,11 +243,7 @@ func TestAnAppliedAndAttestedWorkflowIsDone(t *testing.T) {
 		}
 	}
 
-	// Scoped to the two providers the attestations are about. What is left
-	// outside them is the deployment records nobody here may switch on,
-	// which is a follow-up and genuinely still pending — A06's business,
-	// not this one's.
-	after, code := planJSON(t, dir, "--target", "tracker", "--target", "forge")
+	after, code := planJSON(t, dir)
 	if code != core.ExitOK {
 		t.Errorf("plan exited %d, want %d: everything outstanding has been attested", code, core.ExitOK)
 	}
@@ -239,6 +251,18 @@ func TestAnAppliedAndAttestedWorkflowIsDone(t *testing.T) {
 		if item.Outcome == "attest" {
 			t.Errorf("%s still waits on a human's word after it was attested", item.ID)
 		}
+	}
+
+	// The scenario's own words: the second apply has no native changes and
+	// exits 0. A plan agreeing is not the same statement — apply is the
+	// command somebody runs twice, and it is apply that must come back
+	// saying there was nothing to do.
+	second, code := applyJSON(t, dir, "--auto-approve")
+	if code != core.ExitOK {
+		t.Errorf("the second apply exited %d, want %d: everything it wanted is done and vouched for", code, core.ExitOK)
+	}
+	if made := second.mutations(); len(made) != 0 {
+		t.Errorf("the second apply was not idempotent; it changed %v", made)
 	}
 }
 

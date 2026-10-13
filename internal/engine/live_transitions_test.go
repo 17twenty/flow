@@ -19,10 +19,10 @@ import (
 // minutesAgo is a moment inside the grace period, or just outside it.
 func minutesAgo(minutes int) time.Time { return liveNow.Add(-time.Duration(minutes) * time.Minute) }
 
-// TestAMergeThatLeftItsTicketBehindIsNamed is scenario V03: pull requests
+// TestScenario_V03_AMergeThatLeftItsTicketBehindIsNamed is scenario V03: pull requests
 // merged, their tickets are still in review a quarter of an hour later, and
 // the workflow says the tracker was going to move them.
-func TestAMergeThatLeftItsTicketBehindIsNamed(t *testing.T) {
+func TestScenario_V03_AMergeThatLeftItsTicketBehindIsNamed(t *testing.T) {
 	moved := landedPR(2, "feat(api): the one that worked", daysAgo(2))
 	stuck := landedPR(3, "feat(api): the one that did not", daysAgo(1))
 	env, _ := boardEnv(t, liveConfig(), coretest.ForgeFixture{

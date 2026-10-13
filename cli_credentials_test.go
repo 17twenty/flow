@@ -28,12 +28,12 @@ func configuredRepo(t *testing.T) string {
 	return dir
 }
 
-// TestATrackedOverrideIsIgnoredNotObeyed is scenario S01: a `.flow.local.toml`
+// TestScenario_S01_ATrackedOverrideIsIgnoredNotObeyed is scenario S01: a `.flow.local.toml`
 // somebody committed names a command to run for a token. The file is the
 // team's, so flow does not read it, says so once, and carries on — and then
 // fails at 77 for the credential nobody gave it, which is the failure it
 // would have had if the file had never existed.
-func TestATrackedOverrideIsIgnoredNotObeyed(t *testing.T) {
+func TestScenario_S01_ATrackedOverrideIsIgnoredNotObeyed(t *testing.T) {
 	dir := configuredRepo(t)
 	marker := filepath.Join(dir, "ran")
 	local := filepath.Join(dir, ".flow.local.toml")
@@ -79,11 +79,11 @@ func TestAnUntrackedOverrideIsStillTheirOwnFile(t *testing.T) {
 	}
 }
 
-// TestACredentialPastedWhereItsNameBelongsIsNotEchoed is scenario S03: the
+// TestScenario_S03_ACredentialPastedWhereItsNameBelongsIsNotEchoed is scenario S03: the
 // mistake flow is most likely to be handed a real token by is somebody
 // pasting one into `auth.token_env`, and the error about it must not put the
 // token on a terminal, into a log or into a scrollback buffer.
-func TestACredentialPastedWhereItsNameBelongsIsNotEchoed(t *testing.T) {
+func TestScenario_S03_ACredentialPastedWhereItsNameBelongsIsNotEchoed(t *testing.T) {
 	dir := configuredRepo(t)
 	secret := "gh" + "p_" + strings.Repeat("0aZ", 8)
 
