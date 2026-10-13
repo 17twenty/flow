@@ -72,16 +72,16 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
-- [ ] Phase 7 — Stage B activation: flow configures and gates its own repo; loop switches to pr mode
-- [ ] Phase 8 — Live health (plan Phase 5): PR, ticket, transition and deploy audits, the `--fix` catch-up and the pinned health issue done (5.1–5.5, 5.7); flag cleanup (5.6) and `--ci` (5.8) remain
+- [ ] Phase 7 — Stage B activation: the ruleset is on, the gate is written and `CURRENT MODE: pr`; awaiting the approval and merge of #94
+- [ ] Phase 8 — Live health (plan Phase 5): 5.1–5.5, 5.7 and 5.8 done; flag cleanup (5.6) remains
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
 
 ### Status notes
 
-*(updated after the follow-up rewrite that came out of running 5.7 against
-this repository, commit `6f5453f`, CI green)*
+*(updated after Stage B went live and the first gated pull request found the
+column-vocabulary bug, commit `950a80d`)*
 
 **Done.** Plan Phases 0–4 are complete (0.1–0.6, 1.1–1.14, 2.1–2.16, 3.1–3.12,
 4.1–4.6) and Phase 5 is five items of eight (5.1–5.5), their issues closed and
@@ -369,12 +369,69 @@ survived, because `path.Match` treats `**` as `*` and the fixture branch had
 three segments, so the row matched nothing either way. A table row has to
 differ in the *answer*, not only in the input.
 
-**Single best next step:** plan item 5.8 — `--ci` annotations and `--window`
-(#72, specs 02 §2 and 07). It is the last thing standing between the daily run
-and the scheduled job that spec 07 §10 describes: `--ci --fix --report` is one
-command, and `--ci` is the only third of it still refused as unimplemented.
-Taken ahead of 5.6 (flag cleanup, #70) for the same reason 5.7 was — Stage C
-is a *scheduled* run, and a run that cannot annotate a CI job is a run whose
-findings stop at a log nobody opens. 5.6 is a single self-contained check
-(git trailers, a marker, a ticket filed under `--fix` exactly as 5.5 moves
-one) and loses nothing by going last in the phase.
+### Stage B is live, and the first gated pull request found a real bug
+
+`@17twenty` switched the `Flow` ruleset on, so `main` now refuses a push whose
+commit has no `flow/policy` success. The close-out push for item 5.8 was
+rejected, which is how Stage B announced itself. `.github/workflows/flow.yml`
+and the repository secret `FLOW_PROJECT_TOKEN` (the missing half of Stage A
+step 5) went in as [#94](https://github.com/17twenty/flow/pull/94), because
+spec 17 §5 wants the gate to arrive through a pull request the gate itself
+judges: a `pull_request` workflow runs from the branch it is on, so the first
+gated pull request is the one carrying the gate. It is adapted from the
+shipped template rather than copied — flow is what is in the checkout, so each
+job builds the binary from the commit it is judging, and the toolchain comes
+from `go.mod`. `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
+
+The first run of it posted `flow/policy` and then exited 64:
+
+```
+error: could not move #72 to in_review
+why:   17twenty/projects/2 has no such column
+fix:   the columns of 17twenty/projects/2 are: Backlog, Ready, In progress,
+       In review, Done
+```
+
+The remedy lists the column it says is missing, which is the shape of a
+vocabulary mismatch rather than a configuration one. `core.ColumnID` is the
+tracker's own identifier, and the GitHub Projects adapter matched a move
+against status option ids. The engine has no option id to give it:
+`workflow.columns` is written by hand (spec 04 §2), the lock maps no
+configured column to an option, and a column flow never created has no id
+anywhere in flow's world. So `columnTarget` sent the display name —
+correctly, it is the only name flow has — and *every* flow-owned transition
+was refused. The adapter now resolves a target as an option id first and a
+display name second, folding case on the name, because `ColumnOf` reads a
+column back by a folded name and an id flow cannot read back would not be
+idempotent (commit `950a80d`).
+
+Why nothing caught it, which is the lesson: the contract suite moved by
+`ColumnInReview`, and that constant is `"opt-in-review"` — a fixture id, not
+a configured name — so the one vocabulary it exercised was the one no caller
+uses. The reference fake hid the rest by accepting whatever it was handed and
+inventing a column for it. Both are corrected: `FakeTracker` refuses a column
+its fixture does not list, and the contract now moves by display name as well
+as by id. Reverting the adapter reproduces the live error word for word.
+
+Pushing the fix to the same branch re-ran the gate from the fixed checkout,
+and **#72 moved In progress → In review, performed by `flow check pr` in CI**
+— the middle of the board moves for the first time. `flow/policy` is red on
+`agent.human_review`, which is the gate working: `agents.authors` holds
+`flow-bot-gh`, so a machine-written pull request wants a person. The `policy`
+job itself exits 0, by design — the status carries the verdict, and a failing
+job would report the same thing twice.
+
+[#93](https://github.com/17twenty/flow/pull/93), the file proposal `flow apply`
+opened for `forge.files`, was closed as superseded: a pull request based on
+`main` cannot run the workflow, because `main` does not have it yet.
+
+**Single best next step:** `@17twenty` approves and squash-merges
+[#94](https://github.com/17twenty/flow/pull/94). It is the only thing on the
+critical path that the agent cannot do, and three acceptance criteria are
+waiting behind it: the gate landing through a gated pull request, an agent
+pull request approved by a human and merged green, and the scheduled daily
+`doctor` that the fourteen-day streak is counted from — the `schedule` trigger
+only exists once the workflow is on `main`. Once it merges, the remaining
+agent work is plan item 5.6 (`live.flags.cleanup`, #70), the last of Phase 5
+and a single self-contained check: git trailers, a marker, and a ticket filed
+under `--fix` exactly as 5.5 moves one.

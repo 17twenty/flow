@@ -283,9 +283,25 @@ type ghStatusOption struct {
 	Description string `json:"description"`
 }
 
-// has reports whether one of the field's options is that column.
-func (f ghStatusField) has(optionID string) bool {
-	return slices.ContainsFunc(f.Options, func(o ghStatusOption) bool { return o.ID == optionID })
+// column is the option a transition is asking for. A target is either the
+// tracker's own option id, which an observation carries, or the column's
+// display name, which is all a configuration holds: `workflow.columns` is
+// written by hand (spec 04 §2) and the lock records no id for a column flow
+// never created. Names are folded because [engine.ColumnOf] reads a column
+// back by a folded name, and a move flow could not read back would not be
+// idempotent.
+func (f ghStatusField) column(to core.ColumnID) (ghStatusOption, bool) {
+	for _, option := range f.Options {
+		if option.ID == string(to) {
+			return option, true
+		}
+	}
+	for _, option := range f.Options {
+		if strings.EqualFold(option.Name, string(to)) {
+			return option, true
+		}
+	}
+	return ghStatusOption{}, false
 }
 
 // find returns the option with that display name. A board cannot hold two

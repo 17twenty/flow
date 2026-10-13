@@ -91,9 +91,13 @@ type Tracker interface {
 	Ticket(ctx context.Context, key string) (Ticket, error)
 	// Tickets returns the tickets matching a query.
 	Tickets(ctx context.Context, q TicketQuery) ([]Ticket, error)
-	// Move takes a ticket to another column. It is idempotent: moving a
-	// ticket to the column it is already in does nothing. Only transitions
-	// the configuration gives flow are performed this way (spec 04 §5).
+	// Move takes a ticket to another column. The target is the tracker's
+	// own column id, or the column's display name — which is all the
+	// configuration knows, since `workflow.columns` is written by hand and
+	// a column flow never created has no id in the lock. A column the board
+	// does not have is ErrValidation. It is idempotent: moving a ticket to
+	// the column it is already in does nothing. Only transitions the
+	// configuration gives flow are performed this way (spec 04 §5).
 	Move(ctx context.Context, key string, to ColumnID) error
 
 	// CreateFollowUp files a ticket for work flow cannot do, or returns the

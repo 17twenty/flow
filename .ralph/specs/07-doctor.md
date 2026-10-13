@@ -793,3 +793,21 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   and the change flow would have made: a mechanism already written and merely
   switched off is one click, and printing the afternoon's work above it buries
   the cheap answer under the expensive one.
+- **§2 in `--ci` the lock is proposed, never written (item 5.8).** A CI
+  runner's checkout is deleted when the job ends, so a refreshed `.flow.lock`
+  written there is a lock nobody will ever read; and the place it has to reach
+  is the trunk, which is the one place flow does not write (spec 06 §4). So
+  `--ci --fix` opens a pull request carrying it instead, under a fixed
+  proposal id, so that a lock that goes on drifting updates one pull request
+  rather than opening thirty mornings in a row. A lock that already matches
+  is proposed not at all — a daily pull request against a file nobody changed
+  is how a team learns to ignore them.
+- **§2 failing to propose the lock is not the run's verdict (item 5.8).** The
+  report has already said everything doctor found about the workflow, and the
+  lock is flow's own bookkeeping. A forge that will not take the proposal is
+  logged and the exit code is left alone.
+- **§5 the remedy is worded once for every reader (item 5.8).**
+  `Remediation.Lines()` is where the fix, the command and the numbered steps
+  become text; the terminal indents those lines under the finding and an
+  annotation carries them on the end of its message. Two renderers wording
+  the same advice would eventually word it differently.

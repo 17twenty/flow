@@ -1,7 +1,13 @@
 # AGENTS.md — operational guide (< 150 lines)
 
-CURRENT MODE: direct
-<!-- Stage B is unblocked by the `flow-bot-gh` identity but still needs `flow check pr` (item 4.3) and the ruleset; the switch to `pr` happens then (specs/17-dogfood.md §5 Decisions). -->
+CURRENT MODE: pr
+<!-- Stage B is live: @17twenty enabled the `Flow` ruleset, so `main` refuses a push whose commit has no `flow/policy` success. Work lands through a pull request gated by the flow in it (specs/17-dogfood.md §5-6). -->
+
+## Landing work (PR mode)
+- `main` is protected: `git push origin HEAD:main` is **rejected** unless `flow/policy` already passed on that exact commit. Branch and open a PR.
+- Branch `klaudia/<item>`, push it, then `POST /repos/17twenty/flow/pulls` with `Closes #N` in the body and the `agent` label. `.github/workflows/flow.yml` builds flow from the PR's own checkout and runs `flow check pr`, which posts `flow/policy` and moves the ticket.
+- `flow/policy` stays red until `@17twenty` approves: `agents.authors` holds `flow-bot-gh`, so `agent.human_review` wants a human. That is the gate working, not a fault. Ask, then wait.
+- Merge with squash once it is green. Then move the board item and close the issue as before.
 
 ## Identity
 - The agent is the machine user **`flow-bot-gh`** (id 341252896), a repo collaborator with `push` and a WRITER on the Project. The human is `@17twenty`. See `docs/cookbook.md`.
@@ -80,3 +86,4 @@ CURRENT MODE: direct
 - A title and a body are two fields, and a test that changes both proves nothing about either. Make one change at a time: the title-only rewrite was the mutant that survived.
 - "Flow did not attempt it" and "flow found nothing left to do" are the same empty slice, and the second closes tickets. Any code that judges work from a result must first ask whether the work was tried.
 - A mutant survives a test whose fixture cannot tell it apart: `path.Match` treats `**` as `*`, so the "two stars" row matched nothing either way. A row must differ in the *answer*, not only in the input.
+- A contract suite written from the fixture's own constants tests the fixture, not the product. `Tracker.Move` took the column's display name everywhere in the engine and only an option id in the adapter; the suite moved by `ColumnInReview = "opt-in-review"`, so both halves agreed with the test and with nothing else. Write at least one contract case in the vocabulary the *caller* has.

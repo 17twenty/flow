@@ -222,3 +222,43 @@ Secrets never printed.
   because all three are answered by typing something else. `--by` falls back
   to the handle in the user config; when there is none, the refusal says so
   rather than recording an unsigned promise.
+- **§2 `--ci` is three things, and all three follow from one (item 5.8).**
+  A CI job is told it is one, and from that single fact flow draws the lot:
+  the output is plain, because a log is read later by somebody who was not
+  there; the findings worth interrupting anybody for go to the job's own
+  interface as annotations; and nothing flow learns is written into the
+  checkout, because the runner deletes it. The flag sets `Context.CI` and
+  every one of the three asks that, so a build where `--ci` did not reach the
+  context fails three tests rather than none.
+- **§2 the annotations go to stderr, after the report (item 5.8).** The
+  runner reads both streams, so being on the quieter one costs nothing, and
+  stdout keeps carrying exactly one document — `--json --ci` has to stay
+  something a machine can parse. They are written after the report rather
+  than instead of it: the log is the whole of what was found, and the
+  annotations are the few lines of it somebody will see without opening the
+  job at all.
+- **§2 an annotation's level is the same judgement as the exit code (item
+  5.8).** A failure flow has a remedy for is somebody's afternoon and exits 2,
+  so it is a warning; a failure flow has nothing to suggest about is the run
+  exiting 1, so it is an error, as is a check that could not find out. A pass
+  and a skip say nothing at all — twenty green annotations would make the one
+  red one harder to find than no annotations would. Nor does a blocked check:
+  the check that did not hold is annotated already, and a second line about
+  the same fault one step removed sends the reader to the wrong place.
+- **§2 the evidence stays in the report (item 5.8).** An annotation carries
+  the check's title, its count, its finding and its remedy — enough to know
+  whether it is yours. The failing items are in the log, the report and the
+  JSON; a live check holding sixty pull requests would fill the run's
+  interface with the thing annotations exist to point at.
+- **§2 nothing in a message can speak to the runner (item 5.8).** The runner
+  reads every line a job writes, and a message carries repository names, pull
+  request titles and provider errors. `%`, carriage return and newline are
+  percent-escaped in the body, and a colon and a comma additionally in a
+  property, so a check id of `x:file=y` arrives as a title rather than as
+  properties of flow's making (spec 15).
+- **§2 a duration flag takes the configuration's syntax (item 5.8).** Go's
+  own, plus `d` for a day and `w` for a week, through one `Duration` type used
+  by `--window` and `--timeout` alike. `max_age: 7d` in `.flow.yaml` and
+  `--window 7d` on the command line are the same fortnight, and a tool that
+  understood one and not the other would be two tools wearing one name. A
+  bare number is still refused: an unqualified number is a question.

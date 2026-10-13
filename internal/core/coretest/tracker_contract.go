@@ -41,6 +41,7 @@ func TrackerContractCases() []TrackerContractCase {
 		{Name: "tickets by key, by column, and all of them", Run: trackerTickets},
 		{Name: "a ticket that is not there", Run: trackerMissingTicket},
 		{Name: "a move is idempotent", Run: trackerMove},
+		{Name: "a move names a column the way the configuration does", Run: trackerMoveByName},
 		{Name: "a follow-up is filed once and found by its marker", Run: trackerFollowUp},
 		{Name: "a new follow-up carries its marker", Run: trackerNewFollowUp},
 		{Name: "flow rewrites its own ticket and nobody else's", Run: trackerUpdateFollowUp},
@@ -385,6 +386,35 @@ func trackerMove(t *testing.T, newTracker NewTracker) {
 	}
 	if again.ColumnID != moved.ColumnID || !again.UpdatedAt.Equal(moved.UpdatedAt) {
 		t.Errorf("the second move changed the ticket: %+v then %+v", moved, again)
+	}
+}
+
+// trackerMoveByName: a transition names its target the way the configuration
+// does — by the column's display name — because that is the only name flow
+// has. `workflow.columns` is written by hand (spec 04 §2) and a column flow
+// never created has no tracker id anywhere in the lock, so an adapter that
+// understood only its own ids would make every configured transition
+// unperformable. The ticket still comes back carrying the tracker's id.
+func trackerMoveByName(t *testing.T, newTracker NewTracker) {
+	tracker := newTracker(t, ContractTracker())
+	name := ContractTracker().Columns[ColumnInReview]
+	if err := tracker.Move(t.Context(), "#10", core.ColumnID(name)); err != nil {
+		t.Fatalf("Move(%q): %v", name, err)
+	}
+	moved, err := tracker.Ticket(t.Context(), "#10")
+	if err != nil {
+		t.Fatalf("Ticket after Move: %v", err)
+	}
+	if moved.ColumnID != ColumnInReview {
+		t.Fatalf("moving to %q left the ticket in %s, want %s", name, moved.ColumnID, ColumnInReview)
+	}
+	if err := tracker.Move(t.Context(), "#10", core.ColumnID(name)); err != nil {
+		t.Fatalf("moving by name to the column it is already in failed: %v", err)
+	}
+
+	err = tracker.Move(t.Context(), "#10", "Pending triage")
+	if !errors.Is(err, core.ErrValidation) {
+		t.Errorf("Move to a column the board does not have = %v, want it to wrap ErrValidation", err)
 	}
 }
 

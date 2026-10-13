@@ -4,11 +4,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/17twenty/flow/internal/commits"
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/engine"
@@ -27,6 +31,7 @@ import (
 // reportDoc is the shape of a `flow doctor --json` document that a test reads.
 // Only the fields a scenario asserts on are named.
 type reportDoc struct {
+	Window string     `json:"window"`
 	Checks []checkDoc `json:"checks"`
 }
 
@@ -46,6 +51,10 @@ type checkDoc struct {
 			Summary string   `json:"summary"`
 			Steps   []string `json:"steps"`
 		} `json:"remediation"`
+		Counts *struct {
+			Pass  int `json:"pass"`
+			Total int `json:"total"`
+		} `json:"counts"`
 	} `json:"result"`
 }
 
@@ -719,4 +728,168 @@ func TestDoctorDoesNotPublishARunThatOnlyLookedAtSomeOfIt(t *testing.T) {
 	if found != nil {
 		t.Errorf("a narrowed run published %s as if it were the morning report", found.Key)
 	}
+}
+
+// What a CI job is told (item 5.8, spec 02 §2). A scheduled run is read by
+// somebody who was not there, through an interface that holds a few lines, so
+// `--ci` is about what survives the job: the annotations on the run, the
+// document still being a document, and the lock going somewhere that is not
+// a checkout about to be deleted.
+
+// TestDoctorAnnotatesTheJobItIsRunningIn: a finding a person must act on
+// becomes a line the runner lifts out of the log; a finding that held does
+// not, because an interface full of green says nothing when something is red.
+func TestDoctorAnnotatesTheJobItIsRunningIn(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
+
+	code, stdout, stderr := execAt(t, dir, append([]string{"doctor", "--ci"}, owners()...)...)
+	if code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	if !strings.Contains(stderr, "::warning title="+core.ItemForgeProtection+"::") {
+		t.Errorf("the job was not told about %s:\n%s", core.ItemForgeProtection, stderr)
+	}
+	if strings.Contains(stderr, "title=config.syntax") {
+		t.Errorf("a check that held was annotated:\n%s", stderr)
+	}
+	if strings.Contains(stdout, "::") {
+		t.Errorf("the annotations were written into the report:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, core.ItemForgeProtection) {
+		t.Errorf("the report itself was not printed:\n%s", stdout)
+	}
+}
+
+// TestDoctorInCIStillPrintsOneDocument: the annotations are a second reader's
+// stream, so `--json --ci` must still hand a machine exactly one document.
+func TestDoctorInCIStillPrintsOneDocument(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
+
+	code, stdout, stderr := execAt(t, dir, append([]string{"--json", "doctor", "--ci"}, owners()...)...)
+	if code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	var doc reportDoc
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("doctor --json --ci is not one JSON document (%v):\n%s", err, stdout)
+	}
+	if !strings.Contains(stderr, "::warning title=") {
+		t.Errorf("a JSON run annotated nothing:\n%s", stderr)
+	}
+}
+
+// TestDoctorInCIProposesTheLockItWouldHaveWritten: a lock written into a CI
+// checkout is deleted with the runner, so in `--ci` the refresh becomes a
+// pull request instead — and one pull request, however many mornings it
+// takes somebody to merge it.
+func TestDoctorInCIProposesTheLockItWouldHaveWritten(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+
+	args := append([]string{"doctor", "--ci", "--fix"}, owners()...)
+	if code, _, stderr := execAt(t, dir, args...); code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.LockPath)); err == nil {
+		t.Fatalf("a CI run wrote %s into a checkout nobody will read again", config.LockPath)
+	}
+	proposed := proposalOf(t, world())
+	if proposed == nil {
+		t.Fatal("nothing was proposed, so the refreshed lock went nowhere")
+	}
+	if !slices.Contains(proposed.Files.Paths, config.LockPath) {
+		t.Errorf("the proposal does not carry %s: %v", config.LockPath, proposed.Files.Paths)
+	}
+	title := commits.Parse(proposed.Title)
+	if broken := commits.Errors(commits.Lint(title, commits.LintOptions{Settings: commits.DefaultSettings()})); len(broken) > 0 {
+		t.Errorf("the pull request's title breaks the convention it asks of everybody else: %v", broken)
+	}
+
+	execAt(t, dir, args...)
+	if got := proposals(t, world()); len(got) != 1 {
+		t.Errorf("a second morning opened another pull request: %d in all", len(got))
+	}
+}
+
+// TestDoctorProposesNothingWhenTheLockIsAlreadyRight: the refresh is a
+// proposal only when there is something to propose. A pull request a day
+// against a lock nobody has changed is how a team learns to ignore them.
+func TestDoctorProposesNothingWhenTheLockIsAlreadyRight(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+
+	if code, _, stderr := execAt(t, dir, append([]string{"doctor", "--fix"}, owners()...)...); code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	before := lockText(t, dir)
+
+	if code, _, stderr := execAt(t, dir, append([]string{"doctor", "--ci", "--fix"}, owners()...)...); code == core.ExitFail {
+		t.Fatalf("doctor --ci failed: %s", stderr)
+	}
+	if got := proposals(t, world()); len(got) != 0 {
+		t.Errorf("a lock that was already right was proposed anyway: %v", got[0].Title)
+	}
+	if after := lockText(t, dir); after != before {
+		t.Errorf("the CI run rewrote the lock:\n%s\nwas\n%s", after, before)
+	}
+}
+
+// TestDoctorLooksBackAsFarAsItWasAsked: the live-health audit's window is a
+// flag because a scheduled job and a person checking by hand want different
+// fortnights out of the same repository (spec 02 §2).
+func TestDoctorLooksBackAsFarAsItWasAsked(t *testing.T) {
+	now := time.Now()
+	dir, _ := gateRepo(t, func(w *fakeWorld) {
+		w.forge.SetPermissions(adminAccess)
+		w.forge.SetPullRequest(mergedWithoutATicket(41, now.Add(-2*24*time.Hour)))
+		w.forge.SetPullRequest(mergedWithoutATicket(42, now.Add(-20*24*time.Hour)))
+	})
+
+	fortnight, _ := doctorJSON(t, dir, append([]string{"--window", "14d"}, owners()...)...)
+	if got := fortnight.check(t, engine.CheckLivePRsLinked).Result.Counts.Total; got != 1 {
+		t.Errorf("a fortnight read %d merges, want 1: the older one is outside it", got)
+	}
+	if got := fortnight.Window; got != "14d" {
+		t.Errorf("the report says the window was %q, want 14d", got)
+	}
+
+	month, _ := doctorJSON(t, dir, append([]string{"--window", "720h"}, owners()...)...)
+	if got := month.check(t, engine.CheckLivePRsLinked).Result.Counts.Total; got != 2 {
+		t.Errorf("a month read %d merges, want 2", got)
+	}
+}
+
+// mergedWithoutATicket is a pull request that merged into the trunk naming no
+// ticket, which is what `live.prs.linked` counts.
+func mergedWithoutATicket(number int, at time.Time) core.PullRequest {
+	pr := gatePR(number, "feat(engine): add x")
+	pr.State = core.PRStateMerged
+	pr.MergedAt = at
+	pr.UpdatedAt = at
+	pr.MergeSHA = fmt.Sprintf("merge-%d", number)
+	return pr
+}
+
+// proposals are the pull requests flow opened for itself.
+func proposals(t *testing.T, world *fakeWorld) []core.PullRequest {
+	t.Helper()
+	open, err := world.forge.PullRequests(t.Context(), core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		t.Fatalf("read the pull requests: %v", err)
+	}
+	var mine []core.PullRequest
+	for _, pr := range open {
+		if pr.HeadRef == (core.FileProposal{ID: "lock"}).Branch() {
+			mine = append(mine, pr)
+		}
+	}
+	return mine
+}
+
+// proposalOf is the one proposal flow made, or nil.
+func proposalOf(t *testing.T, world *fakeWorld) *core.PullRequest {
+	t.Helper()
+	found := proposals(t, world)
+	if len(found) == 0 {
+		return nil
+	}
+	return &found[0]
 }
