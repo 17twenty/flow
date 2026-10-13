@@ -45,7 +45,7 @@ tests, dependencies limited to spec 01 §4.
 - [ ] `flow apply` created a `main` ruleset requiring `flow/policy` and `ci / test`, preserving pre-existing required contexts; native transitions attested.
 - [x] `.github/workflows/flow.yml` landed via a PR that was itself gated by `flow/policy` ([#94](https://github.com/17twenty/flow/pull/94)); `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
 - [x] At least one agent PR has been opened by the agent identity — the machine user `flow-bot-gh`, which replaced the App in specs/17-dogfood.md §Decisions — moved In progress → In review by `flow check pr` ([#72](https://github.com/17twenty/flow/issues/72) on [#94](https://github.com/17twenty/flow/pull/94)), approved by `@17twenty`, and squash-merged on a green gate.
-- [ ] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run (**done** — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log); README demo section links the live Project, that issue and recent agent PRs, and states the current streak (plan item 8.2).
+- [x] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log; the README demo section links the live Project, that issue and recent agent PRs, and states the current streak with the date it was read (plan item 8.2).
 - [ ] `flow doctor` on `17twenty/flow` exits 0 on 14 consecutive daily runs with the live-health expectations of spec 17 §7 met, while the loop keeps shipping.
 
 ## Verify
@@ -692,6 +692,18 @@ the filter had matched it, the key line offering keys the list had switched
 off, and the filter input left in the library's colours on a screen asked for
 none. Each bought a test. The fifth is equivalent — the zero value of a type
 parameter is the zero value either way.
+
+**The README demo (item 8.2, this run).** The section links the board, the
+pinned health issue, the agent's own pull requests and the workflow that gates
+them, and sets spec 17 §7's expectations beside what the audit reads today —
+seventeen merges, every one gated, linked, approved by a person and in
+production inside two hours. The streak is stated with the date it was read
+and a sentence saying the issue is the record, because a number in a README is
+a claim and that issue is the thing that is true. What is checked
+mechanically is the part that can rot unseen: every forge link in the section
+is read against `.flow.yaml` and the board number in `.flow.lock`, so a flow
+pointed at another repository fails the test that says the demo is of this
+one.
 
 **Where the exit code stands.** `./bin/flow doctor` against this repository
 exits 2 on six checks, and none of them is a defect in flow:
