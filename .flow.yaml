@@ -2,7 +2,11 @@
 # flow's own workflow — see .ralph/specs/17-dogfood.md
 version: 1
 preset: lean-kanban
-forge:   { type: github, repo: 17twenty/flow, auth: { token_env: GITHUB_TOKEN } }
+forge:
+  type: github
+  repo: 17twenty/flow
+  required_checks: [test]         # the build, by the name the check run goes by (not "ci / test", which is the UI's label)
+  auth: { token_env: GITHUB_TOKEN }
 tracker:
   type: github-projects
   owner: 17twenty

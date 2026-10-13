@@ -145,6 +145,20 @@ func (v *validator) forge() {
 		v.add("forge.repo is %q; it must be owner/name, with no spaces and exactly one slash", forge.Repo)
 	}
 	v.webURL("forge.url", forge.URL)
+	seen := map[string]bool{}
+	for i, context := range forge.RequiredChecks {
+		at := fmt.Sprintf("forge.required_checks[%d]", i)
+		switch {
+		case strings.TrimSpace(context) == "":
+			v.add("%s is empty", at)
+		case strings.TrimSpace(context) != context:
+			v.add("%s is %q; a status context is matched exactly, so the spaces around it are part of it", at, context)
+		case seen[context]:
+			v.add("%s repeats %q", at, context)
+		default:
+			seen[context] = true
+		}
+	}
 	v.envName("forge.auth.token_env", forge.Auth.TokenEnv)
 	if forge.Auth.EmailEnv != "" {
 		v.add("forge.auth.email_env is set; a forge authenticates with a token alone")
