@@ -270,3 +270,16 @@ Secrets never printed.
   list went with it: a surface test that walks nothing proves nothing, and the
   rule it stood for is now the parse error a command flow does not have
   already gets.
+
+- **§2 the flag list stays exactly as written, and the wizard collects no
+  more than it (item 6.1).** Spec 12 §1 ends the wizard with "done_on + deploy
+  source", which reads like two more flags for `init`. They were written, and
+  they could not be used: `workflow.done_on` has to agree with
+  `workflow.transitions.deployed` and `deploys.source` with the rest of its
+  block (spec 04 §6, spec 03 §1), while `init` fills scalars into a preset in
+  place and does not restructure one. Every value either repeated the preset's
+  own answer and changed nothing, or produced a configuration flow then refused
+  to read. A flag whose every effective value is an error is not a flag, so
+  neither was kept, and the wizard asks both questions where their answer
+  actually lives — at `--preset`. The plain equivalent survives intact: every
+  question the screen asks is still one of the flags above.
