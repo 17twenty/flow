@@ -43,6 +43,7 @@ const (
 	FieldAllowForcePush       = "allow_force_push"
 	FieldAllowDeletions       = "allow_deletions"
 	FieldRequireLinearHistory = "require_linear_history"
+	FieldStrictChecks         = "strict_checks"
 )
 
 // Merge settings fields, named after [core.MergeSettings]'s members.
@@ -357,8 +358,17 @@ func forgeDefaultBranch() DesiredItem {
 }
 
 // forgeProtection is what the configuration implies about the trunk, and
-// nothing more: it is protected, it is not rewritten or deleted, and it keeps
-// a linear history when the team squashes or rebases.
+// nothing more: it is protected, it is not rewritten or deleted, it keeps a
+// linear history when the team squashes or rebases, and a branch is up to
+// date with it before it may merge.
+//
+// That last one is what makes the gate's verdict true of the trunk rather
+// than of the branch. A status is about the commit it was posted on, and a
+// branch that has fallen behind is a different tree from the one that lands:
+// two pull requests can each be green against the trunk they left and still
+// be red together. So wherever flow requires a check of its own it also
+// requires the branch to be current, and where it requires no check there is
+// nothing for currency to be a property of (spec 10 §2).
 //
 // How many approvals a pull request needs is deliberately absent. Spec 09's
 // gate is what insists on a human approval of agent work, and a required
@@ -370,6 +380,7 @@ func forgeProtection(cfg *config.Config) DesiredItem {
 		FieldEnabled:        "true",
 		FieldAllowForcePush: "false",
 		FieldAllowDeletions: "false",
+		FieldStrictChecks:   strconv.FormatBool(cfg.Policy.StatusContext != ""),
 	}
 	if cfg.Commits.MergeStrategy != "" && cfg.Commits.MergeStrategy != config.MergeCommit {
 		fields[FieldRequireLinearHistory] = "true"
