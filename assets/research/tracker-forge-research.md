@@ -144,3 +144,53 @@ links for the authoritative text.
   user-owned Project; use a PAT with `project` scope stored as a secret.
   Fine-grained token support for user-owned Projects must be checked at build
   time (record a Decision in spec 11).
+
+## Archiving (verified 2026-10-13, after issue #99)
+
+Every provider has a way of putting work out of sight without closing or
+deleting it, and the one thing they share is that two readings of the same
+thing can disagree. Flow needs the flag (`core.Ticket.Archived`,
+`core.Repository.Archived`) because an archived thing takes no writes.
+
+### GitHub Projects — archived items
+- `ProjectV2.items` **excludes** archived items; `Issue.projectItems`
+  **includes** them, with the column they were archived in. `isArchived` is on
+  `ProjectV2Item` and both of flow's queries now select it.
+- `updateProjectV2ItemFieldValue` on an archived item answers
+  `{"updateProjectV2ItemFieldValue": null}` with **no `errors`** and changes
+  nothing: the returned item id is the only evidence the write landed.
+- Auto-archive is one of the built-in workflows (spec 17 §3 asks for it on the
+  dogfood board), so this is routine, not exotic.
+
+### Jira Cloud — archived issues
+- Cloud Premium only (Data Center 8.1+). Archived issues are read-only and
+  drop out of JQL search, project lists, dashboards and reports.
+  https://confluence.atlassian.com/adminjiraserver/archiving-an-issue-968669980.html
+- `GET /rest/api/3/issue/{key}` still returns the full issue, and the payload
+  carries **no archived flag of any kind**; there is an open Atlassian
+  suggestion for a REST API that lists archived issues.
+  https://jira.atlassian.com/browse/JRACLOUD-94071
+- So the adapter derives it: present by key, absent from a *full* JQL listing.
+  A narrowed listing proves nothing — absence then means the filter.
+- `PUT /rest/api/2/issue/{key}/archive` and `POST /rest/api/2/issue/archive`
+  are the Data Center archiving endpoints.
+  https://developer.atlassian.com/server/jira/platform/jira-archiver/
+
+### Linear — archived issues
+- Every connection takes `includeArchived: Boolean` ("Should archived
+  resources be included", default **false**), and `archivedAt` is on the
+  entity (null when live). `trashed` is a separate state.
+- Linear **auto-archives** issues, cycles and projects a while after they
+  close, so a Linear board will archive flow's own tickets as a matter of
+  course.
+- `issueArchive(id, trash)` archives; the entity comes back with `archivedAt`
+  set.
+
+### Archived repositories (the forge side, issue #102)
+- GitHub: `archived: true` in the repository payload; the repository is
+  read-only. Flow already reads it into `core.Repository.Archived`.
+- GitLab: `archived` on the project; "repository, packages, issues, merge
+  requests and all other functions are read-only", and writes answer 403.
+- Gitea/Forgejo: the same feature by design — "you cannot push, create issues,
+  comment or do anything else which may change it". Confirm the field the
+  `/repos/{owner}/{repo}` payload carries when the adapter is written.

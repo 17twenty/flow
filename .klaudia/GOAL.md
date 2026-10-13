@@ -533,12 +533,44 @@ other live check passes, including `live.prs.reviewed 3/3` and
 `tracker.expedite`, which `flow attest` settles for thirty days at a time and
 which a person has to actually look at first.
 
+### The same shape on every other provider (this run)
+
+[#101](https://github.com/17twenty/flow/pull/101) is merged. Archiving is not
+a GitHub Projects quirk — every provider flow is going to grow has the feature
+under a different name — so the research was verified and written where the
+next implementer looks first (`assets/research/tracker-forge-research.md`,
+which spec 10 opens by telling you to read), with Decisions in specs 10 and 11
+and the acceptance criteria of plan items 7.1–7.4 and their issues.
+
+Jira is the hard one: an archived issue is read-only and drops out of JQL
+search, while `GET /issue/{key}` returns it in full with **no archived flag of
+any kind**. The flag has to be derived from the two readings disagreeing,
+which flow can do only because it already asks both questions — and only
+against a full listing, since absence from a narrowed one means the filter.
+Linear is the routine one: connections exclude archived entities unless the
+query passes `includeArchived: true`, and Linear auto-archives issues a while
+after they close, so a Linear board archives flow's own tickets as a matter of
+course. GitLab and Gitea archive the repository instead: read-only in every
+function, 403 on a write.
+
+Which found one more hole, left open as
+[#102](https://github.com/17twenty/flow/issues/102):
+`core.Repository.Archived` exists, the GitHub adapter fills it, and nothing
+reads it. `flow apply` against an archived repository would fail item by item
+with whatever each endpoint said, when the whole truth is one sentence. It is
+the forge-side shape of #99, and the refusal belongs in the engine so both
+Phase 7 forges inherit it with the flag. The notes are
+[#103](https://github.com/17twenty/flow/issues/103), open as
+[#104](https://github.com/17twenty/flow/pull/104), green on `test`, `policy`
+and `setup checks`.
+
 **Single best next step:** `@17twenty` approves and squash-merges
-[#101](https://github.com/17twenty/flow/pull/101). Then, in order: attest the
+[#104](https://github.com/17twenty/flow/pull/104). Then, in order: attest the
 four native behaviours so the exit code depends only on real findings; land
 plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a single
 self-contained check: git trailers, a marker, and a ticket filed under `--fix`
 exactly as 5.5 moves one; and settle
+[#102](https://github.com/17twenty/flow/issues/102) and
 [#100](https://github.com/17twenty/flow/issues/100), where
 `pr_closed_unmerged` cannot be configured to mean what it means. The
 fourteen-day clock starts the first morning the scheduled run exits 0.

@@ -400,3 +400,34 @@ reopen, pagination, error mapping.
   `ErrConflict`; `TrackerContract` holds the case, so both halves must agree.
   The contract fixture gained `#15`, archived in In review, reachable as
   `coretest.ContractArchivedKey`.
+- **§1 `Archived` is a question every tracker answers, and not always with a
+  field (issue #103).** Flow asks a tracker two questions anyway — the board
+  listing, and a ticket by key — so an adapter can report archiving even where
+  the provider exposes nothing, by the two disagreeing. What each provider
+  gives the adapter to work with:
+  - *GitHub Projects (settled, issue #99).* `isArchived` on the item.
+    `ProjectV2.items` excludes archived items, `Issue.projectItems` returns
+    them; both queries select the field.
+  - *Jira Cloud (item 7.1).* Issue archival is Cloud Premium (and Data Center
+    8.1+). An archived issue is read-only and drops out of JQL search, while
+    `GET /rest/api/3/issue/{key}` still returns the whole issue **with no
+    archived field at all** — Atlassian has an open suggestion asking for one.
+    So the adapter derives the flag: found by key, absent from the project's
+    JQL listing. That inference is only sound against a full listing, never
+    against one narrowed by `UpdatedSince`, a column or a limit, where absence
+    means the filter and not the archive.
+  - *Linear (item 7.2).* Every connection excludes archived entities unless
+    the query passes `includeArchived: true`, and `archivedAt` carries the
+    time. Linear **auto-archives issues a while after they close**, so flow's
+    own tickets archive themselves in the ordinary course of a project and
+    this is the tracker where the case is routine rather than exceptional.
+    The board listing leaves `includeArchived` off, because a listing is the
+    board; a lookup by key sets it, because a key is a question about an
+    issue. `trashed` is a different state and reads as not found.
+- **§5 the archived contract case is every adapter's.** `trackerArchived` is
+  in `TrackerContractCases`, so Jira and Linear must pass what GitHub Projects
+  passes: off the listing, present by key with its column, and a move refused
+  with `ErrConflict` naming the archiving. Where a provider would accept the
+  write, the adapter refuses it from the flag it already read — the contract
+  is about what flow does, and flow must not report a move that it cannot
+  know landed.
