@@ -258,6 +258,14 @@ type PullRequest struct {
 	Number int
 	// Title is its header, which must pass the commit convention.
 	Title string
+	// SquashHeader is the commit header a squash merge of this pull request
+	// would put on the trunk. It is not always the title: GitHub and Gitea
+	// append the pull request's number, so a 66-character title lands as a
+	// 73-character header and the convention applies to the header. GitLab
+	// appends nothing and writes the title back unchanged. Only the adapter
+	// knows which, so only the adapter fills this in; a listing carries it,
+	// because a number and a title are all it is made of.
+	SquashHeader string
 	// Body is its description.
 	Body string
 	// Author is the login that opened it.
@@ -298,6 +306,23 @@ type PullRequest struct {
 
 // Merged reports whether the pull request landed.
 func (p PullRequest) Merged() bool { return p.State == PRStateMerged }
+
+// MergeHeader is the commit header the trunk will carry when this pull request
+// is squashed: what the forge said it would write, and the title when the
+// forge has said nothing.
+//
+// The fallback is the title rather than an error because a forge that appends
+// nothing lands the title unchanged, which makes the title the right answer
+// for every forge that has not been asked and for every pull request built by
+// hand. What stops that from quietly hiding a silent adapter is the forge
+// contract, which requires SquashHeader of every pull request an adapter
+// produces.
+func (p PullRequest) MergeHeader() string {
+	if p.SquashHeader != "" {
+		return p.SquashHeader
+	}
+	return p.Title
+}
 
 // Approvals returns the logins that approved and have not been dismissed or
 // overtaken by a later review from the same person.

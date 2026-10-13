@@ -159,3 +159,17 @@ golden; determinism; fork/read-only path; draft path.
   remedy, and it is the whole value of the finding: an issue nobody added has
   to be added, and one somebody archived has to be restored — adding it again
   is not a thing the project will do, since it already holds the item.
+- **§2 `pr.title.conventional` judges the header a squash would land, not the
+  title (issue #106).** The convention is a rule about the trunk's history and
+  the trunk gets whatever the forge writes: with `squash_merge_commit_title:
+  PR_TITLE` GitHub appends ` (#<number>)`, so a 66-character title lands as a
+  73-character header. Linting the title therefore passed work that broke
+  `cc.header.length` the moment it merged, and the live audit of spec 07 §6
+  reported it a fortnight later — the gate contradicting the audit about the
+  same commit. The rule now lints `core.PullRequest.MergeHeader()`. The two
+  strings differ only at the end, so every rule about the front of a header
+  reads the same thing either way and only the length rule changes its answer.
+  A finding adds one line of evidence naming the header that lands and the
+  characters the forge added, because a person counting their own title to 66
+  cannot otherwise make sense of "73 characters"; when the two are the same
+  string, nothing is said.

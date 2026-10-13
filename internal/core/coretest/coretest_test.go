@@ -3,6 +3,7 @@ package coretest_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,6 +29,39 @@ func TestFakeDeploysMeetsTheContract(t *testing.T) {
 	coretest.DeployContract(t, func(t *testing.T, fx coretest.DeployFixture) core.DeploySource {
 		return coretest.NewFakeDeploys(fx)
 	})
+}
+
+// TestFakeForgeDerivesTheSquashHeaderRatherThanRememberingIt: the header a
+// squash would land is composed on the way out of every read, because that is
+// what an adapter does — a real forge has no memory of it either, it is a
+// number and the title as the title is now. A fake that stored one instead
+// would hand back the header an old title would have landed, and the gate
+// would be judged right for agreeing with it.
+func TestFakeForgeDerivesTheSquashHeaderRatherThanRememberingIt(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].SquashHeader = "feat(ui): whatever this used to be (#1)"
+	forge := coretest.NewFakeForge(fx)
+
+	pr, err := forge.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest(1): %v", err)
+	}
+	if want := fx.PullRequests[0].Title + " (#1)"; pr.SquashHeader != want {
+		t.Fatalf("SquashHeader = %q, want %q: the fixture's stale header is not what a squash would land now", pr.SquashHeader, want)
+	}
+
+	renamed, err := forge.ProposeFiles(t.Context(), core.FileProposal{
+		ID:    "setup",
+		Title: "chore(assets): write the workflow down",
+		Body:  "flow proposes.",
+		Files: []core.ProposedFile{{Path: ".github/workflows/flow.yml", Content: []byte("on: push\n")}},
+	})
+	if err != nil {
+		t.Fatalf("ProposeFiles: %v", err)
+	}
+	if want := renamed.Title + " (#" + strconv.Itoa(renamed.Number) + ")"; renamed.SquashHeader != want {
+		t.Errorf("SquashHeader = %q, want %q: a pull request the fake just wrote says what it would land", renamed.SquashHeader, want)
+	}
 }
 
 func TestFaultsFailOnceThenRecover(t *testing.T) {

@@ -3,6 +3,7 @@ package forge
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"path"
 	"slices"
 	"strconv"
@@ -122,20 +123,27 @@ type ghPull struct {
 
 // toPullRequest converts the payload. GitHub has no merged state: a merged
 // pull request is a closed one that carries a merge time.
+//
+// The squash header is composed rather than read, because GitHub does not
+// serve it: with squash_merge_commit_title set to PR_TITLE the merge box
+// offers "<title> (#<number>)" and that is what lands. It is composed for
+// every pull request, open or merged, since the gate's whole job is to judge
+// the header before it exists.
 func (p ghPull) toPullRequest() core.PullRequest {
 	pr := core.PullRequest{
-		Number:    p.Number,
-		Title:     p.Title,
-		Body:      p.Body,
-		Author:    p.User.Login,
-		State:     core.PRStateOpen,
-		Draft:     p.Draft,
-		HeadSHA:   p.Head.SHA,
-		HeadRef:   p.Head.Ref,
-		BaseRef:   p.Base.Ref,
-		CreatedAt: p.CreatedAt,
-		UpdatedAt: p.UpdatedAt,
-		URL:       p.HTMLURL,
+		Number:       p.Number,
+		Title:        p.Title,
+		SquashHeader: fmt.Sprintf("%s (#%d)", p.Title, p.Number),
+		Body:         p.Body,
+		Author:       p.User.Login,
+		State:        core.PRStateOpen,
+		Draft:        p.Draft,
+		HeadSHA:      p.Head.SHA,
+		HeadRef:      p.Head.Ref,
+		BaseRef:      p.Base.Ref,
+		CreatedAt:    p.CreatedAt,
+		UpdatedAt:    p.UpdatedAt,
+		URL:          p.HTMLURL,
 		Files: core.FileSummary{
 			Changed:   p.ChangedFiles,
 			Additions: p.Additions,

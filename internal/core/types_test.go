@@ -177,6 +177,21 @@ func TestPullRequestChangesRequested(t *testing.T) {
 	}
 }
 
+// TestPullRequestMergeHeader: the header the trunk will carry is what the
+// forge said it would write, and the title when the forge said nothing —
+// because a forge that appends nothing lands the title unchanged, so the title
+// is the right answer for one that has not been asked.
+func TestPullRequestMergeHeader(t *testing.T) {
+	said := core.PullRequest{Number: 104, Title: "docs(ralph): a shape", SquashHeader: "docs(ralph): a shape (#104)"}
+	if got := said.MergeHeader(); got != "docs(ralph): a shape (#104)" {
+		t.Errorf("MergeHeader() = %q, want the header the forge said it would write", got)
+	}
+	silent := core.PullRequest{Number: 104, Title: "docs(ralph): a shape"}
+	if got := silent.MergeHeader(); got != "docs(ralph): a shape" {
+		t.Errorf("MergeHeader() = %q, want the title when nothing described the merge", got)
+	}
+}
+
 func TestCommitHeader(t *testing.T) {
 	commit := core.Commit{Message: "fix(core): stop the leak\n\nIt leaked.\n"}
 	if got := commit.Header(); got != "fix(core): stop the leak" {

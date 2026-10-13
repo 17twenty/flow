@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/17twenty/flow/internal/commits"
 	"github.com/17twenty/flow/internal/config"
@@ -436,9 +437,11 @@ var titleRules = []string{
 	commits.RuleHeaderLength,
 }
 
-// prTitleConventional lints the title as the commit header it is about to
-// become. Under a squash merge the title is the only thing that ends up in the
-// trunk's history, so it is the only thing worth linting here.
+// prTitleConventional lints the commit header the pull request is about to
+// become. Under a squash merge that header is the only thing that ends up in
+// the trunk's history, so it is the only thing worth linting here — and it is
+// not always the title, because GitHub and Gitea append the pull request's
+// number to it (see [core.PullRequest.MergeHeader]).
 func prTitleConventional(s PolicySnapshot) Finding {
 	finding := Finding{OK: true}
 	violations := lintTitle(s, titleRules)
@@ -449,16 +452,35 @@ func prTitleConventional(s PolicySnapshot) Finding {
 	if len(violations) == 1 {
 		finding.Message = violations[0].Message
 		finding.Fix = violations[0].Fix
-		return finding
+	} else {
+		finding.Message = fmt.Sprintf("the title breaks %d rules of the commit convention", len(violations))
+		finding.Fix = violations[0].Fix
+		for _, violation := range violations {
+			finding.Evidence = append(finding.Evidence, Evidence{
+				Text: fmt.Sprintf("%s: %s — %s", violation.Rule, violation.Message, violation.Fix),
+			})
+		}
 	}
-	finding.Message = fmt.Sprintf("the title breaks %d rules of the commit convention", len(violations))
-	finding.Fix = violations[0].Fix
-	for _, violation := range violations {
-		finding.Evidence = append(finding.Evidence, Evidence{
-			Text: fmt.Sprintf("%s: %s — %s", violation.Rule, violation.Message, violation.Fix),
-		})
+	if note, differs := landedHeaderNote(s.PR); differs {
+		finding.Evidence = append(finding.Evidence, Evidence{Text: note})
 	}
 	return finding
+}
+
+// landedHeaderNote explains a verdict passed on something other than the title
+// the author typed, and reports whether there is anything to explain.
+//
+// Without it a person reads "header is 73 characters" against a title they can
+// count to 66 and concludes the gate is broken. The number is the forge's
+// doing and the author cannot delete it, so the only honest thing to show is
+// the whole header and where the difference came from.
+func landedHeaderNote(pr core.PullRequest) (string, bool) {
+	header := pr.MergeHeader()
+	if header == pr.Title {
+		return "", false
+	}
+	return fmt.Sprintf("the header that lands is %q: the forge appends the number when it squashes, which is %d characters the title does not show",
+		header, utf8.RuneCountInString(header)-utf8.RuneCountInString(pr.Title)), true
 }
 
 // prBreakingExplained insists that a "!" is followed by an explanation. A
@@ -636,9 +658,17 @@ func CommitSettings(cfg *config.Config) commits.Settings {
 	return settings
 }
 
-// lintTitle lints the pull request title and keeps only the rules asked for.
+// lintTitle lints the header the pull request will land as and keeps only the
+// rules asked for.
+//
+// It is [core.PullRequest.MergeHeader] rather than the title because the
+// convention is a rule about the trunk's history, and the trunk gets whatever
+// the forge writes. The two differ only at the end, so every rule about the
+// front of a header — the type, the scope, the breaking marker — reads the
+// same string either way, and the one rule that counts to the end of it now
+// counts the characters that are really there.
 func lintTitle(s PolicySnapshot, keep []string) []commits.Violation {
-	message := commits.Parse(s.PR.Title)
+	message := commits.Parse(s.PR.MergeHeader())
 	violations := commits.Lint(message, commits.LintOptions{
 		Settings: CommitSettings(s.Config),
 		Subject:  commits.SubjectPullRequest,
