@@ -171,6 +171,14 @@ func (a Applied) Outstanding() int {
 
 // ExitCode is what `flow apply` exits with (spec 02 §2): 0 when the providers
 // converged, 2 when follow-ups or inputs remain, 1 when something failed.
+//
+// Settled means the same thing here as it does in [Plan.ExitCode], and for
+// the same reason: a compensated item is enforced by something other than the
+// setting the configuration named, so nobody owes anything for it. The two
+// commands are asked about one world and must not answer differently — a
+// workflow holding one compensated item would otherwise have a plan that
+// exits 0 and an apply that exits 2 for ever, which is scenario A04's exit
+// code made unreachable.
 func (a Applied) ExitCode() int {
 	outstanding := a.Outstanding()
 	for _, item := range a.Items {
@@ -180,7 +188,7 @@ func (a Applied) ExitCode() int {
 		switch item.Outcome {
 		case OutcomeUnsupported:
 			return 1
-		case OutcomeNoop, OutcomeNative:
+		case OutcomeNoop, OutcomeNative, OutcomeCompensated:
 		default:
 			outstanding++
 		}
