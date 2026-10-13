@@ -81,6 +81,8 @@ func ConfigSchema() *Schema {
 				"type": enum("Which forge adapter to use.", ForgeGitHub, ForgeGitea, ForgeGitLab),
 				"repo": pattern("The repository, as owner/name.", `^[^/\s]+/[^/\s]+$`, "17twenty/flow"),
 				"url":  str("Base web URL, for self-managed installations.", "https://github.example.com"),
+				"required_checks": array("Status contexts the trunk requires beyond flow's own gate.",
+					str("One status context, matched exactly.", "test")),
 				"auth": authSchema(),
 			}, "type", "repo"),
 

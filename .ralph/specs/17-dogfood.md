@@ -12,7 +12,7 @@ the pinned health issue, and recent PRs as proof.
 | Tracker | GitHub Project v2, **user-owned** by `17twenty`, named "flow", Board layout |
 | Columns (Status options) | Backlog · Ready · In progress · In review · Done (GitHub's Kanban template defaults) |
 | Linkage | PR body `Closes #N` (or Development sidebar) → `closingIssuesReferences` |
-| Gate | `flow/policy` required status (plus `ci / test`) via ruleset on `main` |
+| Gate | `flow/policy` required status, plus the build's own `test` from `forge.required_checks`, via ruleset on `main` |
 | Merge | squash only; commit title = PR title; commit message = PR body |
 | Done | `done_on: merged` (native "PR merged → Done", "Item closed → Done") |
 | Deploy signal | GitHub Deployment `production` recorded by `release.yml` for every merge to `main` |
@@ -122,7 +122,7 @@ with conventional messages and `Closes #N` footers referencing the seeded issue
 go install github.com/17twenty/flow@main
 flow init --tracker github-projects --owner 17twenty --project <n> --force   # must reproduce §4 exactly
 flow plan        # expect: native = ruleset + merge settings; attest = built-in workflows; nothing else
-flow apply       # creates ruleset requiring flow/policy + ci / test
+flow apply       # creates ruleset requiring flow/policy + test (forge.required_checks)
 flow attest tracker.native.pr_merged    --note "Project workflow on"   # etc. for each native transition
 ```
 Then adds `.github/workflows/flow.yml` via a PR — which is itself gated by
@@ -148,7 +148,7 @@ Each iteration, as the agent identity:
    "<summary>\n\nCloses #<N>" --label agent` → `flow check pr` moves the item to
    In progress; when CI is green, `gh pr ready` → In review.
 8. `gh pr merge --auto --squash`. The human reviews and approves; merge happens
-   automatically when `flow/policy` and `ci / test` pass.
+   automatically when `flow/policy` and `test` pass.
 
 ## 7. What the demo proves (live-health expectations on the flow repo)
 
@@ -334,3 +334,12 @@ Each iteration, as the agent identity:
   the board number resolved in `.flow.lock`, so a flow pointed at another
   repository or another board fails the test that says the demo is of this
   one. The streak line itself is required to exist and to carry a date.
+
+- **The required context is `test`, not `ci / test`** (item 7.0). A GitHub
+  ruleset matches a check by the name the check run goes by, which for GitHub
+  Actions is the job's name; `ci / test` is the label the web UI composes from
+  the workflow and the job, and no API ever reports it. This repository's
+  check runs are `test`, `policy`, `setup checks` and `daily health`, so
+  `forge.required_checks: [test]` is what asks for the build. Naming the UI's
+  label would have required a check nothing publishes — a trunk nobody could
+  merge to.

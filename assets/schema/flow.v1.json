@@ -310,6 +310,17 @@
             "17twenty/flow"
           ]
         },
+        "required_checks": {
+          "description": "Status contexts the trunk requires beyond flow's own gate.",
+          "type": "array",
+          "items": {
+            "description": "One status context, matched exactly.",
+            "type": "string",
+            "examples": [
+              "test"
+            ]
+          }
+        },
         "type": {
           "description": "Which forge adapter to use.",
           "type": "string",
