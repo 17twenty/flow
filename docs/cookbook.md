@@ -285,3 +285,31 @@ lets `flow doctor` distinguish "verified" from "asserted" (spec 07 §8):
 The honest summary: creating accounts and clicking Project workflow toggles
 cannot be automated today. Everything else on this page is a one-off `curl`
 that flow either performs itself or checks.
+
+### 6.1 The four this repository owes
+
+`flow doctor` on `17twenty/flow` reports these as `attest`, and an unattested
+check is worth exit 2 (spec 07 §2), so the Stage C streak cannot start until a
+human has looked and said so:
+
+```sh
+flow attest tracker.native.pr_merged          --note "Project workflow 'Pull request merged' is on and sets Status: Done"
+flow attest tracker.native.issue_closed       --note "Project workflow 'Item closed' is on and sets Status: Done"
+flow attest tracker.native.changes_requested  --note "Project workflow 'Code changes requested' is on and sets Status: In progress"
+flow attest tracker.expedite                  --note "<what the board does with expedited work, and how you checked>"
+```
+
+Read each one before running its line — an attestation is a person's word,
+not a way to make a check quiet (spec 07 §8). There is no URL for the
+workflows panel: it is an overlay, not a page. Open
+<https://github.com/users/17twenty/projects/2>, click the **…** menu at the
+top right, and choose **Workflows**.
+
+Each command writes one entry to `.flow.lock`, which is committed, so they
+land through a pull request like anything else and the word stands for thirty
+days.
+
+A note on what this costs: `live.transitions.native` already watches these
+same workflows behave on real tickets, so the attestation is the setup half of
+a fact the live half re-checks every day. That is the design — flow is allowed
+to take your word for the switch, and never for the outcome.
