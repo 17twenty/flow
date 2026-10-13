@@ -126,7 +126,7 @@ func (a *audit) inFlight(ctx context.Context, env *Env) ([]core.PullRequest, err
 			a.openErr = core.Explain(err, "read the open pull requests")
 			return
 		}
-		a.open = prs
+		a.open, a.openErr = detailed(ctx, env.Adapters.Forge, prs)
 	})
 	return a.open, a.openErr
 }

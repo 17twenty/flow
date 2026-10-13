@@ -279,3 +279,14 @@ duplicate-pipeline hazards). MR closing issues: `GET
   from it yields no dormant rules and no error, because the reading sharpens a
   remedy and decides nothing — the protection flow actually acts on has
   already been read by then.
+- **§2 a listing is a summary, and `core.PullRequest` says which fields it
+  cannot carry (bug fix after item 5.8).** The table lists three reads where a
+  caller might hope for one: the window from `pulls?state=…`, the reviews from
+  `/pulls/{n}/reviews`, and the linkage from the `closingIssuesReferences`
+  query. None of them is on the list payload, so `PullRequests` leaves
+  `Reviews`, `ClosingIssues` and `Files.Paths` empty and the doc comments on
+  both the interface and the struct say so. The alternative — having the
+  adapter quietly fill them in — hides a read per pull request behind a call
+  that looks like one, and the cost is unbounded by anything the caller chose.
+  Anything that judges a merge therefore re-reads it by number, bounded by the
+  window it already asked for.

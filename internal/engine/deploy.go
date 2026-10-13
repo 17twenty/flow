@@ -207,6 +207,10 @@ func deployLinkedPRs(ctx context.Context, in DeployInput, deploy *Deploy) ([]Lin
 	if err != nil {
 		return nil, core.Explain(err, "read the merged pull requests")
 	}
+	merged, err = detailed(ctx, in.Adapters.Forge, merged)
+	if err != nil {
+		return nil, err
+	}
 	comparer := in.Ancestry
 	if comparer == nil {
 		comparer = in.Adapters.Forge
@@ -227,6 +231,10 @@ func deployLinkedPRs(ctx context.Context, in DeployInput, deploy *Deploy) ([]Lin
 	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
 	if err != nil {
 		return nil, core.Explain(err, "read the open pull requests")
+	}
+	open, err = detailed(ctx, in.Adapters.Forge, open)
+	if err != nil {
+		return nil, err
 	}
 	for _, pr := range open {
 		linked = append(linked, LinkedPR{PR: pr})

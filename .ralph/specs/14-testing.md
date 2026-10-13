@@ -150,3 +150,13 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   the native workflows and discovery all answer without a number there too.
   Without the wrapper the order flow resolves things in was untestable, and
   the bug that order hid shipped.
+- **A fake is wrong when it is more generous than the adapter, not only when
+  it is less (bug fix after item 5.8).** `coretest.FakeForge` held whole pull
+  requests and handed them out from `PullRequests`, so every caller read
+  reviews and closing issues that no forge puts in a listing. Nothing was
+  stubbed and nothing was skipped; the suite simply agreed with code that
+  could not work, and the live audit went on to report that nobody had
+  approved or linked the first pull request the gate ever passed. The fake now
+  strips what a listing cannot carry, and `ForgeContractCases` holds the rule
+  as a case of its own, so an adapter and a fake that disagree about it fail
+  rather than diverge quietly.

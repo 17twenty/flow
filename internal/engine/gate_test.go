@@ -74,6 +74,17 @@ func (w *gateWorld) input() engine.GateInput {
 	}
 }
 
+// pullRequest is one pull request as the forge holds it, for a test that
+// wants to change a detail of it.
+func (w *gateWorld) pullRequest(t *testing.T, number int) core.PullRequest {
+	t.Helper()
+	pr, err := w.forge.PullRequest(context.Background(), number)
+	if err != nil {
+		t.Fatalf("read pull request #%d: %v", number, err)
+	}
+	return pr
+}
+
 // snapshot gathers the world, failing the test when it cannot be read.
 func (w *gateWorld) snapshot(t *testing.T) engine.PolicySnapshot {
 	t.Helper()
@@ -505,6 +516,40 @@ func TestGateUsesTheBranchesOwnApprovalRequirement(t *testing.T) {
 	}
 	if gate.Moves[0].Event == config.EventApproved {
 		t.Error("an unapproved pull request counted as approved when the branch asked for no approvals")
+	}
+}
+
+// TestGateReadsTheOtherOpenWorkInFullBeforeMovingACard: spec 04 §5 rule 4
+// wants all of a ticket's work considered, and a listing does not say what a
+// pull request closes — spec 10 §2 puts the linkage in a read of its own. A
+// gate that judged the window's summaries would see a ticket with one pull
+// request where there are two, and walk a card backwards past work that is
+// still in review.
+func TestGateReadsTheOtherOpenWorkInFullBeforeMovingACard(t *testing.T) {
+	world := gateFixture(t)
+	world.cfg.Workflow.Transitions[config.EventChangesRequested] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+	world.tracker.SetTicket(gateTicket("#12", "In review"))
+	world.forge.SetPullRequest(core.PullRequest{
+		Number:        7,
+		Title:         "feat(engine): the other half",
+		Author:        "nick",
+		State:         core.PRStateOpen,
+		HeadSHA:       "def5678",
+		BaseRef:       "main",
+		ClosingIssues: []string{"#12"},
+	})
+	reviewed := world.pullRequest(t, 4)
+	reviewed.Reviews = []core.Review{{Author: "sam", State: core.ReviewChangesRequested}}
+	world.forge.SetPullRequest(reviewed)
+
+	world.run(t)
+
+	ticket, err := world.tracker.Ticket(context.Background(), "#12")
+	if err != nil {
+		t.Fatalf("read the ticket: %v", err)
+	}
+	if ticket.Status.Name != "In review" {
+		t.Errorf("#12 is in %q, want In review: #7 is ready and nobody has reviewed it", ticket.Status.Name)
 	}
 }
 

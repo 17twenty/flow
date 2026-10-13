@@ -157,6 +157,7 @@ func (a *audit) merged(ctx context.Context, env *Env) ([]core.PullRequest, error
 		slices.SortStableFunc(a.prs, func(x, y core.PullRequest) int {
 			return cmp.Compare(x.Number, y.Number)
 		})
+		a.prs, a.prsErr = detailed(ctx, env.Adapters.Forge, a.prs)
 	})
 	return a.prs, a.prsErr
 }
