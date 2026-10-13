@@ -2,7 +2,6 @@ package main
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,8 @@ import (
 	"github.com/17twenty/flow/assets"
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
+	"github.com/17twenty/flow/internal/forge"
+	"github.com/17twenty/flow/internal/tracker"
 )
 
 // deploysFor builds the live adapters for a configuration that differs from
@@ -30,20 +31,39 @@ func deploysFor(t *testing.T, block config.Deploys, forgeURL ...string) (core.De
 		t.Fatalf("LoadRegistry: %v", err)
 	}
 	auth := config.Auth{TokenEnv: "FLOW_TEST_FORGE_TOKEN"}
+	url := cmp.Or(forgeURL...)
 	s := &session{
 		ConfigPath: ".flow.yaml",
 		Registry:   registry,
 		Config: &config.Config{
-			Forge:   config.Forge{Type: "github", Repo: "acme/widget", URL: cmp.Or(forgeURL...), Auth: auth},
+			Forge:   config.Forge{Type: "github", Repo: "acme/widget", URL: url, Auth: auth},
 			Tracker: config.Tracker{Type: "github-projects", Owner: "acme", OwnerType: config.OwnerOrg, Auth: auth},
 			Deploys: block,
 		},
+		Settings: approving(url),
 	}
-	adapters, err := liveAdapters(&Context{Ctx: context.Background()}, s)
+	adapters, err := liveAdapters(hostContext(t, CLI{}), s)
 	if err != nil {
 		return nil, err
 	}
 	return adapters.Deploys, nil
+}
+
+// approving is the personal configuration of somebody who has agreed to send
+// their credential to the forge this test stands up. A host flow does not
+// ship is nobody's to approve but the person running it (spec 15 §1), and a
+// test server is never that host, so without this every build below would
+// stop at the question instead of reaching the thing it means to prove.
+func approving(forgeURL string) config.Settings {
+	host := hostOf(forgeURL)
+	if host == "" {
+		return config.Settings{}
+	}
+	source := config.AuthSource{Hosts: []string{host}}
+	return config.Settings{Auth: map[string]config.AuthSource{
+		forge.GitHubKind:           source,
+		tracker.GitHubProjectsKind: source,
+	}}
 }
 
 // TestTheConfiguredSourceIsTheOneThatGetsBuilt: `deploys.source` is the only
