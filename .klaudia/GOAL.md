@@ -43,8 +43,8 @@ tests, dependencies limited to spec 01 §4.
 ### Self-hosting proof
 - [ ] `flow init --tracker github-projects --owner 17twenty --project <n> --force` reproduces `specs/17-dogfood.md` §4 `.flow.yaml` exactly; `flow plan` shows only native (ruleset + merge settings) and attest (built-in workflows) outcomes.
 - [ ] `flow apply` created a `main` ruleset requiring `flow/policy` and `ci / test`, preserving pre-existing required contexts; native transitions attested.
-- [ ] `.github/workflows/flow.yml` landed via a PR that was itself gated by `flow/policy`; `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
-- [ ] At least one agent PR has been opened by `17twenty-flow-agent[bot]`, moved In progress → In review by `flow check pr`, approved by `@17twenty`, and auto-merged on a green gate.
+- [x] `.github/workflows/flow.yml` landed via a PR that was itself gated by `flow/policy` ([#94](https://github.com/17twenty/flow/pull/94)); `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
+- [x] At least one agent PR has been opened by the agent identity — the machine user `flow-bot-gh`, which replaced the App in specs/17-dogfood.md §Decisions — moved In progress → In review by `flow check pr` ([#72](https://github.com/17twenty/flow/issues/72) on [#94](https://github.com/17twenty/flow/pull/94)), approved by `@17twenty`, and squash-merged on a green gate.
 - [ ] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run (**done** — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log); README demo section links the live Project, that issue and recent agent PRs, and states the current streak (plan item 8.2).
 - [ ] `flow doctor` on `17twenty/flow` exits 0 on 14 consecutive daily runs with the live-health expectations of spec 17 §7 met, while the loop keeps shipping.
 
@@ -72,7 +72,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 4 — Engine with fakes (plan Phase 2): capabilities, planner, apply, doctor registry, policy, transitions
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
-- [ ] Phase 7 — Stage B activation: the ruleset is on, the gate is written and `CURRENT MODE: pr`; awaiting the approval and merge of #94
+- [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [ ] Phase 8 — Live health (plan Phase 5): 5.1–5.5, 5.7 and 5.8 done; flag cleanup (5.6) remains
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
@@ -425,13 +425,54 @@ job would report the same thing twice.
 opened for `forge.files`, was closed as superseded: a pull request based on
 `main` cannot run the workflow, because `main` does not have it yet.
 
+### #94 merged, and the audit was reading a fixture
+
+`@17twenty` approved and squash-merged [#94](https://github.com/17twenty/flow/pull/94),
+so the gate, the scheduled daily `doctor` and the `FLOW_PROJECT_TOKEN` secret
+are all on `main`. Three acceptance criteria close with it: the workflow
+landed through a pull request `flow/policy` judged, an agent pull request was
+approved by a person and merged green, and the fourteen-day streak now has a
+trigger to be counted from.
+
+The first `doctor` run afterwards said something that could not be true:
+`live.prs.reviewed 0/1 — 1 of 1 agent pull requests merged without a person
+approving`, and `live.prs.linked 0/1`, about the one pull request a person
+had just approved and which closes #72. GitHub's list endpoint carries
+neither reviews nor `closingIssuesReferences`; spec 10 §2 reads each of them
+separately, one call per number, and the adapter says so in a comment. The
+fake did not: `coretest.FakeForge` held whole pull requests and handed them
+back from `PullRequests`, so four call sites in the engine — the gate,
+`check deploy`, and both halves of the live audit — read fields that only
+ever arrive in a test. Nothing was stubbed and nothing was skipped. The suite
+simply agreed with code that could not work.
+
+The fake now strips what a listing cannot carry, `ForgeContractCases` holds
+that as a case both the fake and the GitHub adapter must pass, and
+`core.PullRequest` documents which of its fields a listing leaves empty. The
+four callers re-read each pull request by number, which is one read per pull
+request inside a window the caller already chose the size of. All five call
+sites were mutation-tested; the one survivor was the gate reading the *other*
+open work, which bought
+`TestGateReadsTheOtherOpenWorkInFullBeforeMovingACard` — without it the gate
+would walk a card backwards past a sibling pull request still in review.
+Live, both checks now pass. It is [#96](https://github.com/17twenty/flow/issues/96),
+open as [#95](https://github.com/17twenty/flow/pull/95) and waiting on a human
+approval, which is the gate working.
+
+**Where the exit code stands.** `flow doctor` exits 2 on one check and four
+attestations. The check is `live.tickets.done_merged 1/67`: sixty-six tickets
+reached Done in `direct` mode, before Stage B, with no pull request behind
+them. It is literally true and it ages out of the fourteen-day window on its
+own, so the streak cannot begin until roughly a fortnight after the last
+direct-mode close — today. The four attestations are
+`tracker.native.{changes_requested,issue_closed,pr_merged}` and
+`tracker.expedite`, which `flow attest` settles for thirty days at a time and
+which a person has to actually look at first.
+
 **Single best next step:** `@17twenty` approves and squash-merges
-[#94](https://github.com/17twenty/flow/pull/94). It is the only thing on the
-critical path that the agent cannot do, and three acceptance criteria are
-waiting behind it: the gate landing through a gated pull request, an agent
-pull request approved by a human and merged green, and the scheduled daily
-`doctor` that the fourteen-day streak is counted from — the `schedule` trigger
-only exists once the workflow is on `main`. Once it merges, the remaining
-agent work is plan item 5.6 (`live.flags.cleanup`, #70), the last of Phase 5
-and a single self-contained check: git trailers, a marker, and a ticket filed
-under `--fix` exactly as 5.5 moves one.
+[#95](https://github.com/17twenty/flow/pull/95). Then, in order: attest the
+four native behaviours so the exit code depends only on real findings, and
+land plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a
+single self-contained check: git trailers, a marker, and a ticket filed under
+`--fix` exactly as 5.5 moves one. The fourteen-day clock starts the first
+morning the scheduled run exits 0.
