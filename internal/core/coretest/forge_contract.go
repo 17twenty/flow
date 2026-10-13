@@ -33,6 +33,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "identity", Run: forgeIdentity},
 		{Name: "probe reports what the credential may do", Run: forgeProbe},
 		{Name: "repo", Run: forgeRepo},
+		{Name: "a repository that takes no writes says so", Run: forgeArchivedRepository},
 		{Name: "one pull request, with everything the gate reads", Run: forgeOnePullRequest},
 		{Name: "the tickets a pull request closes", Run: forgeClosingIssues},
 		{Name: "a pull request says what header a squash would land", Run: forgeSquashHeader},
@@ -123,6 +124,41 @@ func forgeRepo(t *testing.T, newForge NewForge) {
 	}
 	if repo.DefaultBranch != "main" {
 		t.Errorf("DefaultBranch = %q, want main", repo.DefaultBranch)
+	}
+}
+
+// forgeArchivedRepository: an adapter reports an archived repository as
+// archived, because that one field is the whole of what flow needs to know to
+// refuse a run that cannot land.
+//
+// Archiving is read-only on every forge that has the feature, so an apply
+// against one fails item by item with whatever each endpoint said. flow
+// instead refuses before the first item, and the refusal is one decision in
+// the engine rather than one per adapter (spec 10 §2) — which leaves each
+// adapter with exactly this to do, and makes forgetting it the difference
+// between one sentence and a page of 403s.
+//
+// The contract stops here. That a write to an archived repository is refused
+// is the forge's own behaviour, not the adapter's, and flow never asks: a
+// case for it would be asserting the manners of whatever fake stands in for
+// the forge in these tests.
+func forgeArchivedRepository(t *testing.T, newForge NewForge) {
+	fx := ContractForge()
+	fx.Repo.Archived = true
+	repo, err := newForge(t, fx).Repo(t.Context())
+	if err != nil {
+		t.Fatalf("Repo(): %v", err)
+	}
+	if !repo.Archived {
+		t.Errorf("%s is archived and Repo() does not say so, so an apply would attempt every item and be refused one at a time", repo.Slug())
+	}
+
+	open, err := newForge(t, ContractForge()).Repo(t.Context())
+	if err != nil {
+		t.Fatalf("Repo(): %v", err)
+	}
+	if open.Archived {
+		t.Errorf("%s is not archived and Repo() says it is, which would refuse every apply this repository ever has", open.Slug())
 	}
 }
 

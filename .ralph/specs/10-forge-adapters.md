@@ -316,3 +316,20 @@ duplicate-pipeline hazards). MR closing issues: `GET
   `MergeHeader()` falls back to the title so a pull request built by hand is
   judged rather than not judged at all; the contract case is what stops that
   fallback from hiding a silent adapter.
+- **§2 the refusal #103 promised, placed once (issue #102).** `flow apply`
+  reads the repository before the first item and refuses the whole run,
+  `ErrConflict`, when it is archived: naming the repository, the archiving and
+  the way out. It is in `engine.Apply` and not in any adapter, so §3 and §4
+  get it the moment their adapters fill the flag in — which is what the forge
+  contract case now requires of all of them. The tracker items go with the
+  forge ones, because a board is configured for work in a repository and
+  nobody is working in a repository nobody can write to; an apply that
+  reconciled half the world would also write a lock claiming it had.
+  A repository flow could not *read* is not a repository that refused: the
+  read error is carried to the items that needed the answer, one at a time
+  with the reason, so a rate limit on the way in is not reported as somebody
+  having archived the project. Apply asks "may I write here" and "what is the
+  trunk called" of the same endpoint and keeps the answer, failure included —
+  two calls to learn one thing could also be answered differently each time,
+  leaving a run told yes and then no about the repository it is half way
+  through.
