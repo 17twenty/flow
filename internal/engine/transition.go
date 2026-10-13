@@ -44,6 +44,9 @@ const (
 	// ReasonDone means the ticket is in a done column, which flow never moves
 	// work out of.
 	ReasonDone = "done"
+	// ReasonClosed means the ticket is closed, and the only event flow will
+	// act on for finished work is the closing itself.
+	ReasonClosed = "closed"
 	// ReasonNative means the tracker's own automation owns this transition.
 	ReasonNative = "native"
 	// ReasonBackwards means the move would go against the board's order, and
@@ -155,6 +158,15 @@ func (m TicketMove) Moves() bool { return m.To != "" && m.To != m.From }
 // idempotent (rule 5), and what makes it safe to ignore natively owned events:
 // whatever the tracker's own automation has already done is in that column
 // before flow looks.
+//
+// A closed ticket is the exception to all of it. Finished work is finished
+// wherever the board happens to have it, so the only event flow will act on is
+// the closing itself; every pull request linked to it is still considered, and
+// refused, so that a dry run says why. Without that, a board column lagging
+// behind a close — which is precisely what doctor's `transitions.native.*`
+// checks exist to notice — would let a new pull request naming an old ticket
+// drag it back to in review, and flow would be the thing making the board
+// untrue.
 func Transition(s TransitionSnapshot) TicketMove {
 	move := TicketMove{Key: s.Ticket.Key, From: s.Column}
 	if s.Config == nil {
@@ -191,8 +203,8 @@ func Transition(s TransitionSnapshot) TicketMove {
 	}
 
 	// Closing the ticket is the one event that is about the ticket and not
-	// about any pull request, so it is considered once, from wherever its
-	// work has taken it.
+	// about any pull request, and the only one a closed ticket acts on at
+	// all, so it is considered once and last.
 	if s.Ticket.Closed {
 		f.event = ""
 		f.step(config.EventIssueClosed, 0)
@@ -335,6 +347,10 @@ func (f *fold) step(event string, pr int) {
 	case f.cfg.Workflow.Columns[f.at].Category == config.CategoryDone:
 		step.Reason = ReasonDone
 		step.Why = fmt.Sprintf("the ticket is in %s, and flow never moves work back out of done", f.cfg.Workflow.Columns[f.at].Name)
+
+	case f.snap.Ticket.Closed && event != config.EventIssueClosed:
+		step.Reason = ReasonClosed
+		step.Why = fmt.Sprintf("%s is closed, and the only move left in finished work is the one its closing asks for", f.snap.Ticket.Key)
 
 	case transition.Owner != config.OwnerFlow:
 		step.Reason = ReasonNative

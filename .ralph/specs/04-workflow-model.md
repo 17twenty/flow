@@ -254,3 +254,21 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   question. That is what makes a missed CI run a delay rather than a hole in
   the board, and it is why rule 5's idempotence is load-bearing rather than
   merely tidy: two things now make these moves.
+- **§5 rule 2 is about the work, not about the column: flow makes no move on a
+  closed ticket except the one its closing asks for (found live).** Rule 2
+  says flow never moves work out of done, and read as a rule about the column
+  it has a hole in it, because the column is exactly the thing that can be
+  wrong. `issue_closed` is `owner: native` in the preset, so when the
+  tracker's automation does not fire — which is what the live check
+  `transitions.native.issue_closed` exists to notice — the ticket stays in
+  whatever column it was in while a pull request still names it. Opening a
+  second pull request against it then asked for `pr_ready_for_review`, and
+  flow, judging the move from the column, performed it. It happened to this
+  repository: #72 was closed and merged at 00:59 and flow moved it back to In
+  review at 01:15. So a closed ticket is refused every event but
+  `issue_closed` (`ReasonClosed`), which still applies under the ordinary
+  rules and so still reaches done where the workflow gives flow that event.
+  The linked pull requests are considered and refused rather than skipped, so
+  a dry run still says what it declined. The alternative — trusting the column
+  — makes flow the thing that makes the board untrue, which is the one outcome
+  the whole model exists to prevent.
