@@ -264,9 +264,13 @@ curl -s -X PATCH -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rep
 Labels `agent`, `blocked`, `incident`, `flow-followup`, `phase` — `POST
 /repos/$REPO/labels`.
 
-The **ruleset** on `main` requiring `flow/policy` and `ci / test` is *not*
-manual: that is `flow apply` (spec 06). If you are creating it by hand, flow
-has failed at its own job.
+The **ruleset** on `main` requiring `flow/policy` and the build is *not*
+manual: that is `flow apply` (spec 06). Flow's own gate comes from
+`policy.status_context`; the build comes from `forge.required_checks`, which
+is where you name the contexts the trunk must pass besides flow's. Name them
+as the forge reports them — this repository's build is the check run `test`,
+not the `ci / test` the web UI composes out of the workflow and the job. If
+you are creating the ruleset by hand, flow has failed at its own job.
 
 ---
 

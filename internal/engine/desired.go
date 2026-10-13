@@ -380,7 +380,7 @@ func forgeProtection(cfg *config.Config) DesiredItem {
 		FieldEnabled:        "true",
 		FieldAllowForcePush: "false",
 		FieldAllowDeletions: "false",
-		FieldStrictChecks:   strconv.FormatBool(cfg.Policy.StatusContext != ""),
+		FieldStrictChecks:   strconv.FormatBool(len(requiredContexts(cfg)) > 0),
 	}
 	if cfg.Commits.MergeStrategy != "" && cfg.Commits.MergeStrategy != config.MergeCommit {
 		fields[FieldRequireLinearHistory] = "true"
@@ -394,11 +394,21 @@ func forgeProtection(cfg *config.Config) DesiredItem {
 	}
 }
 
-// forgeRequiredStatus is the gate's own status context, which a merge must
-// pass. Whatever else the trunk requires is the team's business.
+// forgeRequiredStatus is what a merge must pass: flow's own gate, and the
+// checks the team named beside it.
+//
+// The item is additive (spec 06 §4), so a context the trunk already requires
+// and nobody wrote down survives a run. That is what makes it safe to name
+// the build here: flow asks for it where it is missing and never takes
+// anybody else's check away.
 func forgeRequiredStatus(cfg *config.Config) DesiredItem {
-	if cfg.Policy.StatusContext == "" {
+	contexts := requiredContexts(cfg)
+	if len(contexts) == 0 {
 		return DesiredItem{}
+	}
+	items := make([]core.Item, 0, len(contexts))
+	for _, context := range contexts {
+		items = append(items, core.Item{Name: context})
 	}
 	return DesiredItem{
 		ID:         core.ItemForgeRequiredStatus,
@@ -406,8 +416,32 @@ func forgeRequiredStatus(cfg *config.Config) DesiredItem {
 		Target:     TargetForge,
 		DependsOn:  []string{core.ItemForgeProtection},
 		Additive:   true,
-		Items:      []core.Item{{Name: cfg.Policy.StatusContext}},
+		Items:      items,
 	}
+}
+
+// requiredContexts is every status the configuration asks of the trunk: the
+// gate's own context, and forge.required_checks beside it.
+//
+// A team may require a build without running flow's gate, and a team may run
+// flow's gate and require nothing else, so neither half implies the other.
+// Naming the gate's own context again under forge.required_checks is a
+// repetition, not a second check, and is quietly dropped: a forge asked for
+// the same context twice is being asked something nobody meant. What order
+// they end up in is not decided here — the desired state canonicalises its
+// items, so the same set written two ways is the same plan and the same
+// hash.
+func requiredContexts(cfg *config.Config) []string {
+	contexts := make([]string, 0, 1+len(cfg.Forge.RequiredChecks))
+	seen := map[string]bool{}
+	for _, context := range append([]string{cfg.Policy.StatusContext}, cfg.Forge.RequiredChecks...) {
+		if context == "" || seen[context] {
+			continue
+		}
+		seen[context] = true
+		contexts = append(contexts, context)
+	}
+	return contexts
 }
 
 // forgeMergeSettings allows the one strategy the team configured and refuses
