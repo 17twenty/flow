@@ -20,6 +20,7 @@ forge:
   type: github
   repo: 17twenty/flow
   url: https://github.example.com
+  required_checks: [test, lint]
   auth:
     token_env: GITHUB_TOKEN
 tracker:
@@ -97,10 +98,11 @@ func TestParseFull(t *testing.T) {
 		Version: 1,
 		Preset:  "lean-kanban",
 		Forge: Forge{
-			Type: ForgeGitHub,
-			Repo: "17twenty/flow",
-			URL:  "https://github.example.com",
-			Auth: Auth{TokenEnv: "GITHUB_TOKEN"},
+			Type:           ForgeGitHub,
+			Repo:           "17twenty/flow",
+			URL:            "https://github.example.com",
+			RequiredChecks: []string{"test", "lint"},
+			Auth:           Auth{TokenEnv: "GITHUB_TOKEN"},
 		},
 		Tracker: Tracker{
 			Type:      TrackerJiraCloud,

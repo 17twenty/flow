@@ -299,6 +299,16 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 7 — More adapters and hardening
 
+- [x] 7.0 `forge.required_checks` — specs: 03 §1, 06 §4 — deps: 2.3 (#123)
+  - AC: the trunk requires the gate and the build; additive; a team may
+    require a build without running the gate
+  - note: settles the Spec issues entry raised against follow-up #91. The
+    contexts are canonicalised with every other desired item, so the order
+    they are written in is not a change; naming the gate's own context again
+    is a repetition and is dropped. The name to write is the one the forge
+    reports — `test`, the check run's own name, not the `ci / test` the web
+    UI composes out of the workflow and the job.
+
 - [ ] 7.1 Jira Cloud tracker — specs: 11 §3 — deps: 3.12 (#79)
   - AC: contract suite; key fallback linkage; board configuration verify; archived issues (spec 11 §1: derived from the full JQL listing, never from a narrowed one)
 - [ ] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
@@ -329,8 +339,17 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 - [ ] 8.1 All acceptance scenarios present and passing — specs: 19 — deps: 5.8, 6.4, 7.6 (#86)
   - AC: one test per scenario id; gaps recorded under Spec issues, never skipped
-- [ ] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
+- [x] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
   - AC: README states current doctor streak from the health issue
+  - note: the section links the board, the pinned health issue, the agent's own
+    pull requests and the workflow that gates them, and reads spec 17 §7's
+    expectations against what the audit says today. The streak is stated with
+    the date it was read and a sentence saying the issue is the record — a
+    number in a README is a claim and the issue is the thing that is true. Two
+    tests keep it: one reads every forge link in the section against
+    `.flow.yaml` and the board number in `.flow.lock`, so pointing flow at
+    another repository breaks the demo that claims to be of it, and one
+    requires the streak and its date to still be there.
 
 - [ ] H.2 HUMAN: confirm 14 consecutive green daily doctor runs → tag v1.0.0
 
@@ -358,12 +377,15 @@ Human-only steps use ids `H.<n>` (never seeded).
   already required survives, but a repository with no ruleset gets one that
   `ci / test` is not required by. Cookbook §5 then tells the reader that
   adding it by hand means flow has failed at its own job — so the two cannot
-  both stand. *Unsettled.* Either spec 03 §1 gains a key for the contexts a
-  team requires beyond flow's own (`forge.required_checks`, additive, so the
-  gate context is still flow's business and the build's is theirs), or the
-  four documents stop naming `ci / test` and the dogfood ruleset is a
-  two-context one a human attests. Defer until Phase 7 is in sight: the same
-  key decides what the GitLab and Gitea adapters are asked for.
+  both stand. *Settled by item 7.0 (#123):* spec 03 §1 now has
+  `forge.required_checks`, a list of status contexts the trunk must pass
+  besides flow's own gate. The item stays additive, so the gate's context is
+  flow's business and the build's is the team's, and neither half implies the
+  other — a team may require a build and run no gate. The second half of the
+  contradiction was a name: a ruleset matches a check run by its own name,
+  which for GitHub Actions is the job's, so this repository requires `test`
+  and `ci / test` is only the label the web UI composes. The four documents
+  now say that.
 
 - **No per-forge recipe for requiring a status check** (raised by `@17twenty`
   against follow-up #91). `docs/cookbook.md` is GitHub-shaped by design and

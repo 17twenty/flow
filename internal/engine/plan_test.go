@@ -166,8 +166,14 @@ func jiraWorld(t *testing.T) world {
 // planFor observes a world and plans the lean-kanban workflow against it.
 func planFor(t *testing.T, w world) engine.Plan {
 	t.Helper()
+	return planWith(t, w, preset(t, config.PresetLeanKanban))
+}
+
+// planWith observes a world and plans a configuration of the caller's own
+// against it, for the tests whose subject is a key the preset does not set.
+func planWith(t *testing.T, w world, cfg *config.Config) engine.Plan {
+	t.Helper()
 	ctx := context.Background()
-	cfg := preset(t, config.PresetLeanKanban)
 	state := desired(t, cfg)
 
 	observations, err := engine.Observe(ctx, state, w.adapters())

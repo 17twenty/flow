@@ -98,6 +98,21 @@ func TestValidate(t *testing.T) {
 			wantIn: "it must start with https://",
 		},
 		{
+			name:   "a required check that is not named",
+			change: func(c *Config) { c.Forge.RequiredChecks = []string{"test", ""} },
+			wantIn: "forge.required_checks[1] is empty",
+		},
+		{
+			name:   "a required check padded with the spaces that are part of it",
+			change: func(c *Config) { c.Forge.RequiredChecks = []string{" test "} },
+			wantIn: "a status context is matched exactly",
+		},
+		{
+			name:   "the same check required twice",
+			change: func(c *Config) { c.Forge.RequiredChecks = []string{"test", "test"} },
+			wantIn: `forge.required_checks[1] repeats "test"`,
+		},
+		{
 			name:   "an email for a forge",
 			change: func(c *Config) { c.Forge.Auth.EmailEnv = "GITHUB_EMAIL" },
 			wantIn: "a forge authenticates with a token alone",

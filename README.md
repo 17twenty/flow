@@ -40,6 +40,40 @@ deployment records against the app SHA, live-health audit in doctor,
 4. Loop in `pr` mode: the agent opens PRs; you review; auto-merge on green gate.
 5. **Stage C:** v1 is done after 14 consecutive green daily doctor runs.
 
+## Demo — flow runs on flow
+
+This repository is flow's own live demo. The workflow below is not a diagram of
+what flow could do: it is the one flow enforces here, on itself, every day.
+
+| | |
+|---|---|
+| Board | <https://github.com/users/17twenty/projects/2> |
+| Health | [#92 `flow health: 17twenty/flow`](https://github.com/17twenty/flow/issues/92) — rewritten in place by the daily run, carrying its own 30-day log |
+| Agent pull requests | [`is:pr label:agent`](https://github.com/17twenty/flow/pulls?q=is%3Apr+label%3Aagent) — opened by `flow-bot-gh`, approved by `@17twenty`, merged on a green `flow/policy` |
+| The gate | [`.github/workflows/flow.yml`](.github/workflows/flow.yml) — builds flow from the pull request's own checkout and judges it with that |
+
+**Streak: 0 of 14 green daily runs** (as of 2026-10-13). The number lives in the
+health issue, which is where to read it rather than here: this line is a date
+and a claim, and that issue is the record. The clock has not started, and the
+report says exactly why — `live.tickets.done_merged` counts 66 of 82 tickets
+that reached Done with no merge behind them, every one of them closed in
+`direct` mode before the gate existed, and four native behaviours are waiting
+for a person to vouch for them (`docs/cookbook.md` §6.1). Neither is a defect,
+and both are things the fourteen days are meant to be sensitive to.
+
+What the audit reads today, against the expectations of
+[spec 17 §7](.ralph/specs/17-dogfood.md):
+
+| Check | Expected | Today |
+|---|---|---|
+| `live.prs.gated` | every merge carried `flow/policy` | ✓ all 17 |
+| `live.prs.linked` | every merge named a ticket | ✓ all 17 |
+| `live.prs.reviewed` | a person approved every agent pull request | ✓ all 17 |
+| `live.deploys.lag` | shipped within 2h | ✓ all 17 |
+| `live.transitions.native` | the tracker moved its own cards | ✓ 16 on `pr_merged`, 80 on `issue_closed` |
+| `live.tickets.review_has_pr` | nothing waits for a review of nothing | ✓ both |
+| `live.tickets.ready_dor` | everything Ready meets the Definition of Ready | ✓ nothing is Ready |
+
 ## Spec index
 | # | Topic |
 |---|---|

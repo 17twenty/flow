@@ -211,6 +211,10 @@ type Forge struct {
 	Repo string `yaml:"repo"`
 	// URL is the base web URL for self-managed installations.
 	URL string `yaml:"url,omitempty"`
+	// RequiredChecks are the status contexts the team requires of the trunk
+	// beyond flow's own gate, such as the build. Flow asks for them
+	// additively, so a check nobody wrote here is left alone (spec 03 §1).
+	RequiredChecks []string `yaml:"required_checks,omitempty"`
 	// Auth names the credential's environment variables.
 	Auth Auth `yaml:"auth"`
 }

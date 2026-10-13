@@ -42,10 +42,10 @@ tests, dependencies limited to spec 01 §4.
 
 ### Self-hosting proof
 - [ ] `flow init --tracker github-projects --owner 17twenty --project <n> --force` reproduces `specs/17-dogfood.md` §4 `.flow.yaml` exactly; `flow plan` shows only native (ruleset + merge settings) and attest (built-in workflows) outcomes.
-- [ ] `flow apply` created a `main` ruleset requiring `flow/policy` and `ci / test`, preserving pre-existing required contexts; native transitions attested.
+- [ ] `flow apply` created a `main` ruleset requiring `flow/policy` and the build (`forge.required_checks: [test]`), preserving pre-existing required contexts; native transitions attested.
 - [x] `.github/workflows/flow.yml` landed via a PR that was itself gated by `flow/policy` ([#94](https://github.com/17twenty/flow/pull/94)); `.ralph/AGENTS.md` reads `CURRENT MODE: pr`.
 - [x] At least one agent PR has been opened by the agent identity — the machine user `flow-bot-gh`, which replaced the App in specs/17-dogfood.md §Decisions — moved In progress → In review by `flow check pr` ([#72](https://github.com/17twenty/flow/issues/72) on [#94](https://github.com/17twenty/flow/pull/94)), approved by `@17twenty`, and squash-merged on a green gate.
-- [ ] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run (**done** — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log); README demo section links the live Project, that issue and recent agent PRs, and states the current streak (plan item 8.2).
+- [x] Pinned "flow health" issue (marker `flow:health`) is updated in place by the daily doctor run — live as [#92](https://github.com/17twenty/flow/issues/92), rewritten in place, carrying its own 30-day run log; the README demo section links the live Project, that issue and recent agent PRs, and states the current streak with the date it was read (plan item 8.2).
 - [ ] `flow doctor` on `17twenty/flow` exits 0 on 14 consecutive daily runs with the live-health expectations of spec 17 §7 met, while the loop keeps shipping.
 
 ## Verify
@@ -168,7 +168,7 @@ for byte identical.
 1. *H.1 is the human gate, and it now has a concrete shape.* Stage B
    activation (spec 17 §5) is the four things doctor is already asking for:
    somebody with admin creates the `main` ruleset requiring `flow/policy` and
-   `ci / test` (or grants the bot admin so `flow apply` can), `flow apply`
+   the build (or grants the bot admin so `flow apply` can), `flow apply`
    lands `.github/workflows/flow.yml` and the two labels, the four native
    transitions are attested, and `.ralph/AGENTS.md` goes to `CURRENT MODE: pr`.
    Identity is not a blocker — the agent is the machine user `flow-bot-gh`, a
@@ -297,7 +297,8 @@ rather than fixed: the ruleset is promised `ci / test` in four documents and
 flow only ever asks for `flow/policy`; and there is no cookbook recipe for
 requiring a status check by hand when the credential lacks admin — which is
 flow's own situation and the reason #90 and #91 are open. Both are owed before
-Phase 7 settles the GitLab and Gitea adapters.
+Phase 7 settles the GitLab and Gitea adapters. *(The first is now settled by
+item 7.0 — see the run below.)*
 
 **What running it found (this run).** `flow doctor` was pointed at this
 repository and the report was correct and the tickets behind it were not.
@@ -733,6 +734,17 @@ Twenty-three mutants, all killed. The ones worth having the item for: a
 revisited question that came back empty, a cursor that did not wrap, defaults
 that overwrote an answer somebody had given, and a cancelled wizard that wrote
 the file anyway.
+**The README demo (item 8.2, this run).** The section links the board, the
+pinned health issue, the agent's own pull requests and the workflow that gates
+them, and sets spec 17 §7's expectations beside what the audit reads today —
+seventeen merges, every one gated, linked, approved by a person and in
+production inside two hours. The streak is stated with the date it was read
+and a sentence saying the issue is the record, because a number in a README is
+a claim and that issue is the thing that is true. What is checked
+mechanically is the part that can rot unseen: every forge link in the section
+is read against `.flow.yaml` and the board number in `.flow.lock`, so a flow
+pointed at another repository fails the test that says the demo is of this
+one.
 
 **Where the exit code stands.** `./bin/flow doctor` against this repository
 exits 2 on six checks, and none of them is a defect in flow:
@@ -790,3 +802,46 @@ panel (the **…** menu on <https://github.com/users/17twenty/projects/2>; it is
 an overlay with no URL of its own), and land the resulting `.flow.lock`
 through a pull request. Until then the scheduled daily
 run cannot exit 0, and the streak cannot begin.
+
+### The build was promised and never asked for (this run — issue #123)
+
+`@17twenty` raised it against follow-up #91 a fortnight ago and it has sat
+under **Spec issues** ever since, deferred until Phase 7 was in sight. It is
+in sight. Spec 17 §1 and §5, `docs/cookbook.md` §5 and this file all promised
+that `flow apply` creates a ruleset requiring `flow/policy` **and the build**,
+and `engine.forgeRequiredStatus` only ever asked for `policy.status_context`
+— because nothing in the configuration could say what the build is called.
+The item is additive, so a repository that already required its build kept it,
+which is exactly why nobody noticed: the gap only opens on a trunk with no
+ruleset yet, where flow writes one the build is not required by and the
+cookbook then tells the reader that adding it by hand means flow failed at its
+own job.
+
+`forge.required_checks` is the key, a list of status contexts validated like
+any other configured list — no empty entry, no padding, no repetition. Flow's
+own gate is still not written there; naming it anyway is a repetition and is
+dropped rather than refused. Neither half implies the other, so the item
+exists whenever either has anything in it: a team may require a build and run
+no gate at all, and `strict_checks` follows the whole list rather than the
+gate alone, because currency is a property of a required check whoever
+required it.
+
+The other half of the contradiction was a name. A ruleset matches a check run
+by its own name, which for GitHub Actions is the job's; `ci / test` is a label
+the web UI composes out of the workflow and the job, and no API reports it.
+This repository publishes `test`, `policy`, `setup checks` and `daily health`,
+so requiring `ci / test` would have required a check nothing publishes — a
+trunk nobody could merge to. `.flow.yaml` now says `required_checks: [test]`,
+and `flow plan` against the live repository proposes exactly one thing:
+`forge.required_status` — `create "test"`, beside the `flow/policy` the
+ruleset already has.
+
+**Single best next step:** Phase 7's adapters, beginning with the Gitea/Forgejo
+forge ([#81](https://github.com/17twenty/flow/issues/81)) — the contract suite
+is already written, and `forge.required_checks` has settled what each new
+adapter is asked to require. The cookbook still owes the other half of
+`@17twenty`'s original report: a per-forge recipe for requiring a status check
+by hand when the credential lacks admin, which is this repository's own
+situation and the reason #90 and #91 are open. It is owed with #81 and #82, so
+that each recipe is verified against the adapter that implements it rather
+than guessed from the API documentation.
