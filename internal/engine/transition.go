@@ -55,9 +55,14 @@ const (
 	// ReasonBackwards means the move would go against the board's order, and
 	// the event is not one of the two allowed to.
 	ReasonBackwards = "backwards"
-	// ReasonOpenWork means a done column was asked for while a linked pull
-	// request is still open.
+	// ReasonOpenWork means a move was asked for while a linked pull request
+	// is still open: a done column while work is unfinished, or a move back
+	// while somebody is still working on the ticket.
 	ReasonOpenWork = "open_work"
+	// ReasonMerged means a move back was asked for by a pull request that
+	// was abandoned, while another of the ticket's pull requests has already
+	// landed on the trunk.
+	ReasonMerged = "merged"
 	// ReasonUndeployed means a done column was asked for under
 	// done_on: deployed while a merge has not reached the environment.
 	ReasonUndeployed = "undeployed"
@@ -68,10 +73,13 @@ const (
 	ReasonOverruled = "overruled"
 )
 
-// backMoves are the two events spec 04 §5 rule 1 allows to move a ticket
-// against the board's order. Both of them mean the same thing — the work came
+// backMoves are the events spec 04 §5 rule 1 allows to move a ticket against
+// the board's order unconditionally. Both mean the same thing — the work came
 // back to somebody — and a board that could not show that would be lying for
 // as long as the change took.
+//
+// config.EventPRClosedUnmerged means it too, but only sometimes, so it is not
+// here: see [fold.backRefused].
 var backMoves = []string{config.EventChangesRequested, config.EventPRConvertedToDraft}
 
 // LinkedPR is one pull request a ticket is for, with the two things the
@@ -369,9 +377,8 @@ func (f *fold) step(event string, pr int) {
 		step.Reason = ReasonNative
 		step.Why = fmt.Sprintf("the tracker's own automation moves tickets to %s on %s", target.Name, event)
 
-	case to < f.at && !slices.Contains(backMoves, event):
-		step.Reason = ReasonBackwards
-		step.Why = fmt.Sprintf("%s would take the ticket back to %s, and only a review asking for changes or a pull request put back to draft may move work backwards", event, target.Name)
+	case to < f.at && f.backRefused(event) != "":
+		step.Reason, step.Why = f.backRefused(event), f.backRefusedWhy(event, target)
 
 	case target.Category == config.CategoryDone && f.unfinished() != "":
 		step.Reason, step.Why = f.unfinished(), f.unfinishedWhy()
@@ -395,25 +402,111 @@ func (f *fold) ahead(event string) bool {
 	return to >= 0 && f.at > to
 }
 
+// backRefused reports why an event may not take the ticket against the board's
+// order, or the empty string when it may (spec 04 §5 rule 1).
+//
+// `changes_requested` and `pr_converted_to_draft` always may. So does
+// `pr_closed_unmerged`, conditionally, and the condition is the rest of the
+// ticket rather than the pull request that was abandoned: all three events
+// mean "the work came back to somebody", and abandoning one of three pull
+// requests leaves two, while abandoning the last leaves nobody working on it
+// at all. A ticket that has already landed something is further on still —
+// the trunk has part of the answer, and no amount of closing tabs takes that
+// back.
+//
+// Reading the rest of the ticket is not a second opinion about it: it is
+// [fold.count], the same count of the same pull requests rule 4 asks whether
+// the work is finished.
+func (f *fold) backRefused(event string) string {
+	if slices.Contains(backMoves, event) {
+		return ""
+	}
+	if event != config.EventPRClosedUnmerged {
+		return ReasonBackwards
+	}
+	// It goes back only when nothing is left of the work: every pull request
+	// the ticket has was closed without merging. Anything neither merged nor
+	// abandoned is somebody's open work.
+	switch count := f.count(); {
+	case count.merged > 0:
+		return ReasonMerged
+	case count.abandoned < len(f.snap.PRs):
+		return ReasonOpenWork
+	default:
+		return ""
+	}
+}
+
+// backRefusedWhy says which of the refusals it was, so that a dry run
+// explains itself to somebody looking at a ticket that did not move.
+func (f *fold) backRefusedWhy(event string, target config.Column) string {
+	switch f.backRefused(event) {
+	case ReasonBackwards:
+		return fmt.Sprintf("%s would take the ticket back to %s, and only a review asking for changes, a pull request put back to draft, or the last pull request being abandoned may move work backwards", event, target.Name)
+	case ReasonMerged:
+		return fmt.Sprintf("%s merged, so abandoning this pull request did not take the work back to %s", prList(f.snap.PRs, func(l LinkedPR) bool {
+			return l.PR.Merged()
+		}), target.Name)
+	case ReasonOpenWork:
+		return fmt.Sprintf("%s still open, so somebody is working on the ticket and it does not go back to %s", prList(f.snap.PRs, func(l LinkedPR) bool {
+			return !l.PR.Merged() && l.PR.State != core.PRStateClosed
+		}), target.Name)
+	default:
+		return ""
+	}
+}
+
+// prTally is what a ticket's linked pull requests amount to, in the only
+// three states a pull request has.
+type prTally struct {
+	// open is neither merged nor closed: somebody is still working on it.
+	open int
+	// merged landed on the trunk.
+	merged int
+	// merged but not yet running in deploys.environment, which only means
+	// anything under done_on: deployed.
+	undeployed int
+	// abandoned was closed without merging.
+	abandoned int
+}
+
+// count is what the ticket's work amounts to. Rule 1 — did abandoning this
+// pull request take the work back — and rule 4 — is the work finished — are
+// two questions about one set of pull requests, and answering them from two
+// separate walks is how a decision about one ticket comes to contradict
+// itself.
+func (f *fold) count() prTally {
+	var t prTally
+	for _, linked := range f.snap.PRs {
+		switch {
+		case linked.PR.Merged():
+			t.merged++
+			if !linked.Deployed {
+				t.undeployed++
+			}
+		case linked.PR.State == core.PRStateClosed:
+			t.abandoned++
+		default:
+			t.open++
+		}
+	}
+	return t
+}
+
 // unfinished reports why the ticket's work is not finished, or the empty
 // string when it is. Done is the one column a single pull request cannot
 // deliver on its own: a ticket is done when all of its work is, and under
 // done_on: deployed when all of it is running (spec 04 §5 rule 4, §6).
 func (f *fold) unfinished() string {
-	for _, linked := range f.snap.PRs {
-		if !linked.PR.Merged() && linked.PR.State != core.PRStateClosed {
-			return ReasonOpenWork
-		}
-	}
-	if f.cfg.Workflow.DoneOn != config.DoneOnDeployed {
+	count := f.count()
+	switch {
+	case count.open > 0:
+		return ReasonOpenWork
+	case f.cfg.Workflow.DoneOn == config.DoneOnDeployed && count.undeployed > 0:
+		return ReasonUndeployed
+	default:
 		return ""
 	}
-	for _, linked := range f.snap.PRs {
-		if linked.PR.Merged() && !linked.Deployed {
-			return ReasonUndeployed
-		}
-	}
-	return ""
 }
 
 // unfinishedWhy names the pull requests holding the ticket back, so that the
@@ -492,7 +585,9 @@ func (m TicketMove) Text() string {
 // than report the event that would have taken it backwards, and a column the
 // workflow does not have is the first thing anybody should be told. An
 // archived ticket leads: nothing else said about it can be acted on until it
-// is back on the board.
+// is back on the board. The two refusals of a move back sit together at the
+// bottom: a ticket whose tracker is about to move it anyway should say that,
+// not explain a move nobody was waiting for.
 var heldOrder = []string{
 	ReasonArchived,
 	ReasonUnknownColumn,
@@ -503,6 +598,7 @@ var heldOrder = []string{
 	ReasonDone,
 	ReasonOverruled,
 	ReasonSatisfied,
+	ReasonMerged,
 	ReasonBackwards,
 	ReasonUnconfigured,
 }

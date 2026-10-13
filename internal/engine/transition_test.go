@@ -407,6 +407,127 @@ func TestTransitionTakesTheWorkBackWhenNothingHoldsItInReview(t *testing.T) {
 	}
 }
 
+// abandoning the last pull request a ticket has means the work came back to
+// somebody, which is the whole of what spec 04 §5 rule 1 allows a back-move
+// for. Before this the only configuration that fired said abandoned work was
+// finished (issue #100).
+func TestTransitionTakesTheWorkBackWhenTheLastPullRequestIsAbandoned(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+
+	move := engine.Transition(work(cfg, "in_review", linked(closedPR(7))))
+
+	if move.To != "in_progress" || move.Event != config.EventPRClosedUnmerged {
+		t.Fatalf("move = %s → %s on %s, want in_review → in_progress on pr_closed_unmerged (%+v)", move.From, move.To, move.Event, move.Steps)
+	}
+}
+
+// Abandoning one of three pull requests leaves two. The ticket is still being
+// worked on and the board should go on saying so.
+func TestTransitionKeepsTheTicketWhereItIsWhileOtherWorkIsOpen(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+
+	move := engine.Transition(work(cfg, "in_review", linked(closedPR(7)), linked(openPR(9))))
+
+	if move.Moves() {
+		t.Fatalf("abandoning #7 took the ticket to %s while #9 is still open (%+v)", move.To, move.Steps)
+	}
+	got := step(t, move, config.EventPRClosedUnmerged)
+	if got.Reason != engine.ReasonOpenWork {
+		t.Fatalf("reason = %q, want %q", got.Reason, engine.ReasonOpenWork)
+	}
+	if !strings.Contains(got.Why, "#9") {
+		t.Errorf("why = %q, and it does not name the pull request somebody is still working on", got.Why)
+	}
+}
+
+// A ticket with a merge behind it is further on than any closed tab. The
+// trunk has part of the answer and abandoning the rest does not take it back.
+func TestTransitionDoesNotTakeBackATicketThatHasAlreadyLandedSomething(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+
+	move := engine.Transition(work(cfg, "in_review", linked(mergedPR(7)), linked(closedPR(9))))
+
+	if move.To == "in_progress" {
+		t.Fatalf("abandoning #9 took the ticket back to in_progress though #7 is on the trunk (%+v)", move.Steps)
+	}
+	got := step(t, move, config.EventPRClosedUnmerged)
+	if got.Reason != engine.ReasonMerged {
+		t.Fatalf("reason = %q, want %q: a dry run has to say which of the two refusals it was", got.Reason, engine.ReasonMerged)
+	}
+	if !strings.Contains(got.Why, "#7") {
+		t.Errorf("why = %q, and it does not name the merge that holds the ticket where it is", got.Why)
+	}
+	// The tracker is about to move this ticket to Done on the merge, and
+	// that is what the one line says: a refused move back is the smaller
+	// news whenever something else is going to happen anyway.
+	if text := move.Text(); !strings.Contains(text, "automation") {
+		t.Errorf("text = %q, want the tracker's own automation, which is what is really happening to this ticket", text)
+	}
+}
+
+// Every other forward-only event keeps the refusal it had, and the sentence
+// now offers the third way back without promising it unconditionally.
+func TestTransitionStillRefusesAnUnlistedEventGoingBackwards(t *testing.T) {
+	cfg := preset(t, "lean-kanban") // configures no pr_converted_to_draft
+
+	move := engine.Transition(work(cfg, "in_review", linked(draftPR(7))))
+
+	got := step(t, move, config.EventPROpenedDraft)
+	if got.Reason != engine.ReasonBackwards {
+		t.Fatalf("reason = %q, want %q", got.Reason, engine.ReasonBackwards)
+	}
+	if !strings.Contains(got.Why, "abandoned") {
+		t.Errorf("why = %q, and it does not list abandoning the last pull request among the ways back", got.Why)
+	}
+}
+
+// Rule 1 and rule 4 read one count of one set of pull requests, so a ticket
+// cannot be told that nothing is left of its work and that its work is
+// unfinished in the same breath. Here #7 is merged, #9 is open and #11 was
+// abandoned: the ticket is neither going back nor done, and each refusal
+// names the pull request that is really holding it.
+func TestTransitionCountsTheWorkOnceForBothRules(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+	cfg.Workflow.Transitions[config.EventPRMerged] = config.Transition{To: "done", Owner: config.OwnerFlow}
+
+	move := engine.Transition(work(cfg, "in_review", linked(mergedPR(7)), linked(openPR(9)), linked(closedPR(11))))
+
+	if move.Moves() {
+		t.Fatalf("the ticket moved to %s with #7 merged, #9 open and #11 abandoned (%+v)", move.To, move.Steps)
+	}
+	back := step(t, move, config.EventPRClosedUnmerged)
+	if back.Reason != engine.ReasonMerged || !strings.Contains(back.Why, "#7") {
+		t.Errorf("pr_closed_unmerged = %q %q, want %q naming #7", back.Reason, back.Why, engine.ReasonMerged)
+	}
+	done := step(t, move, config.EventPRMerged)
+	if done.Reason != engine.ReasonOpenWork || !strings.Contains(done.Why, "#9") {
+		t.Errorf("pr_merged = %q %q, want %q naming #9", done.Reason, done.Why, engine.ReasonOpenWork)
+	}
+}
+
+// When the merge is the only thing holding the ticket where it is, that is
+// the line a dry run prints: a person looking at a ticket that did not move
+// is owed the pull request that is on the trunk, not the event nobody
+// configured.
+func TestTransitionSaysTheMergeIsWhyTheWorkDidNotComeBack(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+	delete(cfg.Workflow.Transitions, config.EventPRMerged)
+
+	move := engine.Transition(work(cfg, "in_review", linked(mergedPR(7)), linked(closedPR(9))))
+
+	if move.Moves() {
+		t.Fatalf("the ticket moved to %s (%+v)", move.To, move.Steps)
+	}
+	if text := move.Text(); !strings.Contains(text, "#7 merged") {
+		t.Errorf("text = %q, and it does not say the merge is why the work did not come back", text)
+	}
+}
+
 func TestTransitionGivesTheSameAnswerWhateverOrderThePullRequestsCameIn(t *testing.T) {
 	cfg := preset(t, "lean-kanban")
 	cfg.Workflow.Transitions[config.EventChangesRequested] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
