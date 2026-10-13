@@ -240,7 +240,7 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: contract suite; commit_status deploy source; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — Gitea appends the number (spec 10 §2, #106)
 - [ ] 7.4 GitLab forge — specs: 10 §4 — deps: 3.12 (#82)
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
-- [ ] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
+- [x] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
 - [x] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
   - AC: scenarios S01–S03

@@ -581,9 +581,20 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		if err != nil {
 			return engine.Adapters{}, err
 		}
-		adapters.Deploys, err = deploys.NewGitHub(deploys.GitHubOptions{
-			Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
-		})
+		if s.Config.Deploys.Source == config.DeploySourceCommitStatus {
+			adapters.Deploys, err = deploys.NewCommitStatus(deploys.CommitStatusOptions{
+				Client:       forgeClient,
+				Owner:        owner,
+				Repo:         name,
+				Environment:  s.Config.Deploys.Environment,
+				Contexts:     s.Config.Deploys.Contexts,
+				Capabilities: declaration,
+			})
+		} else {
+			adapters.Deploys, err = deploys.NewGitHub(deploys.GitHubOptions{
+				Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
+			})
+		}
 		if err != nil {
 			return engine.Adapters{}, err
 		}

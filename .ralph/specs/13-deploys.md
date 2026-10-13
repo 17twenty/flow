@@ -116,3 +116,54 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   merge, not whether the newest one does. A deployment that took production
   back to an earlier commit did not undo the release, and reading only the
   latest record would blame a team for recovering from an incident.
+- **§3 a commit status speaks for one environment, and the contexts are what
+  it speaks with (item 7.5).** A forge deployment record names its
+  environment; a commit status has no field for one. The configured contexts
+  are therefore the whole of what "deployed to production" means to this
+  source, and the source is built for the one environment they stand for. A
+  query for another is answered with nothing, without asking the provider
+  anything, because that is the same answer as an environment nothing deploys
+  to — and the record that comes back is spelled the way configuration spells
+  it, not the way the caller asked.
+- **§3 a context is a name, and only a trailing star is a pattern (item
+  7.5).** `deploys.contexts` takes exact names or `prefix*` (spec 03 §1), so
+  `argocd/*/prod` matches the context literally called `argocd/*/prod` and
+  nothing else. Teaching it globbing would make a configuration that works
+  today mean something else tomorrow, for no case anybody has. Matching is
+  byte-exact for the same reason: `argocd/App-Prod` and `argocd/app-prod` are
+  two different checks to the forge, and flow is in no position to decide they
+  are one.
+- **§3 a context's history is one deployment, not several (item 7.5).** A
+  deployer writes `pending` and then `success` under the same context, and
+  GitHub keeps both. Reading each status as a record would stand an unfinished
+  deployment beside the finished one that replaced it. The newest status per
+  context is the deployment, which is the same rule the deployments source
+  already applies to a record's status history. Two *different* matching
+  contexts on one commit are two deployments, because two deployers reported.
+- **§3 the window selects commits, because statuses cannot be asked for one
+  (item 7.5).** GitHub serves the commits of a window and offers no way to ask
+  which statuses were written in one, so the only bounded walk is over the
+  trunk's commits and the statuses hanging on them. A status is always written
+  on a commit that already exists, so a commit inside the window carries every
+  status that could date from inside it. What the rule costs is a deployment
+  of an older commit — a rollback — which is outside the window the question
+  named; the deployments source, which can filter server-side, does not share
+  the limitation.
+- **§3 a walk nothing bounds reads the trunk's newest hundred commits (item
+  7.5).** Statuses are read one commit at a time, so an unbounded walk is one
+  request per commit of the repository's history. The hundred newest is the
+  provider's own page. A limit stops the walk early, since it goes newest
+  commit first, and a query naming a commit walks nothing at all: that commit
+  is the only one whose statuses are about it.
+- **§3 the trunk is the repository's to name (item 7.5).** Configuration has
+  no key for the default branch (spec 03 §1) and the repository already knows
+  which branch it is, so an unnamed trunk is asked for once and remembered. A
+  repository that answers with no default branch is `ErrUnavailable`, not a
+  branch called "", which would list the commits of nothing and report that
+  nothing had ever shipped.
+- **§3 a commit status has four states and none of them is running (item
+  7.5).** `success`, `failure`, `error` and `pending` are all a commit status
+  offers, so a deployment reported this way has no in-progress state to
+  report; `pending` covers both "not started" and "under way". A state flow
+  does not understand is refused by name, as the deployments source already
+  refuses one.
