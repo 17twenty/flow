@@ -25,6 +25,7 @@ forge:
   type: github                    # github | gitea | gitlab
   repo: 17twenty/flow
   url: https://github.com         # GHES/self-managed: base web URL
+  required_checks: [test]         # contexts the trunk requires besides flow's own gate; additive
   auth: { token_env: GITHUB_TOKEN }
 
 tracker:
@@ -459,3 +460,30 @@ gate, relaxed policy).
   the mistake is invisible until a credential or a host is missing, both of
   those messages now point at a table that names the provider with the wrong
   punctuation.
+
+- **`forge.required_checks` is what the trunk must pass besides flow's own
+  gate** (item 7.0, settling the Spec issues entry raised by `@17twenty`
+  against follow-up #91). Four documents promised that `flow apply` creates a
+  ruleset requiring `flow/policy` *and the build*, and nothing in the
+  configuration could say what the build is called, so `forge.required_status`
+  only ever asked for `policy.status_context`. The key is a list of status
+  contexts, validated like any other configured list: no empty entry, no
+  padding (a context is matched exactly, so the spaces around it are part of
+  it), no repetition. Flow's own gate is still flow's business and is not
+  written here; naming it anyway is a repetition and is dropped rather than
+  refused, because a forge asked for the same context twice is being asked
+  something nobody meant. The item stays additive (spec 06 §4), which is what
+  makes the key safe: flow asks for the contexts it was given where they are
+  missing, and never takes away a check somebody else required.
+
+- **A team may require a build without running flow's gate.** Neither half of
+  `forge.required_status` implies the other, so the item exists whenever
+  either `policy.status_context` or `forge.required_checks` has anything in
+  it, and `strict_checks` follows the whole list rather than the gate alone.
+  Currency is a property of a required check — a status is about the commit it
+  was posted on — and it is no less so when the check is the team's.
+
+- **The order the contexts are written in is not a difference.** The desired
+  state canonicalises its items, so the same set written two ways is the same
+  plan and the same hash, and a team that alphabetises its list does not
+  thereby propose a change.
