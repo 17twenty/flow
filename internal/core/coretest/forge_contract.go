@@ -35,6 +35,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "repo", Run: forgeRepo},
 		{Name: "one pull request, with everything the gate reads", Run: forgeOnePullRequest},
 		{Name: "the tickets a pull request closes", Run: forgeClosingIssues},
+		{Name: "a pull request says what header a squash would land", Run: forgeSquashHeader},
 		{Name: "a pull request that is not there", Run: forgeMissingPullRequest},
 		{Name: "pull requests in a window, newest first", Run: forgePullRequestWindow},
 		{Name: "a listing is a summary and says so", Run: forgePullRequestListIsSummary},
@@ -164,6 +165,54 @@ func forgeClosingIssues(t *testing.T, newForge NewForge) {
 	if !slices.Contains(pr.ClosingIssues, "acme/other#7") {
 		t.Errorf("ClosingIssues = %v, want the ticket in another repository qualified as acme/other#7", pr.ClosingIssues)
 	}
+}
+
+// forgeSquashHeader: a pull request says what the trunk will read when it is
+// squashed, and says it from a listing as well as from its own endpoint.
+//
+// The gate holds a pull request to the commit convention before the commit
+// exists, so the only thing it can hold it to is what the forge says it will
+// write. On GitHub and Gitea that is the title with the number appended and on
+// GitLab it is the title, which is why the question is put to the adapter
+// rather than answered in the engine. An adapter that leaves it empty tells
+// the gate nothing, and the gate then judges a header seven characters shorter
+// than the one that lands.
+//
+// The header must begin with the title: whatever a forge appends, the type,
+// scope and description a person wrote are still the front of it, and a rule
+// about the start of a header would otherwise be read against the wrong
+// string.
+func forgeSquashHeader(t *testing.T, newForge NewForge) {
+	forge := newForge(t, ContractForge())
+	pr, err := forge.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if pr.SquashHeader == "" {
+		t.Fatalf("#2 says nothing about the header a squash would land, so the gate has only the title to judge and that is not what lands")
+	}
+	if !strings.HasPrefix(pr.SquashHeader, pr.Title) {
+		t.Errorf("SquashHeader = %q, which does not begin with the title %q", pr.SquashHeader, pr.Title)
+	}
+	if pr.MergeHeader() != pr.SquashHeader {
+		t.Errorf("MergeHeader() = %q, want the header the forge said it would write, %q", pr.MergeHeader(), pr.SquashHeader)
+	}
+
+	prs, err := forge.PullRequests(t.Context(), core.PRQuery{State: core.PRStateMerged})
+	if err != nil {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	for _, listed := range prs {
+		if listed.Number != pr.Number {
+			continue
+		}
+		if listed.SquashHeader != pr.SquashHeader {
+			t.Errorf("the listing says #%d would land %q and its own endpoint says %q; a number and a title are all it is made of",
+				listed.Number, listed.SquashHeader, pr.SquashHeader)
+		}
+		return
+	}
+	t.Fatalf("the merged listing does not hold #%d", pr.Number)
 }
 
 // forgeMissingPullRequest: a pull request that does not exist is ErrNotFound.

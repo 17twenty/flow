@@ -302,3 +302,17 @@ duplicate-pipeline hazards). MR closing issues: `GET
   inherit it with the flag. Observing is deliberately unaffected: a read-only
   repository is still worth auditing, and this is the forge-side shape of the
   tracker rule in spec 11 §1.
+- **§2 the squash header is the adapter's to report, and GitHub's is composed
+  rather than read (issue #106).** `core.PullRequest.SquashHeader` is the
+  commit header a squash of that pull request would put on the trunk, and the
+  forge contract requires it of every pull request an adapter produces — from
+  a listing as well as from the pull request's own endpoint, since a number
+  and a title are all it is made of. GitHub serves no such field, so the
+  adapter composes `"<title> (#<number>)"`, which is exactly what the merge
+  box offers under `squash_merge_commit_title: PR_TITLE`; §3 Gitea/Forgejo
+  appends the number the same way and §4 GitLab appends nothing and must
+  report the title unchanged. It is filled in for open pull requests too,
+  because judging the header before the commit exists is the gate's whole job.
+  `MergeHeader()` falls back to the title so a pull request built by hand is
+  judged rather than not judged at all; the contract case is what stops that
+  fallback from hiding a silent adapter.

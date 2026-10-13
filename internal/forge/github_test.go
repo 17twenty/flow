@@ -3,6 +3,7 @@ package forge
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -242,6 +243,33 @@ func TestGitHubReadsOnePullRequestWholeAndDropsAReviewNobodySubmitted(t *testing
 	}
 	if !pr.MergedAt.Equal(want.MergedAt) || !pr.ClosedAt.Equal(want.ClosedAt) {
 		t.Errorf("timeline = %v/%v, want %v/%v", pr.MergedAt, pr.ClosedAt, want.MergedAt, want.ClosedAt)
+	}
+}
+
+// TestGitHubSaysTheNumberWillBeAppendedToTheTitle: GitHub serves no field for
+// the header a squash would land, so the adapter composes the one the merge
+// box offers under squash_merge_commit_title: PR_TITLE. The forge contract
+// only asks that a header be reported and begin with the title, because
+// GitLab appends nothing; what GitHub appends is GitHub's to assert.
+func TestGitHubSaysTheNumberWillBeAppendedToTheTitle(t *testing.T) {
+	fx := coretest.ContractForge()
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if want := fmt.Sprintf("%s (#%d)", pr.Title, pr.Number); pr.SquashHeader != want {
+		t.Errorf("SquashHeader = %q, want %q: the number lands with the title and counts against the header length", pr.SquashHeader, want)
+	}
+
+	listed, err := adapter.PullRequests(t.Context(), core.PRQuery{State: core.PRStateMerged})
+	if err != nil {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	if len(listed) == 0 || listed[0].SquashHeader != pr.SquashHeader {
+		t.Errorf("the listing says %+v and the pull request says %q", listed, pr.SquashHeader)
 	}
 }
 

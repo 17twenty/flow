@@ -275,6 +275,78 @@ func TestPolicyTitleConventional(t *testing.T) {
 	}
 }
 
+// TestPolicyJudgesTheHeaderThatLandsAndNotTheTitle is the bug this rule had on
+// flow's own repository: GitHub appends " (#104)" to a squash title, so a
+// 66-character title the gate passed landed as a 73-character header, and the
+// live audit reported a fortnight later that the trunk broke a rule the gate
+// had said was satisfied. The convention is about the trunk's history, so the
+// gate holds the pull request to what the forge says it will write.
+func TestPolicyJudgesTheHeaderThatLandsAndNotTheTitle(t *testing.T) {
+	title := "feat(engine): " + strings.Repeat("x", 58)
+	if utf8.RuneCountInString(title) != 72 {
+		t.Fatalf("the fixture title is %d characters; it has to be exactly at the limit", utf8.RuneCountInString(title))
+	}
+
+	s := snapshot(t)
+	s.PR.Title = title
+	s.PR.SquashHeader = title + " (#104)"
+	got := finding(t, engine.CheckPolicy(s), engine.RulePRTitleConventional)
+	if got.OK {
+		t.Fatalf("the gate passed a title that lands over the limit; that is how the trunk got a 73-character header")
+	}
+	if !strings.Contains(got.Message, "79") {
+		t.Errorf("the message counts %q, want the 79 characters that land", got.Message)
+	}
+
+	var said string
+	for _, e := range got.Evidence {
+		if strings.Contains(e.Text, "(#104)") {
+			said = e.Text
+		}
+	}
+	if said == "" {
+		t.Fatalf("nothing in the finding says what the header that lands is, so %q is read against a title a person counts to 72: %+v", got.Message, got.Evidence)
+	}
+	if !strings.Contains(said, "7 characters") {
+		t.Errorf("the evidence does not say how much the forge added: %q", said)
+	}
+}
+
+// TestPolicySaysNothingAboutALandedHeaderThatIsTheTitle: on a forge that
+// appends nothing the two are the same string, and a note explaining a
+// difference that is not there would be noise on every failing title.
+func TestPolicySaysNothingAboutALandedHeaderThatIsTheTitle(t *testing.T) {
+	s := snapshot(t)
+	s.PR.Title = "wibble(engine): do it"
+	s.PR.SquashHeader = s.PR.Title
+	got := finding(t, engine.CheckPolicy(s), engine.RulePRTitleConventional)
+	if got.OK {
+		t.Fatalf("the title is not conventional and the gate passed it")
+	}
+	if len(got.Evidence) != 0 {
+		t.Errorf("the finding explains a difference between the title and the header that lands, and there is none: %+v", got.Evidence)
+	}
+}
+
+// TestPolicyJudgesTheTitleWhenTheForgeSaidNothing: a pull request built by
+// hand, or read through an adapter that has not been taught the question, is
+// judged on its title rather than not judged at all.
+func TestPolicyJudgesTheTitleWhenTheForgeSaidNothing(t *testing.T) {
+	s := snapshot(t)
+	s.PR.Title = "feat(engine): " + strings.Repeat("x", 80)
+	s.PR.SquashHeader = ""
+	got := finding(t, engine.CheckPolicy(s), engine.RulePRTitleConventional)
+	if got.OK {
+		t.Fatalf("a title 94 characters long passed the gate")
+	}
+	if !strings.Contains(got.Message, "94") {
+		t.Errorf("the message is %q, want it to count the 94 characters of the title it had", got.Message)
+	}
+	if len(got.Evidence) != 0 {
+		t.Errorf("the finding invented a difference between a title and a header nobody described: %+v", got.Evidence)
+	}
+}
+
 func TestPolicyTitleConventionalListsEveryViolationWhenThereIsMoreThanOne(t *testing.T) {
 	s := snapshot(t)
 	s.Config.Commits.Scopes.Required = true

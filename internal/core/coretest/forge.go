@@ -2,6 +2,7 @@ package coretest
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -137,7 +138,7 @@ func (f *FakeForge) PullRequest(ctx context.Context, number int) (core.PullReque
 	defer f.mu.Unlock()
 	for _, pr := range f.prs {
 		if pr.Number == number {
-			return pr, nil
+			return squashed(pr), nil
 		}
 	}
 	return core.PullRequest{}, notFound("pull request", "#"+strconv.Itoa(number))
@@ -163,7 +164,7 @@ func (f *FakeForge) PullRequests(ctx context.Context, q core.PRQuery) ([]core.Pu
 		if !q.UpdatedSince.IsZero() && pr.UpdatedAt.Before(q.UpdatedSince) {
 			continue
 		}
-		out = append(out, summarised(pr))
+		out = append(out, squashed(summarised(pr)))
 	}
 	slices.SortStableFunc(out, func(a, b core.PullRequest) int { return b.UpdatedAt.Compare(a.UpdatedAt) })
 	if q.Limit > 0 && len(out) > q.Limit {
@@ -181,6 +182,24 @@ func summarised(pr core.PullRequest) core.PullRequest {
 	pr.Reviews = nil
 	pr.ClosingIssues = nil
 	pr.Files.Paths = nil
+	return pr
+}
+
+// squashed fills in the header a squash merge would land, the way an adapter
+// does: a number and a title are all it is made of, so it is as available from
+// a listing as from a pull request's own endpoint.
+//
+// The fake appends the number because the two forges flow speaks to today do,
+// and because a fake whose squash header were always its title would never
+// once hand a caller a header that differs from the one a person typed —
+// which is the whole of what the gate got wrong.
+//
+// It is derived on the way out rather than stored, and it overwrites whatever
+// a fixture put there, because an adapter has no memory of it either: a test
+// that changes a title and puts the pull request back must not be left
+// carrying the header the old title would have landed.
+func squashed(pr core.PullRequest) core.PullRequest {
+	pr.SquashHeader = fmt.Sprintf("%s (#%d)", pr.Title, pr.Number)
 	return pr
 }
 
@@ -426,7 +445,7 @@ func (f *FakeForge) ProposeFiles(ctx context.Context, p core.FileProposal) (core
 		pr.Title, pr.Body, pr.UpdatedAt = p.Title, p.Body, now
 		pr.Files = core.FileSummary{Changed: len(paths), Paths: paths}
 		f.prs[i] = pr
-		return pr, nil
+		return squashed(pr), nil
 	}
 
 	f.nextPR++
@@ -445,7 +464,7 @@ func (f *FakeForge) ProposeFiles(ctx context.Context, p core.FileProposal) (core
 		URL:       f.repo.URL + "/pull/" + strconv.Itoa(f.nextPR),
 	}
 	f.prs = append(f.prs, pr)
-	return pr, nil
+	return squashed(pr), nil
 }
 
 // pullRequest finds a pull request. The caller holds the lock.
