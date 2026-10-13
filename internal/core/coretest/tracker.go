@@ -248,6 +248,13 @@ func (t *FakeTracker) Tickets(ctx context.Context, q core.TicketQuery) ([]core.T
 		return out, nil
 	}
 	for _, ticket := range t.tickets {
+		// An archived item is not on the board. A listing is the board,
+		// so it leaves them out — which is what GitHub Projects does,
+		// and what makes the listing and a lookup by key disagree about
+		// the same ticket on purpose.
+		if ticket.Archived {
+			continue
+		}
 		if q.Column != "" && ticket.ColumnID != q.Column {
 			continue
 		}
@@ -274,6 +281,11 @@ func (t *FakeTracker) Move(ctx context.Context, key string, to core.ColumnID) er
 	at := t.indexOf(key)
 	if at < 0 {
 		return notFound("ticket", key)
+	}
+	if t.tickets[at].Archived {
+		return core.Errorf(core.ErrConflict, "move %s to %s", key, to).
+			WithWhy("%s is archived, and an archived item takes no change", key).
+			WithFix("restore %s to the board if it is still work", key)
 	}
 	to, name, found := t.column(to)
 	if !found {

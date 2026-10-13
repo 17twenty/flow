@@ -153,3 +153,9 @@ golden; determinism; fork/read-only path; draft path.
   4.3).** The pull request's own approvals are then what counts. The reading
   that invents a requirement nobody configured is the one that blocks work for
   a reason no one can find.
+- **§2 `pr.ticket.in_project` tells archived from absent (issue #99).** Both
+  fail the rule, because the board shows neither and no transition can move
+  either, and the rule is about what the board shows. What differs is the
+  remedy, and it is the whole value of the finding: an issue nobody added has
+  to be added, and one somebody archived has to be restored — adding it again
+  is not a thing the project will do, since it already holds the item.

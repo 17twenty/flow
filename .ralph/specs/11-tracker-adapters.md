@@ -378,3 +378,25 @@ reopen, pagination, error mapping.
   column its fixture does not list — and only then, since a fixture that
   lists none describes no board — and the contract moves by name as well as
   by id.
+- **§3 an archived item is off the board and takes no change (item: archiving,
+  issue #99).** Spec 17 §3 asks this very board to auto-archive closed items,
+  and nothing said what an adapter reports about one. GitHub Projects answers
+  the same item two ways: `ProjectV2.items` leaves an archived item out, and
+  `Issue.projectItems` returns it with the column it was archived in. Flow
+  selected `isArchived` in neither query, so the same ticket was "not an item
+  of the project" and "in column Done" at once, depending on which question
+  was put. `core.Ticket` now carries `Archived`, both queries select the
+  field, and the two readings keep their difference on purpose: a listing is
+  the board, and a key is a question about an issue.
+- **§5 a move of an archived item is refused, not performed.** GitHub answers
+  `updateProjectV2ItemFieldValue` for an archived item with a null item, no
+  `errors`, and no change — so an adapter that only looks for a GraphQL error
+  reports a move the board never made. `setColumn` now treats a mutation that
+  returned no item as a failure (`ErrConflict`), and `Move` refuses an
+  archived item before asking, which is the refusal a person can act on. A
+  write that changed nothing is not a write that worked.
+- **§5 the reference fake models archiving the way the adapter does.** It is
+  excluded from a listing, found by key, and refuses a move with
+  `ErrConflict`; `TrackerContract` holds the case, so both halves must agree.
+  The contract fixture gained `#15`, archived in In review, reachable as
+  `coretest.ContractArchivedKey`.

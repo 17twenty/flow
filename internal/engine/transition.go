@@ -47,6 +47,9 @@ const (
 	// ReasonClosed means the ticket is closed, and the only event flow will
 	// act on for finished work is the closing itself.
 	ReasonClosed = "closed"
+	// ReasonArchived means the board has put the ticket out of sight. An
+	// archived item takes no change at all, so flow does not ask for one.
+	ReasonArchived = "archived"
 	// ReasonNative means the tracker's own automation owns this transition.
 	ReasonNative = "native"
 	// ReasonBackwards means the move would go against the board's order, and
@@ -336,6 +339,16 @@ func (f *fold) step(event string, pr int) {
 	}
 
 	switch {
+	case f.snap.Ticket.Archived:
+		// Archiving is a decision about the whole item, not about one
+		// event, so it answers every event the same way. The tracker
+		// will not write to an archived item at all — on GitHub
+		// Projects it accepts the mutation and performs nothing — so a
+		// move flow asked for here would be a move it then reported
+		// and never made.
+		step.Reason = ReasonArchived
+		step.Why = fmt.Sprintf("%s is archived, and an archived item takes no change until somebody restores it to the board", f.snap.Ticket.Key)
+
 	case to == f.at:
 		// Being already there is still an opinion about where the ticket
 		// belongs, and a pull request in review holds it in review against
@@ -477,12 +490,16 @@ func (m TicketMove) Text() string {
 // heldOrder ranks the reasons a ticket stayed put by how much the reader needs
 // to hear them. A ticket that is already where it belongs should say so rather
 // than report the event that would have taken it backwards, and a column the
-// workflow does not have is the first thing anybody should be told.
+// workflow does not have is the first thing anybody should be told. An
+// archived ticket leads: nothing else said about it can be acted on until it
+// is back on the board.
 var heldOrder = []string{
+	ReasonArchived,
 	ReasonUnknownColumn,
 	ReasonOpenWork,
 	ReasonUndeployed,
 	ReasonNative,
+	ReasonClosed,
 	ReasonDone,
 	ReasonOverruled,
 	ReasonSatisfied,

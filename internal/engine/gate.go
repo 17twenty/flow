@@ -153,11 +153,16 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 // onBoard reports whether the board listing holds this ticket.
 //
 // It is the board's own answer rather than a second question to the tracker:
-// the listing is every item of the project, so an issue missing from it is an
-// issue that is not an item, which is exactly what pr.ticket.in_project asks
-// (spec 09 §2). Asking the tracker instead would mean trusting an empty
-// column to mean "not on the board", and an item with no status set has an
-// empty column too.
+// the listing is every item the board shows, so an issue missing from it is an
+// issue nobody working from the board will see, which is what
+// pr.ticket.in_project asks (spec 09 §2). Asking the tracker instead would
+// mean trusting an empty column to mean "not on the board", and an item with
+// no status set has an empty column too.
+//
+// It is false for an archived item as well as for an issue that was never
+// added. The two are not the same thing and the rule tells them apart through
+// [core.Ticket.Archived]; what they have in common is the part that matters
+// here, which is that neither can be moved.
 func onBoard(board []core.Ticket, key string) bool {
 	for _, item := range board {
 		if sameTicket(item.Key, key) {

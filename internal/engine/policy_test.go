@@ -155,6 +155,34 @@ func TestPolicyTicketInProject(t *testing.T) {
 			t.Errorf("fix is %q", got.Fix)
 		}
 	})
+	t.Run("an issue that was archived", func(t *testing.T) {
+		s := snapshot(t)
+		s.Tickets[0].InProject = false
+		s.Tickets[0].Ticket.Archived = true
+		got := finding(t, engine.CheckPolicy(s), engine.RulePRTicketInProject)
+		if got.OK {
+			t.Fatal("an archived issue passed, and the board does not show it")
+		}
+		if len(got.Evidence) != 1 || !strings.Contains(got.Evidence[0].Text, "archived") {
+			t.Errorf("the evidence is %+v, want it to say the issue is archived rather than missing", got.Evidence)
+		}
+		if !strings.Contains(got.Fix, "restore") || strings.Contains(got.Fix, "add") {
+			t.Errorf("fix is %q, want it to ask for the issue back on the board and not to add an issue the project already has", got.Fix)
+		}
+	})
+	t.Run("one archived and one never added", func(t *testing.T) {
+		s := snapshot(t)
+		s.Tickets[0].InProject = false
+		s.Tickets[0].Ticket.Archived = true
+		s.Tickets = append(s.Tickets, engine.LinkedTicket{Ticket: linkedTicket("#13"), Column: "ready"})
+		got := finding(t, engine.CheckPolicy(s), engine.RulePRTicketInProject)
+		if len(got.Evidence) != 2 {
+			t.Fatalf("the evidence is %+v, want both issues", got.Evidence)
+		}
+		if !strings.Contains(got.Fix, "restore") || !strings.Contains(got.Fix, "add") {
+			t.Errorf("fix is %q, want it to cover both the archived issue and the missing one", got.Fix)
+		}
+	})
 	t.Run("a tracker with no separate board", func(t *testing.T) {
 		s := snapshot(t)
 		s.Config.Tracker.Type = config.TrackerJiraCloud

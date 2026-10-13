@@ -272,3 +272,12 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   a dry run still says what it declined. The alternative — trusting the column
   — makes flow the thing that makes the board untrue, which is the one outcome
   the whole model exists to prevent.
+- **§5 flow decides no move for an archived ticket (issue #99).** Archiving is
+  a decision about the whole item rather than about one event, so it answers
+  every event the same way, ahead of every other reason (`ReasonArchived`
+  leads `heldOrder`). The tracker will not write to an archived item at all,
+  so a move decided here would be a move flow reported and never made — the
+  same failure as rule 2's, arriving from the other direction. Unlike a closed
+  ticket, there is no event it still acts on: closing is finished work
+  reaching its own column, whereas archiving is the board declining to show
+  the work, and restoring it is a person's decision, not an event.

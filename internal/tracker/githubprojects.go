@@ -643,7 +643,7 @@ func (g *GitHubProjects) restore(ctx context.Context, project ghProject, before 
 
 // setColumn puts one item in one column.
 func (g *GitHubProjects) setColumn(ctx context.Context, project ghProject, item, option string) error {
-	_, err := core.GraphQL[ghMoveResult](ctx, g.client, g.request(), core.GraphQLQuery{
+	data, err := core.GraphQL[ghMoveResult](ctx, g.client, g.request(), core.GraphQLQuery{
 		Query: ghMoveMutation,
 		Variables: map[string]any{
 			"project": project.ID,
@@ -652,7 +652,18 @@ func (g *GitHubProjects) setColumn(ctx context.Context, project ghProject, item,
 			"option":  option,
 		},
 	}, ghSentinel)
-	return err
+	if err != nil {
+		return err
+	}
+	// A write that changed nothing is not a write that worked. GitHub answers
+	// a mutation it has declined to perform with a null item and no errors,
+	// so the returned id is what says the column was actually set.
+	if data.UpdateProjectV2ItemFieldValue.ProjectV2Item.ID == "" {
+		return core.Errorf(core.ErrConflict, "set the column of item %s", item).
+			WithWhy("the project accepted the change and returned no item, so nothing was written").
+			WithFix("check that the item is still on the board and not archived")
+	}
+	return nil
 }
 
 // ghColumnEdit is what one change does to a board's columns: the option set
@@ -979,6 +990,11 @@ func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID)
 		return core.Errorf(core.ErrNotFound, "move %s to %s", key, to).
 			WithWhy("%s is not on %s", key, g.Slug()).
 			WithFix("add the issue to the project, which flow will not do on a transition's behalf")
+	}
+	if item.IsArchived {
+		return core.Errorf(core.ErrConflict, "move %s to %s", key, to).
+			WithWhy("%s is archived, and the project accepts no change to an archived item", key).
+			WithFix("restore %s to the board if it is still work, or leave it where it is", key)
 	}
 	if item.optionID() == target.ID {
 		return nil

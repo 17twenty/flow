@@ -52,6 +52,11 @@ type Ticket struct {
 	Blocked bool
 	// Closed reports a ticket the tracker considers finished.
 	Closed bool
+	// Archived reports a board item the tracker has put out of sight. It is
+	// not the same as closed: an archived item keeps its column and its
+	// issue, but the board no longer lists it and the tracker will not accept
+	// a change to it, so flow neither counts it nor moves it.
+	Archived bool
 	// CloseReason is why it was closed, where the tracker records one:
 	// [ClosedCompleted] or [ClosedNotPlanned].
 	CloseReason string

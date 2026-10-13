@@ -342,21 +342,45 @@ func prTicketInProject(s PolicySnapshot) Finding {
 		finding.Message = "there is no linked ticket to look for"
 		return finding
 	}
+	archived := 0
 	for _, ticket := range s.Tickets {
 		if ticket.InProject {
 			continue
 		}
 		finding.OK = false
+		// Archived is not absent. The item is still the project's, in
+		// the column it was archived in, and adding it again is not the
+		// thing to do: the board has to show it before any transition
+		// can move it.
+		text := fmt.Sprintf("%s is not an item of the project", ticket.Ticket.Key)
+		if ticket.Ticket.Archived {
+			archived++
+			text = fmt.Sprintf("%s is archived, so the board does not show it and no transition can move it", ticket.Ticket.Key)
+		}
 		finding.Evidence = append(finding.Evidence, Evidence{
-			Text: fmt.Sprintf("%s is not an item of the project", ticket.Ticket.Key),
+			Text: text,
 			URL:  ticket.Ticket.URL,
 		})
 	}
 	if !finding.OK {
 		finding.Message = countOf(len(finding.Evidence), "a linked issue is not on the board", "%d linked issues are not on the board")
-		finding.Fix = "add the issue to the project"
+		finding.Fix = prInProjectFix(archived, len(finding.Evidence))
 	}
 	return finding
+}
+
+// prInProjectFix is what to do about the issues the board does not show, which
+// depends on why it does not show them: an issue nobody added has to be added,
+// and one somebody archived has to be restored.
+func prInProjectFix(archived, total int) string {
+	switch {
+	case archived == 0:
+		return "add the issue to the project"
+	case archived == total:
+		return "restore the issue to the board, or unlink it if the work is abandoned"
+	default:
+		return "add the missing issues to the project and restore the archived ones to the board"
+	}
 }
 
 // ticketReady holds the linked tickets to the Definition of Ready, and only

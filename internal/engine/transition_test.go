@@ -493,6 +493,23 @@ func TestTransitionDoesNotTouchAClosedTicket(t *testing.T) {
 	}
 }
 
+// The line a dry run prints has to say that the ticket is finished. Where no
+// other event has anything to report — here the workflow leaves the closing to
+// nobody — the alternative is the pull request the ticket is already in the
+// column of, which reads like work still under way.
+func TestTransitionSaysWhyAClosedTicketStaysPut(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	delete(cfg.Workflow.Transitions, config.EventIssueClosed)
+	snapshot := work(cfg, "in_progress", linked(openPR(7)))
+	snapshot.Ticket.Closed = true
+
+	move := engine.Transition(snapshot)
+
+	if !strings.Contains(move.Text(), "the only move left in finished work") {
+		t.Errorf("the line a dry run prints is %q, want it to say the ticket is closed", move.Text())
+	}
+}
+
 // Refusing is not the same as not looking: the pull requests are still
 // considered, so a dry run can say which ones it declined and why.
 func TestTransitionStillExplainsThePullRequestsOfAClosedTicket(t *testing.T) {
@@ -509,6 +526,61 @@ func TestTransitionStillExplainsThePullRequestsOfAClosedTicket(t *testing.T) {
 		if s.Moved {
 			t.Errorf("step %s moved a closed ticket: %+v", s.Event, s)
 		}
+	}
+}
+
+// An archived ticket is one the board has put out of sight, and the tracker
+// will not write to it — GitHub Projects accepts the mutation and performs
+// nothing. Flow therefore decides no move for one: a move it asked for here
+// would be reported as made and would not be.
+func TestTransitionDoesNotMoveAnArchivedTicket(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	snapshot := work(cfg, "ready", linked(openPR(7)))
+	snapshot.Ticket.Archived = true
+
+	move := engine.Transition(snapshot)
+
+	if move.Moves() {
+		t.Fatalf("flow moved an archived ticket to %s: %+v", move.To, move)
+	}
+	got := step(t, move, config.EventPRReadyForReview)
+	if got.Reason != engine.ReasonArchived {
+		t.Errorf("reason = %q, want %q", got.Reason, engine.ReasonArchived)
+	}
+	if !strings.Contains(got.Why, "archived") {
+		t.Errorf("why = %q, want it to say the ticket is archived", got.Why)
+	}
+	if !strings.Contains(move.Text(), "archived") {
+		t.Errorf("the line a dry run prints is %q, want archiving to lead it", move.Text())
+	}
+}
+
+// Being archived answers every event, including the ones that would have moved
+// the ticket nowhere: a step that reported "already in the right column" would
+// read like a board flow agrees with, when flow cannot touch it at all.
+func TestTransitionSaysArchivedEvenWhereNothingWouldHaveMoved(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+	snapshot := work(cfg, "in_review", linked(openPR(7)))
+	snapshot.Ticket.Archived = true
+
+	move := engine.Transition(snapshot)
+
+	for _, s := range move.Steps {
+		if s.Reason != engine.ReasonArchived {
+			t.Errorf("step %s is %q, want every event to answer %q", s.Event, s.Reason, engine.ReasonArchived)
+		}
+	}
+}
+
+// The control for the two above: the same snapshot without the archiving
+// moves, so the refusal is about being archived and not about the fixture.
+func TestTransitionMovesTheSameTicketWhenItIsNotArchived(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+
+	move := engine.Transition(work(cfg, "ready", linked(openPR(7))))
+
+	if !move.Moves() {
+		t.Fatalf("an unarchived ticket did not move: %+v", move)
 	}
 }
 

@@ -486,10 +486,59 @@ direct-mode close — today. The four attestations are
 `tracker.expedite`, which `flow attest` settles for thirty days at a time and
 which a person has to actually look at first.
 
+### Archiving was a word flow did not know (this run)
+
+[#98](https://github.com/17twenty/flow/pull/98) is merged. The next finding
+came from the board flow is dogfooding on: spec 17 §3 asks this project to
+auto-archive closed items, and nothing in flow had ever been told what
+archiving is. GitHub Projects answers the same item two ways —
+`ProjectV2.items` leaves an archived one out, `Issue.projectItems` returns it
+with the column it was archived in — and flow selected `isArchived` in
+neither, so one ticket was "not an item of the project" and "in column In
+review" at the same time, depending on which question happened to be put.
+`pr.ticket.in_project` failed for a pull request naming one and asked for the
+issue to be added to a project that already holds it.
+
+The move was worse. Asked to set the Status of an archived item, GitHub
+answers `{"updateProjectV2ItemFieldValue": null}` with no `errors` at all and
+changes nothing, and `setColumn` only ever looked for a GraphQL error — so
+flow reported a move the board never made. A write that changed nothing is not
+a write that worked: the id coming back is now the evidence the write landed,
+and `Move` refuses an archived item before asking, because the refusal is the
+one thing a person can act on. `engine.Transition` decides no move for an
+archived ticket and says so ahead of every other reason; unlike a closed one
+there is no event it still acts on, since restoring work to the board is a
+person's decision and not something that happens to it.
+
+The fake is why none of it was visible. It rendered every field of a board
+item whatever the query asked for, so `isArchived` could have been missing
+from both shipped queries with the whole suite green — the adapter decoding a
+field the server had volunteered. It now reads the item selection out of the
+document it was sent and answers with that and nothing else, which is what
+GraphQL does, and the two mutants that survived the first draft (the queries
+not selecting the field, and the fake answering one nobody asked for) each
+bought a test. It is [#99](https://github.com/17twenty/flow/issues/99), open
+as [#101](https://github.com/17twenty/flow/pull/101), green on `test`,
+`policy` and `setup checks`, red only on `agent.human_review` — and the gate
+moved #99 to In review from CI, which is the middle of the board working
+unattended.
+
+**Where the exit code stands.** `flow doctor` exits 2 on one check and four
+attestations. The check is now `live.tickets.done_merged 3/69`: sixty-six
+tickets reached Done in `direct` mode, before Stage B, with no pull request
+behind them, and they age out of the fourteen-day window on their own. Every
+other live check passes, including `live.prs.reviewed 3/3` and
+`live.transitions.flow 67/67`. The four attestations are
+`tracker.native.{changes_requested,issue_closed,pr_merged}` and
+`tracker.expedite`, which `flow attest` settles for thirty days at a time and
+which a person has to actually look at first.
+
 **Single best next step:** `@17twenty` approves and squash-merges
-[#98](https://github.com/17twenty/flow/pull/98). Then, in order: attest the
-four native behaviours so the exit code depends only on real findings, and
-land plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a
-single self-contained check: git trailers, a marker, and a ticket filed under
-`--fix` exactly as 5.5 moves one. The fourteen-day clock starts the first
-morning the scheduled run exits 0.
+[#101](https://github.com/17twenty/flow/pull/101). Then, in order: attest the
+four native behaviours so the exit code depends only on real findings; land
+plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a single
+self-contained check: git trailers, a marker, and a ticket filed under `--fix`
+exactly as 5.5 moves one; and settle
+[#100](https://github.com/17twenty/flow/issues/100), where
+`pr_closed_unmerged` cannot be configured to mean what it means. The
+fourteen-day clock starts the first morning the scheduled run exits 0.
