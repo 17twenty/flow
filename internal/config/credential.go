@@ -83,6 +83,10 @@ type Credentials struct {
 
 	mu    sync.Mutex
 	cache map[string]*resolved
+	// approved holds the hosts a person agreed to during this run, keyed by
+	// [approval]. The configured list in auth is never written to: what the
+	// user wrote down and what somebody said once are different things.
+	approved map[string]bool
 }
 
 // resolved is one provider's credential, and the lock that makes sure it is
@@ -186,7 +190,7 @@ func (c *Credentials) resolve(ctx context.Context, provider string, auth Auth) (
 		return Credential{secret: value, Provider: provider, Source: fmt.Sprintf("auth.%s.token_cmd", provider)}, nil
 	}
 
-	return Credential{}, missingCredential(provider, named, fallback)
+	return Credential{}, missingCredential(provider, named, fallback, nearMiss(c.auth, provider))
 }
 
 // fromCommand runs the user's credential helper and reads the token from its
@@ -257,7 +261,7 @@ func (c *Credentials) Email(provider string, auth Auth) (string, error) {
 
 // missingCredential explains that nothing was configured, naming the variables
 // that would have been read.
-func missingCredential(provider, named, fallback string) error {
+func missingCredential(provider, named, fallback, aside string) error {
 	why := fmt.Sprintf("$%s is not set", fallback)
 	fix := fmt.Sprintf("export %s=<token>", fallback)
 	if named != "" && named != fallback {
@@ -265,7 +269,7 @@ func missingCredential(provider, named, fallback string) error {
 		fix = fmt.Sprintf("export %s=<token>", named)
 	}
 	return core.Errorf(core.ErrPermission, "read the %s credential", provider).
-		WithWhy("%s, and your user config has no auth.%s.token_cmd", why, provider).
+		WithWhy("%s, and your user config has no auth.%s.token_cmd%s", why, provider, aside).
 		WithFix("%s, or add [auth.%s] token_cmd = [\"…\"] to your flow config", fix, provider)
 }
 

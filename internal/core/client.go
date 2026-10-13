@@ -96,9 +96,14 @@ type ClientOptions struct {
 	Transport http.RoundTripper
 	// Logger receives one debug record per attempt. [slog.Default] when nil.
 	Logger *slog.Logger
-	// AllowHost decides whether a host may be addressed. When nil, every
-	// host is allowed outside a test binary and only loopback inside one
-	// (spec 14); the live suite lifts that with FLOW_LIVE=1.
+	// AllowHost narrows where this client may speak, and is asked about
+	// every request including a redirect. It can only narrow: inside a test
+	// binary a non-loopback host is refused whatever it says (spec 14), so
+	// a forgotten fake cannot reach a real provider because a caller
+	// allowed its host.
+	//
+	// When nil, every host is allowed outside a test binary and only
+	// loopback inside one; the live suite lifts that with FLOW_LIVE=1.
 	AllowHost func(host string) bool
 }
 
@@ -592,12 +597,20 @@ func (e *hostNotAllowedError) Error() string { return e.err.Error() }
 func (e *hostNotAllowedError) Unwrap() error { return e.err }
 
 // RoundTrip implements http.RoundTripper.
+//
+// Both allowances have to agree, and they refuse for different reasons: the
+// client was built to address one host and this request names another, or
+// this is a test binary and the request is leaving the machine. Saying which
+// is the difference between a configuration to fix and a fake nobody wired
+// up.
 func (g *guardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	allow := g.allow
-	if allow == nil {
-		allow = defaultAllowHost
+	host := req.URL.Hostname()
+	if g.allow != nil && !g.allow(host) {
+		return nil, &hostNotAllowedError{err: Errorf(ErrPermission, "reach %s", host).
+			WithWhy("this client may only address the host it was built for, and a request that left it would carry the credential there").
+			WithFix("approve %s for this provider if it is yours", host)}
 	}
-	if host := req.URL.Hostname(); !allow(host) {
+	if !defaultAllowHost(host) {
 		return nil, &hostNotAllowedError{err: Errorf(ErrPermission, "reach %s", host).
 			WithWhy("flow is not allowed to address that host").
 			WithFix("tests must use a loopback server; set %s=1 for the live suite", LiveEnv)}

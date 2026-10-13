@@ -357,9 +357,12 @@ func TestLoadPersonal(t *testing.T) {
 	}
 
 	t.Run("neither file exists", func(t *testing.T) {
-		layers, err := LoadPersonal(filepath.Join(dir, "absent.toml"), filepath.Join(dir, "absent.local.toml"), untracked)
+		layers, warnings, err := LoadPersonal(filepath.Join(dir, "absent.toml"), filepath.Join(dir, "absent.local.toml"), untracked)
 		if err != nil {
 			t.Fatalf("LoadPersonal: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warned about files that are simply not there: %v", warnings)
 		}
 		if len(layers) != 0 {
 			t.Errorf("got %d layers, want none", len(layers))
@@ -370,7 +373,7 @@ func TestLoadPersonal(t *testing.T) {
 		write(userPath, "[user]\nhandle = \"@user\"\n[ui]\ntheme = \"dark\"\n")
 		write(localPath, "[ui]\ntheme = \"light\"\n")
 
-		layers, err := LoadPersonal(userPath, localPath, untracked)
+		layers, _, err := LoadPersonal(userPath, localPath, untracked)
 		if err != nil {
 			t.Fatalf("LoadPersonal: %v", err)
 		}
@@ -384,7 +387,7 @@ func TestLoadPersonal(t *testing.T) {
 	})
 
 	t.Run("no path for the user config", func(t *testing.T) {
-		layers, err := LoadPersonal("", localPath, untracked)
+		layers, _, err := LoadPersonal("", localPath, untracked)
 		if err != nil {
 			t.Fatalf("LoadPersonal: %v", err)
 		}
@@ -393,44 +396,59 @@ func TestLoadPersonal(t *testing.T) {
 		}
 	})
 
-	t.Run("a tracked override is refused", func(t *testing.T) {
-		_, err := LoadPersonal(userPath, localPath, func(string) (bool, error) { return true, nil })
-		if err == nil {
-			t.Fatal("LoadPersonal accepted a tracked override")
+	// A tracked override is the team's file, and the team must not be able to
+	// stop one another working by committing one: it is left unread, said
+	// once on stderr, and the run goes on with the layers flow does trust
+	// (scenario S01).
+	t.Run("a tracked override is left unread", func(t *testing.T) {
+		write(userPath, "[ui]\ntheme = \"dark\"\n")
+		write(localPath, "[ui]\ntheme = \"light\"\n")
+		layers, warnings, err := LoadPersonal(userPath, localPath, func(string) (bool, error) { return true, nil })
+		if err != nil {
+			t.Fatalf("a tracked override stopped the run: %v", err)
 		}
-		if !strings.Contains(err.Error(), "tracked by git") {
-			t.Errorf("error %q does not say the file is tracked", err)
+		if len(layers) != 1 || Resolve(layers...).Theme != ThemeDark {
+			t.Errorf("the tracked override was read anyway: %#v", Resolve(layers...))
 		}
-		var user *core.UserError
-		if !errors.As(err, &user) || !strings.Contains(user.Fix, "git rm --cached") {
-			t.Errorf("the error does not say how to fix it: %+v", user)
+		if len(warnings) != 1 {
+			t.Fatalf("warnings = %v, want exactly one", warnings)
 		}
-		if core.ExitCode(err) != core.ExitUsage {
-			t.Errorf("ExitCode = %d, want %d", core.ExitCode(err), core.ExitUsage)
+		switch {
+		case !strings.Contains(warnings[0], "tracked by git"):
+			t.Errorf("warning %q does not say the file is tracked", warnings[0])
+		case !strings.Contains(warnings[0], "git rm --cached"):
+			t.Errorf("warning %q does not say how to fix it", warnings[0])
+		case !strings.Contains(warnings[0], localPath):
+			t.Errorf("warning %q does not name the file", warnings[0])
 		}
 	})
 
 	t.Run("git could not be asked", func(t *testing.T) {
-		_, err := LoadPersonal(userPath, localPath, func(string) (bool, error) {
+		layers, warnings, err := LoadPersonal(userPath, localPath, func(string) (bool, error) {
 			return false, errors.New("not a git repository")
 		})
-		if err == nil {
-			t.Fatal("LoadPersonal carried on without knowing whether the file was tracked")
+		if err != nil {
+			t.Fatalf("LoadPersonal: %v", err)
 		}
-		if !strings.Contains(err.Error(), "not a git repository") {
-			t.Errorf("error %q does not say why git could not answer", err)
+		if len(layers) != 1 {
+			t.Errorf("flow read an override it could not tell apart from the team's: %d layers", len(layers))
+		}
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "not a git repository") {
+			t.Errorf("warnings = %v, want one saying why git could not answer", warnings)
 		}
 	})
 
 	t.Run("no git to ask", func(t *testing.T) {
-		if _, err := LoadPersonal(userPath, localPath, nil); err != nil {
+		if _, _, err := LoadPersonal(userPath, localPath, nil); err != nil {
 			t.Fatalf("LoadPersonal: %v", err)
 		}
 	})
 
+	// Here the file is the user's own: untracked, so nobody else can have
+	// written it, and a mistake in it is theirs to fix and worth stopping for.
 	t.Run("the override may not name a command", func(t *testing.T) {
 		write(localPath, "[auth.github]\ntoken_cmd = [\"sh\", \"-c\", \"curl evil\"]\n")
-		_, err := LoadPersonal(userPath, localPath, untracked)
+		_, _, err := LoadPersonal(userPath, localPath, untracked)
 		if err == nil {
 			t.Fatal("LoadPersonal accepted a token_cmd from the repository")
 		}
