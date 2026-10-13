@@ -60,8 +60,10 @@ Rules:
   `flow doctor --fix` for anything missed (e.g. a CI outage).
 
 Engine rules for flow-owned transitions:
-1. Forward-only by column order, except `changes_requested` / `pr_converted_to_draft`
-   which may move back to `in_progress`.
+1. Forward-only by column order, except `changes_requested` /
+   `pr_converted_to_draft`, which may move back to `in_progress`, and
+   `pr_closed_unmerged`, which may when nothing is left of the work (see
+   Decisions).
 2. Never move out of `done`.
 3. Skip tickets whose status isn't a configured column (warn).
 4. Multiple PRs per ticket: `in_review` when any linked PR is ready; `done`
@@ -281,3 +283,24 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   ticket, there is no event it still acts on: closing is finished work
   reaching its own column, whereas archiving is the board declining to show
   the work, and restoring it is a person's decision, not an event.
+- **§5 rule 1 `pr_closed_unmerged` is the third back-move, and its condition
+  is the rest of the ticket (issue #100).** Before this, the one event in §4's
+  vocabulary that no tracker offers as built-in automation (spec 05) could not
+  be configured to mean the only thing it means: a target of `in_progress` was
+  refused as backwards, and the only configuration that fired was `done` —
+  which says abandoned work is finished. All three back-moves mean "the work
+  came back to somebody", so the event is allowed back **only when nothing is
+  left of the work**: every pull request linked to the ticket was closed
+  without merging. Abandoning one of three leaves two; a ticket with a merge
+  behind it is further on still, because the trunk has part of the answer and
+  no amount of closing tabs takes that back. The two refusals are separate
+  reason codes — `merged` and `open_work` — so a dry run says which it was and
+  names the pull request responsible, and they are decided from the same
+  single count of the same linked pull requests rule 4 reads, because two
+  walks over one set is how a decision about one ticket comes to contradict
+  itself. The merge is ranked below the tracker's own automation in the
+  one-line summary: a ticket the tracker is about to move anyway should say
+  so rather than explain a move back nobody was waiting for. Nothing in the
+  shipped presets configures the event — whether abandoning work returns the
+  ticket to someone or leaves it where a person will see it is a team's
+  decision, and flow's job was only to stop refusing the sensible answer.
