@@ -74,9 +74,9 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
-- [ ] Phase 9 — TUI (plan Phase 6): picker, apply confirmation and doctor watch done; init wizard to go
+- [x] Phase 9 — TUI (plan Phase 6): the init wizard, the picker, the apply confirmation and doctor's display with `--watch`
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
-- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing — done; README demo and 14 green doctor days to go
+- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios and the README demo are done; 14 green doctor days to go
 
 ### Status notes
 
@@ -617,7 +617,7 @@ and said in those words, rather than passing "all 0 flags were fine". It is
 [#105](https://github.com/17twenty/flow/pull/105), green on `test`, `policy`
 and `setup checks`.
 
-### The gate judged the title; the trunk gets the header (this run — issue #106)
+### The gate judged the title; the trunk gets the header (issue #106)
 
 [#105](https://github.com/17twenty/flow/pull/105) is merged and Phase 5 is
 closed. This run fixed the bug that closing it exposed.
@@ -660,7 +660,9 @@ have landed. It bought
 squash-merged green — its own header is exactly 72 characters, counted by the
 rule it added.
 
-**The picker (item 6.2, this run).** The second of the four screens spec 12
+### The four screens spec 12 allows (items 6.2, 6.1, 6.3)
+
+**The picker (item 6.2).** The second of the four screens spec 12
 allows. The decision was already in the engine and stays there: `Placeholders`
 walks the ladder of spec 03 §1.1, reaches the rung where a provider offered
 more than one answer, and calls an `engine.Chooser`. This item is only what a
@@ -694,32 +696,7 @@ off, and the filter input left in the library's colours on a screen asked for
 none. Each bought a test. The fifth is equivalent — the zero value of a type
 parameter is the zero value either way.
 
-**The acceptance scenarios (item 8.1, this run).** Spec 19 is the list this
-whole program is answerable to, and the one thing a list of promises must not
-be able to do is lose an entry. The spec opens by saying each scenario becomes
-a test named `TestScenario_<ID>_…`, so the names are the index:
-`TestEveryAcceptanceScenarioHasATest` reads the spec and the source of every
-test in the repository and refuses to let the two disagree in either
-direction — a scenario nobody keeps, and a test claiming an id the spec does
-not list, both fail. It also refuses to let its own reading rot: every bullet
-in the scenario section must carry an id the expression recognises, so a
-heading written a new way cannot silently drop a promise.
-
-All twenty-one ids are kept. Most were already tested under other names, but
-reading each test against the sentence it claims to keep found three promises
-nobody was keeping in full. A04 asserted a *plan* after the attestations
-rather than the second apply — and apply is the command somebody runs twice.
-Making that assertion of the apply uncovered a real disagreement:
-`Plan.ExitCode` has always counted a `compensated` item as nothing left to do,
-because the intent is enforced by something other than the setting the
-configuration named and no second run will change that, while
-`Applied.ExitCode` counted it as outstanding. One world therefore had a plan
-exiting 0 and an apply exiting 2, for ever. G02 did not assert the
-`flow:policy` marker, which is how the next run finds that comment to edit
-rather than adding another. V01 named the merge that never shipped without
-asserting the evidence links to it, which is the difference between a report
-and a number.
-**The init wizard (item 6.1, this run).** The last of the four screens spec
+**The init wizard (item 6.1).** The last of the four screens spec
 12 allows, and the one with the sharpest acceptance criterion: its plain
 equivalent has to produce an identical `.flow.yaml`. That is met by not having
 a plain equivalent to keep in step. Every question the wizard asks is a flag
@@ -759,39 +736,10 @@ Twenty-three mutants, all killed. The ones worth having the item for: a
 revisited question that came back empty, a cursor that did not wrap, defaults
 that overwrote an answer somebody had given, and a cancelled wizard that wrote
 the file anyway.
-**The README demo (item 8.2, this run).** The section links the board, the
-pinned health issue, the agent's own pull requests and the workflow that gates
-them, and sets spec 17 §7's expectations beside what the audit reads today —
-seventeen merges, every one gated, linked, approved by a person and in
-production inside two hours. The streak is stated with the date it was read
-and a sentence saying the issue is the record, because a number in a README is
-a claim and that issue is the thing that is true. What is checked
-mechanically is the part that can rot unseen: every forge link in the section
-is read against `.flow.yaml` and the board number in `.flow.lock`, so a flow
-pointed at another repository fails the test that says the demo is of this
-one.
 
-**Where the exit code stands.** `./bin/flow doctor` against this repository
-exits 2 on six checks, and none of them is a defect in flow:
-
-- four attestations nobody has made yet — `tracker.native.pr_merged`,
-  `tracker.native.issue_closed`, `tracker.native.changes_requested` and
-  `tracker.expedite`. Spec 17 §5 puts these in a human's hands and
-  `docs/cookbook.md` §6.1 (new this run) now gives the four exact commands.
-- `live.tickets.done_merged`, 66 of 73 — every ticket closed in `direct` mode
-  before Stage B, none of which had a pull request behind it. It ages out of
-  the fourteen-day window on its own as PR-mode work replaces it.
-- `live.prs.conventional` warns at 2 of 88: the two commits above. A warn does
-  not set the exit code, and both age out of the window too.
-
-So the fourteen-day clock has a shape now: the attestations are the only part
-of it waiting on a decision rather than on the calendar, and the earliest the
-streak can *start* is the morning the last direct-mode ticket leaves the
-window.
-
-**Last run** finished 6.3, doctor's inline display and `--watch`
-([#76](https://github.com/17twenty/flow/issues/76)), which is what makes spec
-02's command surface whole: every command and flag the spec names now does
+**Doctor's display and `--watch` (item 6.3).** The third screen
+([#76](https://github.com/17twenty/flow/issues/76)) is what makes spec 02's
+command surface whole: every command and flag the spec names now does
 what it says. Two screens, because a run being waited on and a run being
 watched want opposite things from the terminal — the first leaves the report
 in the scrollback and takes its display away, the second takes the alternate
@@ -802,33 +750,49 @@ found the defect worth having the item for: a clock wound by whatever
 finished a round left a second chain of ticks behind every manual refresh, so
 a window open all afternoon would have asked the forge faster and faster.
 
-**Single best next step:** Phase 7, the other providers — Jira Cloud
-([#79](https://github.com/17twenty/flow/issues/79)), Linear
-([#80](https://github.com/17twenty/flow/issues/80)), Gitea/Forgejo
-([#81](https://github.com/17twenty/flow/issues/81)) and GitLab
-([#82](https://github.com/17twenty/flow/issues/82)). None of the four depends
-on another, so they go up as separate pull requests. Then Phase 8's proof:
-the acceptance scenarios whole ([#86](https://github.com/17twenty/flow/issues/86))
-and the README demo ([#87](https://github.com/17twenty/flow/issues/87)).
-
-The two issues this section named last run are both settled:
-[#102](https://github.com/17twenty/flow/issues/102), an archived repository
-read and then written to anyway, landed as
-[#109](https://github.com/17twenty/flow/pull/109), and
-[#100](https://github.com/17twenty/flow/issues/100) with it.
-
 Spec 12 is now whole: the wizard, the picker, doctor's display and `--watch`,
 and the apply confirmation are the four screens it allows, and there are no
 others.
 
-In parallel, and only `@17twenty` can do it: run the four `flow attest`
-commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows
-panel (the **…** menu on <https://github.com/users/17twenty/projects/2>; it is
-an overlay with no URL of its own), and land the resulting `.flow.lock`
-through a pull request. Until then the scheduled daily
-run cannot exit 0, and the streak cannot begin.
+### The proof, and the build nobody asked for (items 8.1, 8.2, issue #123)
 
-### The build was promised and never asked for (this run — issue #123)
+**The acceptance scenarios (item 8.1).** Spec 19 is the list this
+whole program is answerable to, and the one thing a list of promises must not
+be able to do is lose an entry. The spec opens by saying each scenario becomes
+a test named `TestScenario_<ID>_…`, so the names are the index:
+`TestEveryAcceptanceScenarioHasATest` reads the spec and the source of every
+test in the repository and refuses to let the two disagree in either
+direction — a scenario nobody keeps, and a test claiming an id the spec does
+not list, both fail. It also refuses to let its own reading rot: every bullet
+in the scenario section must carry an id the expression recognises, so a
+heading written a new way cannot silently drop a promise.
+
+All twenty-one ids are kept. Most were already tested under other names, but
+reading each test against the sentence it claims to keep found three promises
+nobody was keeping in full. A04 asserted a *plan* after the attestations
+rather than the second apply — and apply is the command somebody runs twice.
+Making that assertion of the apply uncovered a real disagreement:
+`Plan.ExitCode` has always counted a `compensated` item as nothing left to do,
+because the intent is enforced by something other than the setting the
+configuration named and no second run will change that, while
+`Applied.ExitCode` counted it as outstanding. One world therefore had a plan
+exiting 0 and an apply exiting 2, for ever. G02 did not assert the
+`flow:policy` marker, which is how the next run finds that comment to edit
+rather than adding another. V01 named the merge that never shipped without
+asserting the evidence links to it, which is the difference between a report
+and a number.
+
+**The README demo (item 8.2).** The section links the board, the
+pinned health issue, the agent's own pull requests and the workflow that gates
+them, and sets spec 17 §7's expectations beside what the audit reads today —
+seventeen merges, every one gated, linked, approved by a person and in
+production inside two hours. The streak is stated with the date it was read
+and a sentence saying the issue is the record, because a number in a README is
+a claim and that issue is the thing that is true. What is checked
+mechanically is the part that can rot unseen: every forge link in the section
+is read against `.flow.yaml` and the board number in `.flow.lock`, so a flow
+pointed at another repository fails the test that says the demo is of this
+one.
 
 `@17twenty` raised it against follow-up #91 a fortnight ago and it has sat
 under **Spec issues** ever since, deferred until Phase 7 was in sight. It is
@@ -861,12 +825,48 @@ and `flow plan` against the live repository proposes exactly one thing:
 `forge.required_status` — `create "test"`, beside the `flow/policy` the
 ruleset already has.
 
-**Single best next step:** Phase 7's adapters, beginning with the Gitea/Forgejo
-forge ([#81](https://github.com/17twenty/flow/issues/81)) — the contract suite
-is already written, and `forge.required_checks` has settled what each new
-adapter is asked to require. The cookbook still owes the other half of
+**Where the exit code stands.** `./bin/flow doctor` against this repository
+exits 2 on six checks, and none of them is a defect in flow:
+
+- four attestations nobody has made yet — `tracker.native.pr_merged`,
+  `tracker.native.issue_closed`, `tracker.native.changes_requested` and
+  `tracker.expedite`. Spec 17 §5 puts these in a human's hands and
+  `docs/cookbook.md` §6.1 gives the four exact commands.
+- `live.tickets.done_merged`, 66 of 73 — every ticket closed in `direct` mode
+  before Stage B, none of which had a pull request behind it. It ages out of
+  the fourteen-day window on its own as PR-mode work replaces it.
+- `live.prs.conventional` warns at 2 of 88: the two commits above. A warn does
+  not set the exit code, and both age out of the window too.
+
+So the fourteen-day clock has a shape now: the attestations are the only part
+of it waiting on a decision rather than on the calendar, and the earliest the
+streak can *start* is the morning the last direct-mode ticket leaves the
+window.
+
+The two issues named two runs ago are both settled:
+[#102](https://github.com/17twenty/flow/issues/102), an archived repository
+read and then written to anyway, landed as
+[#109](https://github.com/17twenty/flow/pull/109), and
+[#100](https://github.com/17twenty/flow/issues/100) with it.
+
+**Single best next step:** Phase 7's adapters — the only code Phases 0–8
+leave unwritten — beginning with the Gitea/Forgejo forge
+([#81](https://github.com/17twenty/flow/issues/81)), because the contract
+suite is already written and `forge.required_checks` has settled what each
+new adapter is asked to require. None of the four — Jira Cloud
+([#79](https://github.com/17twenty/flow/issues/79)), Linear
+([#80](https://github.com/17twenty/flow/issues/80)), Gitea/Forgejo and GitLab
+([#82](https://github.com/17twenty/flow/issues/82)) — depends on another, so
+they go up as separate pull requests. The cookbook still owes the other half of
 `@17twenty`'s original report: a per-forge recipe for requiring a status check
 by hand when the credential lacks admin, which is this repository's own
 situation and the reason #90 and #91 are open. It is owed with #81 and #82, so
 that each recipe is verified against the adapter that implements it rather
 than guessed from the API documentation.
+
+In parallel, and only `@17twenty` can do it: run the four `flow attest`
+commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows
+panel (the **…** menu on <https://github.com/users/17twenty/projects/2>; it is
+an overlay with no URL of its own), and land the resulting `.flow.lock`
+through a pull request. Until then the scheduled daily
+run cannot exit 0, and the streak cannot begin.

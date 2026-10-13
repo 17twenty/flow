@@ -352,7 +352,6 @@ Human-only steps use ids `H.<n>` (never seeded).
     `flow:policy` marker that is how the next run finds that comment to edit.
     V01 named the merge that never shipped without asserting the evidence
     links to it.
-- [ ] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
 - [x] 8.2 README demo section links live Project, health issue, recent agent PRs — specs: 17 §7 — deps: 5.7 (#87)
   - AC: README states current doctor streak from the health issue
   - note: the section links the board, the pinned health issue, the agent's own
