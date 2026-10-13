@@ -31,10 +31,10 @@ func readFlowConfig(t *testing.T, dir string) string {
 	return string(content)
 }
 
-// TestInitOffline is scenario A01: a repository with a GitHub origin and no
+// TestScenario_A01_InitOffline is scenario A01: a repository with a GitHub origin and no
 // network becomes a configured repository, with the board left for doctor to
 // find.
-func TestInitOffline(t *testing.T) {
+func TestScenario_A01_InitOffline(t *testing.T) {
 	dir := initRepo(t, "git@github.com:acme/api.git")
 
 	code, stdout, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes")
@@ -110,10 +110,10 @@ func TestInitKeepsThePresetItStartedFrom(t *testing.T) {
 	}
 }
 
-// TestInitRefusesToReconfigure is the second half of A01. The refusal does not
+// TestScenario_A01_InitRefusesToReconfigure is the second half of A01. The refusal does not
 // depend on what the existing file says, and it happens before anything is
 // written.
-func TestInitRefusesToReconfigure(t *testing.T) {
+func TestScenario_A01_InitRefusesToReconfigure(t *testing.T) {
 	dir := initRepo(t, "git@github.com:acme/api.git")
 	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
 		t.Fatalf("the first init exited %d: %s", code, stderr)
@@ -165,8 +165,8 @@ func TestInitForceStartsAgain(t *testing.T) {
 	}
 }
 
-// TestInitOutsideGit is scenario A02.
-func TestInitOutsideGit(t *testing.T) {
+// TestScenario_A02_InitOutsideGit is scenario A02.
+func TestScenario_A02_InitOutsideGit(t *testing.T) {
 	dir := t.TempDir()
 	// A temporary directory can sit inside somebody's repository, and git
 	// walks up. A repository of its own with the working tree removed is the

@@ -59,14 +59,14 @@ func (d appliedDoc) mutations() []string {
 	return made
 }
 
-// TestApplyConvergesAndStaysThere is scenario A04. The first apply makes the
+// TestScenario_A04_ApplyConvergesAndStaysThere is scenario A04. The first apply makes the
 // changes it planned; the second, against the world the first one left,
 // plans nothing to make and makes nothing.
 //
 // The fakes are a process-wide world keyed by working tree, so the second
 // run here genuinely sees what the first one wrote. That is the whole point:
 // an apply rebuilt from a fixture would converge for ever and prove nothing.
-func TestApplyConvergesAndStaysThere(t *testing.T) {
+func TestScenario_A04_ApplyConvergesAndStaysThere(t *testing.T) {
 	dir := fakeRepo(t)
 
 	first, code := applyJSON(t, dir, "--auto-approve")

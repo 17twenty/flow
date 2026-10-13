@@ -81,11 +81,11 @@ func (d planDoc) item(id string) (planItem, bool) {
 	return planItem{}, false
 }
 
-// TestPlanOnFreshProject is scenario A03: a board holding the three statuses
+// TestScenario_A03_PlanOnFreshProject is scenario A03: a board holding the three statuses
 // GitHub creates a project with becomes a plan that says, for every part of
 // the workflow, whether the provider can be made to do it — and exits 2
 // because work is pending.
-func TestPlanOnFreshProject(t *testing.T) {
+func TestScenario_A03_PlanOnFreshProject(t *testing.T) {
 	dir := fakeRepo(t)
 
 	doc, code := planJSON(t, dir)

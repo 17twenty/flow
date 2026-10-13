@@ -87,9 +87,9 @@ func flagEnv(t *testing.T, commits ...core.Commit) (*engine.Env, *coretest.FakeT
 	return env, tracker
 }
 
-// TestAFlagNobodyHasFiledForIsAFinding: the commit made a promise and the
+// TestScenario_V05_AFlagNobodyHasFiledForIsAFinding: the commit made a promise and the
 // board has no record of it, which is the whole of what the check is about.
-func TestAFlagNobodyHasFiledForIsAFinding(t *testing.T) {
+func TestScenario_V05_AFlagNobodyHasFiledForIsAFinding(t *testing.T) {
 	parser := newTrailers()
 	env, _ := flagEnv(t, parser.announcing(2, "feat(checkout): the new basket", "new_basket"))
 	env.Trailers = parser
@@ -105,9 +105,9 @@ func TestAFlagNobodyHasFiledForIsAFinding(t *testing.T) {
 	}
 }
 
-// TestFixFilesOneCleanupTicketAndThenLeavesItAlone is scenario V05: --fix
+// TestScenario_V05_FixFilesOneCleanupTicketAndThenLeavesItAlone is scenario V05: --fix
 // opens exactly one ticket, and running again opens none.
-func TestFixFilesOneCleanupTicketAndThenLeavesItAlone(t *testing.T) {
+func TestScenario_V05_FixFilesOneCleanupTicketAndThenLeavesItAlone(t *testing.T) {
 	parser := newTrailers()
 	env, tracker := flagEnv(t, parser.announcing(2, "feat(checkout): the new basket", "new_basket"))
 	env.Trailers = parser

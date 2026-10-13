@@ -51,12 +51,12 @@ func shippingEnv(t *testing.T, cfg *config.Config, fx coretest.ForgeFixture, rec
 	return env, deploys
 }
 
-// TestAMergeThatNeverReachedTheEnvironmentIsNamed is scenario V01: three
+// TestScenario_V01_AMergeThatNeverReachedTheEnvironmentIsNamed is scenario V01: three
 // merges, two of them deployed inside the objective and one that never
 // shipped at all. The check warns rather than fails — nothing in the setup
 // can make a deployment faster — and names the merge that is still waiting,
 // because "2/3" without a link is a number nobody can act on.
-func TestAMergeThatNeverReachedTheEnvironmentIsNamed(t *testing.T) {
+func TestScenario_V01_AMergeThatNeverReachedTheEnvironmentIsNamed(t *testing.T) {
 	first := landedPR(1, "feat(api): the first", daysAgo(3))
 	second := landedPR(2, "feat(api): the second", daysAgo(2))
 	missing := landedPR(3, "feat(api): the one still waiting", daysAgo(1))
@@ -75,7 +75,7 @@ func TestAMergeThatNeverReachedTheEnvironmentIsNamed(t *testing.T) {
 
 	wantState(t, result, engine.StateWarn)
 	wantCounts(t, result, 2, 3)
-	evidenceMentions(t, result, "#3")
+	evidenceLinks(t, result, "#3", missing.URL)
 }
 
 // A deployment that slipped is never worse than a warning. Nothing in the

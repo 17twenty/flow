@@ -43,12 +43,12 @@ func movesTo(t *testing.T, tracker *coretest.FakeTracker, key string) string {
 	return ""
 }
 
-// TestADroppedEventIsSomethingFlowCanStillPutRight is scenario V04. A pull
+// TestScenario_V04_ADroppedEventIsSomethingFlowCanStillPutRight is scenario V04. A pull
 // request was marked ready for review two days ago and no CI run ever told
 // flow, so the ticket is still in the column the draft put it in. Reporting
 // that is worth little: flow owns the transition, the decision is the same
 // one `flow check pr` would have made, and nothing about it has gone stale.
-func TestADroppedEventIsSomethingFlowCanStillPutRight(t *testing.T) {
+func TestScenario_V04_ADroppedEventIsSomethingFlowCanStillPutRight(t *testing.T) {
 	ready := inFlightPR(2, "feat(api): offered for review and never announced", daysAgo(2))
 	board := []core.Ticket{boarded(ticketFor(2), "left in progress", "In progress", daysAgo(2))}
 	fixture := coretest.ForgeFixture{PullRequests: []core.PullRequest{ready}}
