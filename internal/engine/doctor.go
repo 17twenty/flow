@@ -327,6 +327,12 @@ type Env struct {
 	// remembering what it was told (spec 13 §3). Nil asks the forge, which
 	// is the same answer without the cache in front of it.
 	Ancestry core.Comparer
+	// Trailers reads the trailer block of a commit message, which is how the
+	// flag audit finds what a commit announced (spec 07 §6). It is the
+	// working copy's own git, because the rules about where a trailer block
+	// begins are git's (spec 08 §2). Nil is not "no trailers": the check
+	// that needs it fails rather than reporting a window with nothing in it.
+	Trailers TrailerParser
 	// Clock is where the time comes from.
 	Clock core.Clock
 	// Window is how far back the live-health audit looks (spec 07 §6).

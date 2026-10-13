@@ -206,6 +206,7 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 		Desired:   s.Desired,
 		Adapters:  s.Adapters,
 		Ancestry:  c.ancestry(app, s),
+		Trailers:  s.Repo,
 		Clock:     s.Clock,
 		Window:    c.Window.Std(),
 		FailBelow: failBelow(s.Config),

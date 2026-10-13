@@ -900,3 +900,58 @@ func proposalOf(t *testing.T, world *fakeWorld) *core.PullRequest {
 	}
 	return &found[0]
 }
+
+// Where a commit message's trailers end and its body begins is a question
+// only git answers consistently (spec 08 §2), so flow hands the message to
+// the working copy's own git rather than matching lines that look like
+// trailers. The difference is not academic: a `Flag-Added:` line with prose
+// after it is prose, and a regex would file a cleanup ticket for a flag
+// nobody added.
+func TestDoctorReadsTrailersWithGitItself(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) {
+		w.forge.SetPermissions(adminAccess)
+		w.forge.SetCommits(
+			onTrunk("c0ffee1", "feat(checkout): the new basket",
+				"It goes to ten per cent on Monday.", "Flag-Added: new_basket"),
+			onTrunk("decafb2", "feat(search): faster suggestions",
+				"Flag-Added: never_added", "In the end we did not need a flag for this."),
+		)
+	})
+
+	doc, _ := doctorJSON(t, dir, append([]string{"--fix"}, owners()...)...)
+	checked := doc.check(t, engine.CheckLiveFlagsCleanup)
+	if checked.Result.State != "pass" {
+		t.Fatalf("the flag audit says %q: %s", checked.Result.State, checked.Result.Message)
+	}
+	if got := checked.Result.Counts.Total; got != 1 {
+		t.Errorf("git found %d flags in two commits, want 1: the second one's is prose", got)
+	}
+
+	for name, want := range map[string]bool{"new_basket": true, "never_added": false} {
+		found, err := world().tracker.FindFollowUp(t.Context(), engine.FlagMarker(name, "acme/api"))
+		if err != nil {
+			t.Fatalf("look for the cleanup ticket for %s: %v", name, err)
+		}
+		if (found != nil) != want {
+			t.Errorf("a cleanup ticket for %s exists = %v, want %v", name, found != nil, want)
+		}
+	}
+}
+
+// onTrunk is a commit on the fake forge's default branch, recent enough for
+// the audit's window to hold it, whose message is the header followed by each
+// paragraph in turn.
+func onTrunk(sha, header string, paragraphs ...string) core.Commit {
+	at := time.Now().Add(-2 * 24 * time.Hour)
+	message := header
+	for _, paragraph := range paragraphs {
+		message += "\n\n" + paragraph
+	}
+	return core.Commit{
+		SHA:         sha,
+		Message:     message,
+		AuthoredAt:  at,
+		CommittedAt: at,
+		URL:         "https://github.test/acme/api/commit/" + sha,
+	}
+}

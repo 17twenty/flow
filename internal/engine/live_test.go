@@ -102,6 +102,10 @@ func liveEnv(t *testing.T, cfg *config.Config, fx coretest.ForgeFixture) (*engin
 		Forge:   forge,
 		Tracker: coretest.NewFakeTracker(coretest.TrackerFixture{}),
 	}
+	// A working copy whose commits announce nothing. Doctor always has one;
+	// a nil parser is a run that could not look, which is a failure rather
+	// than a fortnight in which nobody added a feature flag.
+	env.Trailers = newTrailers()
 	return env, forge
 }
 
@@ -160,8 +164,8 @@ func evidenceMentions(t *testing.T, got engine.Result, want string) {
 // liveCheckIDs is every check spec 07 §6 names in the families that exist:
 // the pull requests that merged, the board they came off, the transitions the
 // tracker promised to perform itself — one check per native event, which
-// setupConfig gives two of — and the one check for all the transitions flow
-// performs.
+// setupConfig gives two of — the one check for all the transitions flow
+// performs, and the feature flags the window announced.
 func liveCheckIDs() []string {
 	return []string{
 		engine.CheckLivePRsLinked,
@@ -178,6 +182,7 @@ func liveCheckIDs() []string {
 		engine.LiveTransitionCheck(config.EventPRMerged),
 		engine.LiveTransitionCheck(config.EventIssueClosed),
 		engine.CheckLiveTransitionsFlow,
+		engine.CheckLiveFlagsCleanup,
 	}
 }
 

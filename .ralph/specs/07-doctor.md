@@ -811,3 +811,42 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   become text; the terminal indents those lines under the finding and an
   annotation carries them on the end of its message. Two renderers wording
   the same advice would eventually word it differently.
+- **§6 the trailers are read with git, never with a pattern (item 5.6).** Where
+  a commit message's trailer block begins depends on `trailer.*` configuration,
+  on the keys the repository already uses, and on rules about blank lines that
+  have changed over git's life. Flow asks `git interpret-trailers --parse`
+  through the working copy rather than matching a line that looks like a
+  trailer — a `Flag-Added:` line with a paragraph of prose after it is prose,
+  and a pattern match would file a cleanup ticket for a flag nobody added. A
+  run with no working copy to parse with therefore fails the check, because a
+  run that could not look has not established that nobody added a flag.
+- **§6 the marker names the flag and the repository (item 5.6).** Two commits
+  announcing the same flag are one promise and get one ticket, which is what
+  makes `--fix` idempotent without flow remembering anything between runs.
+  The repository is in the marker because one tracker serves many, and
+  `new_basket` in somebody else's is not this repository's flag; without it
+  the second repository would never get a ticket at all.
+- **§6 flag names are compared exactly (item 5.6).** A flag name is an
+  identifier in somebody's code. Folding case or punctuation would be flow
+  deciding that two spellings are the same symbol, which it is not entitled to
+  do. A trailer with no value after it announces nothing anybody could file a
+  ticket about and is ignored; judging the trailer itself would be the commit
+  linter's job, which spec 08 §4 took away from it.
+- **§6 a closed cleanup ticket counts as much as an open one (item 5.6).** The
+  check asks whether the promise was written down, not whether it has been
+  kept: flow does not read the code and cannot tell whether the flag is still
+  there. Requiring the ticket to be open would fail the check for exactly the
+  teams that did the work.
+- **§6 flow files the cleanup ticket and never touches it again (item 5.6).**
+  A follow-up (§4) is work flow can verify, which is why flow may close it;
+  taking a feature flag out is not, so flow will never know this one is done.
+  The ticket says so in as many words — a ticket that implied flow was
+  watching would sit on a board being quietly untrue. It carries the
+  follow-up labels, because it answers the same question (which of these did
+  flow open?) and a team with one label for flow's writing should not need a
+  second to find half of it.
+- **§6 a window that added no flags says which quiet it was (item 5.6).** "All
+  0 flags have a cleanup ticket" and "nothing in the window added a feature
+  flag" grade the same and read very differently. The second is what a reader
+  needs to tell a healthy fortnight from a blind one, and it is also what
+  stops the check asking the tracker a question about nothing.
