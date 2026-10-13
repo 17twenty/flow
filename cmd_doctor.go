@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -17,14 +17,14 @@ import (
 // DoctorCmd proves the setup is intact and that the workflow is actually
 // behaving, using read APIs only (spec 02 §2, spec 07).
 type DoctorCmd struct {
-	Fix       bool          `help:"Apply automatic remediations, resolve placeholders, file follow-ups."`
-	Set       []string      `help:"Supply a placeholder value, as name=value." placeholder:"K=V"`
-	Check     []string      `help:"Run only checks matching these globs." placeholder:"GLOB"`
-	Window    time.Duration `default:"336h" help:"How far back the live-health audit looks."`
-	CI        bool          `name:"ci" help:"Plain output plus CI annotations."`
-	Report    string        `help:"Write a Markdown report to this file." placeholder:"FILE"`
-	WriteLock bool          `name:"write-lock" default:"true" negatable:"" help:"Refresh .flow.lock; in --ci mode propose it as a PR instead."`
-	Watch     bool          `help:"Re-run continuously in a terminal UI."`
+	Fix       bool     `help:"Apply automatic remediations, resolve placeholders, file follow-ups."`
+	Set       []string `help:"Supply a placeholder value, as name=value." placeholder:"K=V"`
+	Check     []string `help:"Run only checks matching these globs." placeholder:"GLOB"`
+	Window    Duration `default:"14d" help:"How far back the live-health audit looks."`
+	CI        bool     `name:"ci" help:"Plain output plus CI annotations."`
+	Report    string   `help:"Write a Markdown report to this file." placeholder:"FILE"`
+	WriteLock bool     `name:"write-lock" default:"true" negatable:"" help:"Refresh .flow.lock; in --ci mode propose it as a PR instead."`
+	Watch     bool     `help:"Re-run continuously in a terminal UI."`
 }
 
 // Run implements the doctor command.
@@ -32,6 +32,7 @@ func (c *DoctorCmd) Run(app *Context) error {
 	if err := c.notYet(app); err != nil {
 		return err
 	}
+	app.CI = app.CI || c.CI
 	s, err := app.inspect()
 	if err != nil {
 		return err
@@ -63,19 +64,34 @@ func (c *DoctorCmd) Run(app *Context) error {
 	if err := app.render(s, func(r ui.Renderer) (string, error) { return r.Report(report) }); err != nil {
 		return err
 	}
+	if err := c.annotate(app, s, report); err != nil {
+		return err
+	}
 	app.exit(report.Exit())
 	return nil
 }
 
+// annotate offers the findings to the CI job flow is running inside, after
+// the report rather than instead of it: the log is the whole of what was
+// found, and the annotations are the few lines of it somebody is going to see
+// without opening the job at all (spec 02 §2).
+//
+// They go to stderr, because stdout carries the one document the command
+// printed and `--json --ci` has to stay a document a machine can parse. The
+// runner reads both streams, so being on the quieter one costs nothing.
+func (c *DoctorCmd) annotate(app *Context, s *session, report engine.Report) error {
+	if !app.CI {
+		return nil
+	}
+	return ui.Fprint(app.Stderr, app.renderer(s.Settings).Annotations(report))
+}
+
 // notYet refuses a flag whose plan item has not landed rather than parsing
-// it and doing nothing. `--ci` is item 5.8 and `--watch` item 6.3; a flag
-// that is accepted and ignored is worse than one that is missing, because the
-// run then looks like it did what was asked.
+// it and doing nothing. `--watch` is item 6.3; a flag that is accepted and
+// ignored is worse than one that is missing, because the run then looks like
+// it did what was asked.
 func (c *DoctorCmd) notYet(app *Context) error {
-	switch {
-	case c.CI:
-		return app.unimplemented("doctor --ci")
-	case c.Watch:
+	if c.Watch {
 		return app.unimplemented("doctor --watch")
 	}
 	return nil
@@ -191,7 +207,7 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 		Adapters:  s.Adapters,
 		Ancestry:  c.ancestry(app, s),
 		Clock:     s.Clock,
-		Window:    c.Window,
+		Window:    c.Window.Std(),
 		FailBelow: failBelow(s.Config),
 		Fix:       c.Fix,
 		Set:       parseSet(c.Set),
@@ -304,7 +320,7 @@ func (c *DoctorCmd) resolve(app *Context, s *session) ([]engine.Answer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.Fix && len(engine.Pending(answers)) < len(answers) {
+	if c.Fix && app.keepsWhatItLearns() && len(engine.Pending(answers)) < len(answers) {
 		if err := s.saveLock(s.Lock); err != nil {
 			return nil, err
 		}
@@ -337,7 +353,56 @@ func (c *DoctorCmd) settle(app *Context, s *session, report *engine.Report) erro
 	// (spec 03 §3): a lock whose hash stayed empty would keep every promise
 	// alive through a rewrite of the thing it was promised about.
 	s.Lock.ConfigHash = s.ConfigHash
+	if !app.keepsWhatItLearns() {
+		return c.proposeLock(app, s)
+	}
 	return s.saveLock(s.Lock)
+}
+
+// proposeLock offers the refreshed lock as a pull request instead of writing
+// it (spec 02 §2's --write-lock).
+//
+// A CI runner's checkout is thrown away when the job ends, so a lock written
+// there is a lock nobody will ever read; and the place it has to reach is the
+// trunk, which is the one place flow does not write (spec 06 §4). The
+// proposal is made under the same id every day, so a lock that goes on
+// drifting updates one pull request rather than opening thirty.
+//
+// Not being able to propose it is not a finding about the workflow, and must
+// not become the run's verdict: the report has already said everything doctor
+// found, and the lock is flow's own bookkeeping.
+func (c *DoctorCmd) proposeLock(app *Context, s *session) error {
+	data, err := s.Lock.Bytes()
+	if err != nil {
+		return core.Errorf(core.ErrValidation, "write %s", config.LockPath).WithWhy("%s", err)
+	}
+	if current, err := os.ReadFile(s.LockPath); err == nil && bytes.Equal(current, data) {
+		return nil
+	}
+	if s.Adapters.Forge == nil {
+		app.Log.Warn("doctor has no forge to propose the refreshed lock to")
+		return nil
+	}
+	pr, err := s.Adapters.Forge.ProposeFiles(app.Ctx, core.FileProposal{
+		ID:    "lock",
+		Title: "chore(flow): refresh .flow.lock",
+		Body:  lockProposalBody(),
+		Files: []core.ProposedFile{{Path: config.LockPath, Content: data}},
+	})
+	if err != nil {
+		app.Log.Warn("doctor could not propose the refreshed lock", "error", err)
+		return nil
+	}
+	app.Log.Info("doctor proposed the refreshed lock", "pull_request", pr.Number)
+	return nil
+}
+
+// lockProposalBody explains the pull request to whoever has to approve it.
+func lockProposalBody() string {
+	return "`" + config.LockPath + "` records what flow last saw and what it was told " +
+		"to take somebody's word for (spec 03 §3).\n\n" +
+		"This run read the providers and found it out of date. Merging this keeps the next run's " +
+		"drift detection honest: a lock that is never refreshed reports yesterday's repository for ever.\n"
 }
 
 // failBelow is how strictly the live-health audit grades what it finds, as a

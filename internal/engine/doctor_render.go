@@ -78,28 +78,39 @@ func writeEvidence(out *strings.Builder, checked Checked) {
 	}
 }
 
+// Lines is what to do about a check, one line each, in the order somebody
+// would do them. A remedy with nothing to be done about it has none.
+//
+// The terminal indents them under the finding and a CI annotation carries
+// them on the end of its message; what they say is settled here, so the two
+// cannot come to word the same advice differently.
+func (r Remediation) Lines() []string {
+	if !r.Actionable() {
+		return nil
+	}
+	var lines []string
+	if r.Summary != "" {
+		line := "fix: " + r.Summary
+		if r.Owner != "" {
+			line += " (" + r.Owner + ")"
+		}
+		lines = append(lines, line)
+	}
+	if r.Command != "" {
+		lines = append(lines, "run: "+r.Command)
+	}
+	for i, step := range r.Steps {
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, step))
+	}
+	return lines
+}
+
 // writeRemedy says what to do about a check, when there is anything to do.
 func writeRemedy(out *strings.Builder, remedy Remediation) {
-	if !remedy.Actionable() {
-		return
-	}
-	if remedy.Summary != "" {
-		out.WriteString("      fix: ")
-		out.WriteString(remedy.Summary)
-		if remedy.Owner != "" {
-			out.WriteString(" (")
-			out.WriteString(remedy.Owner)
-			out.WriteString(")")
-		}
+	for _, line := range remedy.Lines() {
+		out.WriteString("      ")
+		out.WriteString(line)
 		out.WriteString("\n")
-	}
-	if remedy.Command != "" {
-		out.WriteString("      run: ")
-		out.WriteString(remedy.Command)
-		out.WriteString("\n")
-	}
-	for i, step := range remedy.Steps {
-		fmt.Fprintf(out, "      %d. %s\n", i+1, step)
 	}
 }
 

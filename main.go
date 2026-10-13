@@ -29,11 +29,10 @@ func main() {
 // run returns an exit code instead of terminating the process itself.
 type exitPanic int
 
-// run parses args, executes the selected command and returns its exit code.
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
-	var cli CLI
-
-	opts := []kong.Option{
+// kongOptions is how flow's command line is parsed, in one place, so that a
+// test holding a flag to its promise is holding the parser people use.
+func kongOptions(stdout, stderr io.Writer) []kong.Option {
+	return append([]kong.Option{
 		kong.Name("flow"),
 		kong.Description("Make a lean, trunk-based workflow true and provably true."),
 		kong.UsageOnError(),
@@ -41,8 +40,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 		kong.Exit(func(c int) { panic(exitPanic(c)) }),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
 		helpGroups,
-	}
-	parser, err := kong.New(&cli, append(opts, testCommands()...)...)
+	}, testCommands()...)
+}
+
+// run parses args, executes the selected command and returns its exit code.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
+	var cli CLI
+
+	opts := kongOptions(stdout, stderr)
+	parser, err := kong.New(&cli, opts...)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: build the command line: %v\n", err)
 		return core.ExitFail
@@ -71,7 +77,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 	runCtx := sigCtx
 	if cli.Timeout > 0 {
 		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(sigCtx, cli.Timeout)
+		runCtx, cancel = context.WithTimeout(sigCtx, cli.Timeout.Std())
 		defer cancel()
 	}
 

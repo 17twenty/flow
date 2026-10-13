@@ -29,16 +29,16 @@ import (
 
 // CLI is flow's command tree and global flags (spec 02 §1–2).
 type CLI struct {
-	Dir            string        `short:"C" name:"dir" env:"FLOW_DIR" default:"." type:"path" help:"Repo directory; flow walks up to the git root."`
-	Config         string        `name:"config" env:"FLOW_CONFIG" type:"path" placeholder:"PATH" help:"Team config (default <root>/.flow.yaml)."`
-	UserConfig     string        `name:"user-config" env:"FLOW_USER_CONFIG" type:"path" placeholder:"PATH" help:"User config (default $XDG_CONFIG_HOME/flow/config.toml)."`
-	JSON           bool          `name:"json" env:"FLOW_JSON" help:"Emit one JSON document on stdout; no TUI, no ANSI."`
-	NonInteractive bool          `name:"non-interactive" env:"FLOW_NON_INTERACTIVE" help:"Never prompt. Automatic when stdout is not a TTY or CI is set."`
-	LogLevel       string        `name:"log-level" env:"FLOW_LOG_LEVEL" default:"warn" enum:"debug,info,warn,error" help:"Log level on stderr: debug, info, warn, error."`
-	LogFormat      string        `name:"log-format" env:"FLOW_LOG_FORMAT" default:"text" enum:"text,json" help:"Log format on stderr: text or json."`
-	NoColor        bool          `name:"no-color" env:"FLOW_NO_COLOR" help:"Disable ANSI colour. NO_COLOR is honoured too."`
-	ASCII          bool          `name:"ascii" env:"FLOW_ASCII" help:"Use ASCII glyphs instead of Unicode."`
-	Timeout        time.Duration `name:"timeout" env:"FLOW_TIMEOUT" default:"2m" help:"Overall deadline for the command."`
+	Dir            string   `short:"C" name:"dir" env:"FLOW_DIR" default:"." type:"path" help:"Repo directory; flow walks up to the git root."`
+	Config         string   `name:"config" env:"FLOW_CONFIG" type:"path" placeholder:"PATH" help:"Team config (default <root>/.flow.yaml)."`
+	UserConfig     string   `name:"user-config" env:"FLOW_USER_CONFIG" type:"path" placeholder:"PATH" help:"User config (default $XDG_CONFIG_HOME/flow/config.toml)."`
+	JSON           bool     `name:"json" env:"FLOW_JSON" help:"Emit one JSON document on stdout; no TUI, no ANSI."`
+	NonInteractive bool     `name:"non-interactive" env:"FLOW_NON_INTERACTIVE" help:"Never prompt. Automatic when stdout is not a TTY or CI is set."`
+	LogLevel       string   `name:"log-level" env:"FLOW_LOG_LEVEL" default:"warn" enum:"debug,info,warn,error" help:"Log level on stderr: debug, info, warn, error."`
+	LogFormat      string   `name:"log-format" env:"FLOW_LOG_FORMAT" default:"text" enum:"text,json" help:"Log format on stderr: text or json."`
+	NoColor        bool     `name:"no-color" env:"FLOW_NO_COLOR" help:"Disable ANSI colour. NO_COLOR is honoured too."`
+	ASCII          bool     `name:"ascii" env:"FLOW_ASCII" help:"Use ASCII glyphs instead of Unicode."`
+	Timeout        Duration `name:"timeout" env:"FLOW_TIMEOUT" default:"2m" help:"Overall deadline for the command."`
 
 	Init   InitCmd   `cmd:"" group:"setup" help:"Write .flow.yaml and supporting files."`
 	Plan   PlanCmd   `cmd:"" group:"setup" help:"Show what flow would configure. Read-only."`
@@ -53,6 +53,43 @@ type CLI struct {
 	Schema  SchemaCmd  `cmd:"" group:"meta" help:"Print a JSON Schema for a flow document."`
 	Version VersionCmd `cmd:"" group:"meta" help:"Print version and build information."`
 }
+
+// Duration is a span of time as a flag takes it: Go's own syntax, plus `d`
+// for a day and `w` for a week, which is exactly what flow's configuration
+// takes (spec 03 §1).
+//
+// Somebody who writes `max_age: 7d` in `.flow.yaml` and `--window 7d` on the
+// command line is writing the same thing, and a tool that understood one and
+// not the other would be two tools wearing one name.
+type Duration time.Duration
+
+// Decode reads the flag's value. kong looks for this method on a field's type
+// before reaching for any mapper of its own, so naming the type is the whole
+// of the wiring — including for a `default:` tag, which is parsed the same
+// way as something typed.
+func (d *Duration) Decode(ctx *kong.DecodeContext) error {
+	token, err := ctx.Scan.PopValue("duration")
+	if err != nil {
+		return err
+	}
+	text, ok := token.Value.(string)
+	if !ok {
+		text = fmt.Sprint(token.Value)
+	}
+	parsed, err := config.ParseDuration(text)
+	if err != nil {
+		return err
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+// Std is the span as the standard library counts it.
+func (d Duration) Std() time.Duration { return time.Duration(d) }
+
+// String writes the span the way somebody would have typed it, so that an
+// error about a deadline names the deadline they set.
+func (d Duration) String() string { return config.Duration(d).String() }
 
 // helpGroups titles the help sections. Spec 02 §2 fixes these four names.
 var helpGroups = kong.Groups{
@@ -107,6 +144,12 @@ type Context struct {
 	// Code is the exit code the command asks for when it succeeded but left
 	// work outstanding (spec 02 §4). Zero means it did everything asked.
 	Code int
+	// CI is set by a command told it is running as a CI job (`doctor --ci`).
+	// It is the one place that is asked: what is printed goes into a log read
+	// later by somebody who was not there, the findings worth interrupting
+	// anybody for go to the job's own interface, and nothing flow learns is
+	// worth writing into a checkout that is about to be deleted.
+	CI bool
 }
 
 // unimplemented reports that a command exists in the CLI contract but has no
@@ -360,9 +403,17 @@ func (a *Context) render(s *session, document func(ui.Renderer) (string, error))
 // renderer builds the renderer for this invocation from the flags, the
 // environment and the user's own configuration (spec 02 §1, spec 12).
 func (a *Context) renderer(settings config.Settings) ui.Renderer {
+	return ui.New(a.options(settings, isTerminal(a.Stdout)))
+}
+
+// options is the rendering this invocation asked for, given whether what it
+// writes to is a terminal. That last part is a parameter rather than a
+// question asked here, because a test cannot be a terminal and a decision
+// nothing can exercise is a decision nothing is holding flow to.
+func (a *Context) options(settings config.Settings, terminal bool) ui.Options {
 	opts := ui.Options{
 		Format: ui.FormatText,
-		Colour: !a.CLI.NoColor && !settings.NoColor && os.Getenv("NO_COLOR") == "" && isTerminal(a.Stdout),
+		Colour: !a.CI && !a.CLI.NoColor && !settings.NoColor && os.Getenv("NO_COLOR") == "" && terminal,
 		ASCII:  a.CLI.ASCII || settings.ASCII,
 	}
 	if a.CLI.JSON {
@@ -371,8 +422,16 @@ func (a *Context) renderer(settings config.Settings) ui.Renderer {
 	if opts.Colour {
 		opts.Dark = settings.Theme != config.ThemeLight
 	}
-	return ui.New(opts)
+	return opts
 }
+
+// keepsWhatItLearns reports whether this run may write what it found into the
+// working tree it is standing in.
+//
+// A CI runner's checkout is deleted when the job ends, so a file written
+// there is a file nobody will ever read, and what flow learned has to reach
+// the trunk another way (see [DoctorCmd.proposeLock]).
+func (a *Context) keepsWhatItLearns() bool { return !a.CI }
 
 // isTerminal reports whether w is a terminal, which is what decides colour
 // and whether a confirmation may be asked for.
