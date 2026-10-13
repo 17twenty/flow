@@ -400,14 +400,8 @@ func (a *applier) writeForge(ctx context.Context, planned PlanItem, wanted Desir
 	case core.ItemForgeProtection, core.ItemForgeRequiredStatus:
 		return a.protect(ctx)
 
-	case core.ItemForgeMergeSettings:
-		if len(wanted.Items) == 0 {
-			return "", fmt.Errorf("the desired merge settings have nothing in them")
-		}
-		if err := a.in.Adapters.Forge.SetMergeSettings(ctx, MergeSettingsFor(wanted.Items[0])); err != nil {
-			return "", err
-		}
-		return "set the merge strategies", nil
+	case core.ItemForgeMergeSettings, core.ItemForgeSquashText:
+		return a.mergeSettings(ctx)
 
 	case core.ItemForgeFiles:
 		return a.propose(ctx, planned, wanted)
@@ -445,6 +439,31 @@ func (a *applier) protect(ctx context.Context) (string, error) {
 		return "protected " + branch, nil
 	}
 	return "protected " + branch + ", requiring " + strings.Join(want.RequiredChecks, ", "), nil
+}
+
+// mergeSettings writes the repository's one merge setting: the strategies it
+// allows and where a squash commit takes its words from. They are two desired
+// items and two capabilities, so either may be the one that brought us here,
+// and both are written together — a forge told only which strategies to allow
+// would read the rest of the call as "take the squash title from the first
+// commit" and quietly undo the other half.
+func (a *applier) mergeSettings(ctx context.Context) (string, error) {
+	var strategies, text core.Item
+	wanted, ok := a.in.Desired.Find(core.ItemForgeMergeSettings)
+	if !ok || len(wanted.Items) == 0 {
+		return "", fmt.Errorf("the desired merge settings have nothing in them")
+	}
+	strategies = wanted.Items[0]
+	if squash, ok := a.in.Desired.Find(core.ItemForgeSquashText); ok && len(squash.Items) > 0 {
+		text = squash.Items[0]
+	}
+	if err := a.in.Adapters.Forge.SetMergeSettings(ctx, MergeSettingsFor(strategies, text)); err != nil {
+		return "", err
+	}
+	if text.Field(FieldSquashTitle) == "" {
+		return "set the merge strategies", nil
+	}
+	return "set the merge strategies, and where a squash takes its words from", nil
 }
 
 // propose offers the files the plan is short of as a pull request. Only the

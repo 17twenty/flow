@@ -10,6 +10,7 @@ capabilities:
   branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up }
   required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "enable_status_check + status_check_contexts" }
   merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
+  squash_text:            { set: false, verify: true, remediation: follow_up, notes: "Gitea composes the squash commit itself: the header is the pull request title with the number appended. The body comes from .gitea/default_merge_message/SQUASH_TEMPLATE.md, which a person adds to the repository." }
   file_proposal:          { set: true,  verify: true, requires: [write], remediation: follow_up }
   pr_comments:            { set: true,  verify: true, requires: [write], remediation: follow_up }
   deployments_read:       { set: false, verify: false, remediation: none, notes: "Use deploys.source: commit_status." }

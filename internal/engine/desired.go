@@ -61,6 +61,8 @@ const (
 	NameProtection = "protection"
 	// NameMerge is the one merge-settings item on the repository.
 	NameMerge = "merge"
+	// NameSquash is the one squash-text item on the repository.
+	NameSquash = "squash"
 	// NameExpedite is the view expedited work appears in.
 	NameExpedite = "Expedite"
 )
@@ -144,6 +146,7 @@ func NewDesired(cfg *config.Config, templates fs.FS) (Desired, error) {
 	desired.add(forgeProtection(cfg))
 	desired.add(forgeRequiredStatus(cfg))
 	desired.add(forgeMergeSettings(cfg))
+	desired.add(forgeSquashText(cfg))
 	files, err := forgeFiles(cfg, templates)
 	if err != nil {
 		return Desired{}, err
@@ -445,9 +448,7 @@ func requiredContexts(cfg *config.Config) []string {
 }
 
 // forgeMergeSettings allows the one strategy the team configured and refuses
-// the rest, so that the header the gate checked is the header that lands. A
-// squash takes its header from the pull request title and its body from the
-// pull request body (spec 10 §2).
+// the rest, so that one pull request lands as one commit of a known shape.
 func forgeMergeSettings(cfg *config.Config) DesiredItem {
 	strategy := cfg.Commits.MergeStrategy
 	if strategy == "" {
@@ -458,15 +459,39 @@ func forgeMergeSettings(cfg *config.Config) DesiredItem {
 		FieldAllowMerge:  strconv.FormatBool(strategy == config.MergeCommit),
 		FieldAllowRebase: strconv.FormatBool(strategy == config.MergeRebase),
 	}
-	if strategy == config.MergeSquash {
-		fields[FieldSquashTitle] = core.SquashTitlePR
-		fields[FieldSquashMessage] = core.SquashMessagePRBody
-	}
 	return DesiredItem{
 		ID:         core.ItemForgeMergeSettings,
 		Capability: core.CapMergeSettings,
 		Target:     TargetForge,
 		Items:      []core.Item{{Name: NameMerge, Fields: fields}},
+	}
+}
+
+// forgeSquashText is where a squash commit takes its words from: its header
+// from the pull request title, so that the header the gate checked is the
+// header that lands, and its body from the pull request body, so that the
+// reasoning for a change is in the trunk and not only in the forge (spec 10
+// §2).
+//
+// It is a separate item from the strategies because it is a separate
+// capability: a forge can let a repository choose its merge styles and still
+// compose the squash commit itself, and asking for both as one setting would
+// make flow propose, every run, a change it has no way to make. Both items
+// are written by the same call, the way protection and its required checks
+// are.
+func forgeSquashText(cfg *config.Config) DesiredItem {
+	if cfg.Commits.MergeStrategy != config.MergeSquash {
+		return DesiredItem{}
+	}
+	return DesiredItem{
+		ID:         core.ItemForgeSquashText,
+		Capability: core.CapSquashText,
+		Target:     TargetForge,
+		DependsOn:  []string{core.ItemForgeMergeSettings},
+		Items: []core.Item{{Name: NameSquash, Fields: map[string]string{
+			FieldSquashTitle:   core.SquashTitlePR,
+			FieldSquashMessage: core.SquashMessagePRBody,
+		}}},
 	}
 }
 

@@ -91,8 +91,8 @@ func TestApplyMakesTheProviderAgree(t *testing.T) {
 	if failed != 0 {
 		t.Fatalf("%d items failed", failed)
 	}
-	if done != 6 || skipped != 8 {
-		t.Errorf("%d done and %d skipped, want 6 and 8", done, skipped)
+	if done != 7 || skipped != 8 {
+		t.Errorf("%d done and %d skipped, want 7 and 8", done, skipped)
 	}
 
 	// The board now holds what was asked of it, and no longer holds the

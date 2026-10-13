@@ -225,3 +225,15 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   change that. Counting it as pending would make a converged workflow exit 2
   for ever, and a command that can never report success is one nobody acts on.
   This is also what doctor already says about it.
+- **§2 where a squash takes its words is a capability of its own (item
+  7.3).** `merge_settings` used to mean both "which strategies may land a
+  pull request" and "where the squash commit's header and body come from",
+  and a declaration can only say one thing about a name. Gitea offers the
+  first through its API and composes the commit itself, so a single name
+  forced the Gitea declaration to claim either more than it can do — and
+  propose, every run, a change flow has no way to make — or less, giving up
+  the strategies to keep the text honest. `squash_text` splits them. GitHub
+  (`squash_merge_commit_title`/`_message`) and GitLab (`squash_commit_template`)
+  declare both; Gitea declares `squash_text` verify-only, so a repository whose
+  squash body is not the pull request's gets one follow-up naming the file a
+  person adds, rather than a change flow attempts and silently fails to make.

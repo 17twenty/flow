@@ -53,7 +53,11 @@ deploys  forge_deployments
 
 ✓ native  forge.merge_settings (merge_settings)
     flow can set it through the provider's API
-    update "merge" allow_merge="false" allow_rebase="false" allow_squash="true" squash_message="pr_body" squash_title="pr_title"
+    update "merge" allow_merge="false" allow_rebase="false" allow_squash="true"
+
+✓ native  forge.squash_text (squash_text)
+    flow can set it through the provider's API
+    update "squash" squash_message="pr_body" squash_title="pr_title"
 
 ✓ native  forge.files (file_proposal)
     flow can set it through the provider's API
@@ -63,4 +67,4 @@ deploys  forge_deployments
 · up to date  deploys.records (deploy_records)
     the provider already matches what was asked for
 
-14 items · 5 up to date · 6 native · 1 compensated · 2 attest
+15 items · 5 up to date · 7 native · 1 compensated · 2 attest

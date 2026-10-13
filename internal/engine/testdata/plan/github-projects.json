@@ -8,7 +8,7 @@
     "tracker": "github-projects"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:cf0b651c875c9203c4fd828d086fc053a12863c6e250f664ef31b24115efbc88",
+  "desired_hash": "sha256:dd57ad078323897ceb0280726214346274def799e0edd0645f08853aa7bb3192",
   "lock_hash": "sha256:d70da70a5b8fe24a26da985e89fc41ba3c5efc1dec5393d4ac790b7b70b9c34f",
   "items": [
     {
@@ -300,8 +300,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:5185c2b3b25b0d7468ae1ea08f3036dde46ea5e4f919e97174920d54e1fa2a55",
-      "observed_hash": "sha256:afe03255bb343296e7c00342048fc48b6b4aa3f9c756a05a9ec603d420695590",
+      "desired_hash": "sha256:cc05493d1be9aa9463003439689f72b2bb069931924dc0ede8b86b8b64e9a7b2",
+      "observed_hash": "sha256:68171ec3b673876509cbf6302f3aedd23819afb54fb4176575282e9d136e98b1",
       "changes": [
         {
           "what": "forge.merge_settings",
@@ -311,7 +311,31 @@
             "fields": {
               "allow_merge": "false",
               "allow_rebase": "false",
-              "allow_squash": "true",
+              "allow_squash": "true"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "forge.squash_text",
+      "target": "forge",
+      "capability": "squash_text",
+      "depends_on": [
+        "forge.merge_settings"
+      ],
+      "outcome": "native",
+      "why": "flow can set it through the provider's API",
+      "exists": true,
+      "desired_hash": "sha256:34968f94f9c40ad5043304d907d90f0804b2cae6f8db56adf3c33b5243adb31b",
+      "observed_hash": "sha256:541b43d5a240e9f7b758b3acad3c40a9d880cfd7d0d90db5424370ee2b0f0a8a",
+      "changes": [
+        {
+          "what": "forge.squash_text",
+          "op": "update",
+          "item": {
+            "name": "squash",
+            "fields": {
               "squash_message": "pr_body",
               "squash_title": "pr_title"
             }

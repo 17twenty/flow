@@ -176,6 +176,9 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 	case core.ItemForgeMergeSettings:
 		return mergeObservation(repo.Merge), nil
 
+	case core.ItemForgeSquashText:
+		return squashObservation(repo.Merge), nil
+
 	case core.ItemForgeFiles:
 		return o.files(ctx, item, repo.DefaultBranch)
 	}
@@ -231,20 +234,29 @@ func dormantNotes(p core.Protection) []core.Note {
 	return notes
 }
 
-// mergeObservation transcribes the repository's merge settings.
+// mergeObservation transcribes the strategies the repository allows.
 func mergeObservation(m core.MergeSettings) core.Observation {
-	fields := map[string]string{
+	return core.Observation{Exists: true, Items: []core.Item{{Name: NameMerge, Fields: map[string]string{
 		FieldAllowSquash: strconv.FormatBool(m.AllowSquash),
 		FieldAllowMerge:  strconv.FormatBool(m.AllowMerge),
 		FieldAllowRebase: strconv.FormatBool(m.AllowRebase),
-	}
+	}}}}
+}
+
+// squashObservation transcribes where the repository takes a squash commit's
+// words from. A forge that composes the commit itself has nothing to say
+// about one of them, and says nothing rather than agreeing: a field flow
+// leaves out of the observation is one the comparison counts as a
+// difference, which is what a forge that cannot be told should produce.
+func squashObservation(m core.MergeSettings) core.Observation {
+	fields := map[string]string{}
 	if m.SquashTitle != "" {
 		fields[FieldSquashTitle] = m.SquashTitle
 	}
 	if m.SquashMessage != "" {
 		fields[FieldSquashMessage] = m.SquashMessage
 	}
-	return core.Observation{Exists: true, Items: []core.Item{{Name: NameMerge, Fields: fields}}}
+	return core.Observation{Exists: true, Items: []core.Item{{Name: NameSquash, Fields: fields}}}
 }
 
 // files reads each proposed path on the trunk. A file that is not there is
@@ -312,16 +324,19 @@ func (o *observer) deploys(ctx context.Context, item DesiredItem) (core.Observat
 	return core.Observation{Exists: len(items) > 0, Items: items}, nil
 }
 
-// MergeSettingsFor turns the desired merge-settings item back into the value
-// an adapter is asked to set. The desired state is the only description of
-// what flow wants, so apply reads it rather than deriving it a second time.
-func MergeSettingsFor(item core.Item) core.MergeSettings {
+// MergeSettingsFor turns the desired strategies and squash text back into
+// the value an adapter is asked to set. The desired state is the only
+// description of what flow wants, so apply reads it rather than deriving it a
+// second time. They are two items because they are two capabilities, and one
+// call because the forge has one setting: an adapter that is given only half
+// of it would turn the other half off.
+func MergeSettingsFor(strategies, text core.Item) core.MergeSettings {
 	return core.MergeSettings{
-		AllowSquash:   item.Field(FieldAllowSquash) == "true",
-		AllowMerge:    item.Field(FieldAllowMerge) == "true",
-		AllowRebase:   item.Field(FieldAllowRebase) == "true",
-		SquashTitle:   item.Field(FieldSquashTitle),
-		SquashMessage: item.Field(FieldSquashMessage),
+		AllowSquash:   strategies.Field(FieldAllowSquash) == "true",
+		AllowMerge:    strategies.Field(FieldAllowMerge) == "true",
+		AllowRebase:   strategies.Field(FieldAllowRebase) == "true",
+		SquashTitle:   text.Field(FieldSquashTitle),
+		SquashMessage: text.Field(FieldSquashMessage),
 	}
 }
 

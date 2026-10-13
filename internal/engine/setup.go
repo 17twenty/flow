@@ -148,6 +148,7 @@ func SetupChecks(in SetupInput) []Check {
 		planned(core.ItemForgeProtection, "The trunk is protected", CategoryForge, CheckForgeRepo),
 		planned(core.ItemForgeRequiredStatus, "A merge must pass the checks the workflow names", CategoryForge, CheckForgeRepo),
 		planned(core.ItemForgeMergeSettings, "Only the merge strategies the workflow allows are offered", CategoryForge, CheckForgeRepo),
+		planned(core.ItemForgeSquashText, "A squash commit says what the pull request said", CategoryForge, CheckForgeRepo),
 		planned(core.ItemForgeFiles, "The files that make the workflow run are on the trunk", CategoryForge, CheckForgeRepo),
 		in.trackerProject(),
 		planned(core.ItemTrackerStatusOptions, "The board has the columns the workflow describes", CategoryTracker, core.ItemTrackerProject),

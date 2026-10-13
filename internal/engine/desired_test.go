@@ -113,6 +113,7 @@ func TestDesiredCoversSpecTable(t *testing.T) {
 		core.ItemForgeProtection,
 		core.ItemForgeRequiredStatus,
 		core.ItemForgeMergeSettings,
+		core.ItemForgeSquashText,
 		core.ItemForgeFiles,
 		core.ItemDeploysRecords,
 	}
@@ -338,7 +339,6 @@ func TestDesiredMergeSettings(t *testing.T) {
 	}{
 		{config.MergeSquash, map[string]string{
 			"allow_squash": "true", "allow_merge": "false", "allow_rebase": "false",
-			"squash_title": core.SquashTitlePR, "squash_message": core.SquashMessagePRBody,
 		}},
 		{config.MergeCommit, map[string]string{
 			"allow_squash": "false", "allow_merge": "true", "allow_rebase": "false",
@@ -364,6 +364,22 @@ func TestDesiredMergeSettings(t *testing.T) {
 			linear := protection.Items[0].Field(engine.FieldRequireLinearHistory)
 			if want := tc.strategy != config.MergeCommit; (linear == "true") != want {
 				t.Errorf("a %s merge wants linear history %q", tc.strategy, linear)
+			}
+
+			text, wanted := state.Find(core.ItemForgeSquashText)
+			if squash := tc.strategy == config.MergeSquash; wanted != squash {
+				t.Fatalf("a %s merge wants the squash text item: %v", tc.strategy, wanted)
+			} else if !squash {
+				return
+			}
+			want := map[string]string{
+				"squash_title": core.SquashTitlePR, "squash_message": core.SquashMessagePRBody,
+			}
+			if !maps.Equal(text.Items[0].Fields, want) {
+				t.Errorf("the squash text is %v, want %v", text.Items[0].Fields, want)
+			}
+			if !slices.Contains(text.DependsOn, core.ItemForgeMergeSettings) {
+				t.Errorf("the squash text is written by the same call as the strategies, so it depends on %s", core.ItemForgeMergeSettings)
 			}
 		})
 	}

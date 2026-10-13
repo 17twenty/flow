@@ -45,6 +45,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "files on the trunk", Run: forgeFile},
 		{Name: "protection is read effectively and written additively", Run: forgeProtection},
 		{Name: "merge settings", Run: forgeMergeSettings},
+		{Name: "where a squash takes its words from", Run: forgeSquashText},
 		{Name: "a commit status replaces the last verdict from the same context", Run: forgeCommitStatus},
 		{Name: "a comment is edited in place, found by its marker, and deleted once", Run: forgeComments},
 		{Name: "files are proposed on their own branch and updated in place", Run: forgeProposeFiles},
@@ -194,6 +195,13 @@ func forgeClosingIssues(t *testing.T, newForge NewForge) {
 	pr, err := forge.PullRequest(t.Context(), 2)
 	if err != nil {
 		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if !forge.Capabilities().CanVerify(core.CapLinkedIssuesRead) {
+		if len(pr.ClosingIssues) > 0 {
+			t.Errorf("%s declares it cannot read the forge's own link between a pull request and a ticket, and then reported %v: a guess here is worse than the tracker fallback it would silence (spec 10 §3)",
+				forge.Kind(), pr.ClosingIssues)
+		}
+		return
 	}
 	if !slices.Contains(pr.ClosingIssues, "#11") {
 		t.Errorf("ClosingIssues = %v, want it to carry #11: flow trusts the forge's own link and no pattern of its own", pr.ClosingIssues)
@@ -452,8 +460,61 @@ func forgeMergeSettings(t *testing.T, newForge NewForge) {
 	if err != nil {
 		t.Fatalf("Repo: %v", err)
 	}
-	if repo.Merge != want {
-		t.Errorf("Repo().Merge = %+v, want %+v", repo.Merge, want)
+	got := repo.Merge
+	got.SquashTitle, got.SquashMessage = want.SquashTitle, want.SquashMessage
+	if got != want {
+		t.Errorf("Repo().Merge = %+v, want the strategies of %+v", repo.Merge, want)
+	}
+}
+
+// forgeSquashText: where a squash commit takes its header and its body from
+// is a capability of its own, because a forge can let a repository choose its
+// merge strategies and still compose the commit itself (spec 05 §2).
+//
+// A forge that can be told must report what it was told. A forge that cannot
+// must report the same answer afterwards as before: the write may not make
+// the reading agree with a request the server never honoured, because the
+// whole plan is built on the reading.
+func forgeSquashText(t *testing.T, newForge NewForge) {
+	forge := newForge(t, ContractForge())
+	settable := forge.Capabilities().Can(core.CapSquashText)
+	readable := forge.Capabilities().CanVerify(core.CapSquashText)
+
+	before, err := forge.Repo(t.Context())
+	if err != nil {
+		t.Fatalf("Repo: %v", err)
+	}
+	want := core.MergeSettings{
+		AllowSquash:   true,
+		SquashTitle:   core.SquashTitlePR,
+		SquashMessage: core.SquashMessagePRBody,
+	}
+	if err := forge.SetMergeSettings(t.Context(), want); err != nil {
+		t.Fatalf("SetMergeSettings: %v", err)
+	}
+	after, err := forge.Repo(t.Context())
+	if err != nil {
+		t.Fatalf("Repo: %v", err)
+	}
+
+	if !readable {
+		if after.Merge.SquashTitle != "" || after.Merge.SquashMessage != "" {
+			t.Errorf("%s declares it cannot see where a squash takes its words from, and then reported %q/%q",
+				forge.Kind(), after.Merge.SquashTitle, after.Merge.SquashMessage)
+		}
+		return
+	}
+	if settable {
+		if after.Merge.SquashTitle != want.SquashTitle || after.Merge.SquashMessage != want.SquashMessage {
+			t.Errorf("the squash text is %q/%q, want %q/%q",
+				after.Merge.SquashTitle, after.Merge.SquashMessage, want.SquashTitle, want.SquashMessage)
+		}
+		return
+	}
+	if after.Merge.SquashTitle != before.Merge.SquashTitle || after.Merge.SquashMessage != before.Merge.SquashMessage {
+		t.Errorf("%s cannot be told where a squash takes its words from, but asking changed the answer from %q/%q to %q/%q",
+			forge.Kind(), before.Merge.SquashTitle, before.Merge.SquashMessage,
+			after.Merge.SquashTitle, after.Merge.SquashMessage)
 	}
 }
 

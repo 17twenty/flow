@@ -321,7 +321,7 @@ func (a *audit) prsConventional() Check {
 					Kind:    RemedyManual,
 					Summary: "the header that lands must be the one the gate checked",
 					Steps: []string{
-						"check forge.merge_settings in this report: a squash merge must take its header from the pull request title",
+						"check forge.squash_text in this report: a squash merge must take its header from the pull request title",
 						"check forge.required_status: the gate refuses a title that does not parse, if it is required",
 						"a commit pushed straight to the trunk was never a pull request at all; see forge.protection",
 					},
