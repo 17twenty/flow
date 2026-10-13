@@ -693,6 +693,47 @@ off, and the filter input left in the library's colours on a screen asked for
 none. Each bought a test. The fifth is equivalent — the zero value of a type
 parameter is the zero value either way.
 
+**The init wizard (item 6.1, this run).** The last of the four screens spec
+12 allows, and the one with the sharpest acceptance criterion: its plain
+equivalent has to produce an identical `.flow.yaml`. That is met by not having
+a plain equivalent to keep in step. Every question the wizard asks is a flag
+`flow init` already had, the answers go back onto the command, and the command
+then takes the road it always took — so the screen is a way of filling the
+flags in, not a second way of writing a configuration.
+
+Four things decided the shape. The answers open already filled in with what
+flow would have written had nobody been asked, and that same value is the
+baseline the review's command line is shortened against, so "press enter all
+the way through", `flow init --yes` and the `flow init …` the last screen
+prints are necessarily the same file. A question this configuration does not
+have is not asked — an owner is a GitHub Projects idea, an address is a Jira
+one — and the heading counts the questions there are rather than the steps
+there might have been. The wizard does not discover: spec 02 §2 says `init`
+must succeed offline and is the command run before any configuration names a
+tracker to hold a credential for, so the board is left as `${pending:project}`
+and resolved later by `flow doctor --fix`, through the picker that landed last
+run, in the command that has the credential. And the review shows the rendered
+file itself, cut to the terminal rather than scrolled, with a preview that
+failed shown in its place — a configuration flow would refuse to read is
+something to learn before it is written.
+
+Spec 12 §1 ends the wizard with two more questions, `done_on` and the deploy
+source. Both were written as flags and neither could be used: `workflow.done_on`
+has to agree with `workflow.transitions.deployed` and `deploys.source` with the
+rest of its block, while `init` splices scalars into a preset rather than
+restructuring one, so every value either repeated the preset's own answer or
+produced a file flow refuses to read. A flag whose every effective value is an
+error is not a flag. Both questions are therefore asked at `--preset`, where
+each option says what it means for them, and the step carries a line saying so
+— a question folded into another has to be visibly answered there, or it has
+been quietly dropped. Two Decisions record it, in spec 02 as well as spec 12,
+because the flag list is spec 02's.
+
+Twenty-three mutants, all killed. The ones worth having the item for: a
+revisited question that came back empty, a cursor that did not wrap, defaults
+that overwrote an answer somebody had given, and a cancelled wizard that wrote
+the file anyway.
+
 **Where the exit code stands.** `./bin/flow doctor` against this repository
 exits 2 on six checks, and none of them is a defect in flow:
 
@@ -711,7 +752,7 @@ of it waiting on a decision rather than on the calendar, and the earliest the
 streak can *start* is the morning the last direct-mode ticket leaves the
 window.
 
-**This run** finished 6.3, doctor's inline display and `--watch`
+**Last run** finished 6.3, doctor's inline display and `--watch`
 ([#76](https://github.com/17twenty/flow/issues/76)), which is what makes spec
 02's command surface whole: every command and flag the spec names now does
 what it says. Two screens, because a run being waited on and a run being
@@ -724,11 +765,14 @@ found the defect worth having the item for: a clock wound by whatever
 finished a round left a second chain of ticks behind every manual refresh, so
 a window open all afternoon would have asked the forge faster and faster.
 
-**Single best next step:** 6.1, the init wizard
-([#74](https://github.com/17twenty/flow/issues/74)), the last screen of the
-four spec 12 allows, whose acceptance criterion is that its plain equivalent
-produces an identical `.flow.yaml`. After that, Phase 7's adapters
-(#79–#82) and Phase 8's proof (#86, #87).
+**Single best next step:** Phase 7, the other providers — Jira Cloud
+([#79](https://github.com/17twenty/flow/issues/79)), Linear
+([#80](https://github.com/17twenty/flow/issues/80)), Gitea/Forgejo
+([#81](https://github.com/17twenty/flow/issues/81)) and GitLab
+([#82](https://github.com/17twenty/flow/issues/82)). None of the four depends
+on another, so they go up as separate pull requests. Then Phase 8's proof:
+the acceptance scenarios whole ([#86](https://github.com/17twenty/flow/issues/86))
+and the README demo ([#87](https://github.com/17twenty/flow/issues/87)).
 
 The two issues this section named last run are both settled:
 [#102](https://github.com/17twenty/flow/issues/102), an archived repository
@@ -736,10 +780,9 @@ read and then written to anyway, landed as
 [#109](https://github.com/17twenty/flow/pull/109), and
 [#100](https://github.com/17twenty/flow/issues/100) with it.
 
-The two pull requests this section named last run are both merged:
-[#117](https://github.com/17twenty/flow/pull/117), which makes flow ask for a
-branch that is up to date with the trunk before it may merge, and
-[#118](https://github.com/17twenty/flow/pull/118), the picker.
+Spec 12 is now whole: the wizard, the picker, doctor's display and `--watch`,
+and the apply confirmation are the four screens it allows, and there are no
+others.
 
 In parallel, and only `@17twenty` can do it: run the four `flow attest`
 commands in `docs/cookbook.md` §6.1 after looking at the board's Workflows
