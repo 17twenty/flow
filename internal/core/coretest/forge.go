@@ -480,6 +480,16 @@ func (f *FakeForge) SetPullRequest(pr core.PullRequest) {
 	f.nextPR = max(f.nextPR, pr.Number)
 }
 
+// SetCommits replaces the history, newest first, so that a test can put a
+// particular commit message on the trunk. It replaces rather than appends
+// because the order is the ancestry (see [FakeForge.Compare]), and a seam
+// that only added to the end could not express "this one came first".
+func (f *FakeForge) SetCommits(commits ...core.Commit) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commits = slices.Clone(commits)
+}
+
 // SetPermissions replaces what Probe reports, so that a test can hold the
 // common unhappy case: a credential the forge accepts which still cannot
 // administer the repository (scenario A06).

@@ -73,7 +73,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 5 — GitHub forge and GitHub Projects tracker (plan Phase 3)
 - [x] Phase 6 — Commands (plan Phase 4): init, plan, apply, check pr, check deploy, doctor, attest
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
-- [ ] Phase 8 — Live health (plan Phase 5): 5.1–5.5, 5.7 and 5.8 done; flag cleanup (5.6) remains
+- [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [ ] Phase 9 — TUI (plan Phase 6): init wizard, picker, doctor watch, apply confirmation
 - [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): all scenarios passing, README demo, 14 green doctor days
@@ -564,13 +564,68 @@ Phase 7 forges inherit it with the flag. The notes are
 [#104](https://github.com/17twenty/flow/pull/104), green on `test`, `policy`
 and `setup checks`.
 
+### A promise made in a commit message (this run — item 5.6, Phase 5 closed)
+
+[#104](https://github.com/17twenty/flow/pull/104) is merged. `live.flags.cleanup`
+is the last item of Phase 5, and with it every question spec 07 §6 asks of a
+live repository has a check behind it.
+
+A feature flag is a branch in the code somebody said they would come back for.
+The promise is the whole problem: it is made in a commit message, read once by
+a reviewer and then never again, and the thing that would make it true happens
+weeks later if at all. Flags nobody took out are how a trunk-based codebase
+ends up with long-lived branches in it after all. So flow turns the promise
+into a ticket and audits the ticket: every `Flag-Added:` trailer merged inside
+the window must have one carrying `flow:flag name=<name> repo=<owner/name>`,
+and `doctor --fix` files the ones that are missing, exactly as 5.5 performs a
+move somebody's automation dropped.
+
+The reading that mattered is that the trailers are git's to find, not flow's.
+Where a trailer block begins depends on `trailer.*` configuration, on the keys
+a repository already uses, and on rules about blank lines that have changed
+over git's life, so flow hands the message to the working copy's own
+`git interpret-trailers --parse` rather than matching a line that looks like a
+trailer. The difference is not academic: a `Flag-Added:` line with a paragraph
+of prose after it *is* prose, and a regex would file a cleanup ticket for a
+flag nobody added. `TestDoctorReadsTrailersWithGitItself` puts exactly that
+message on the trunk and asserts no ticket appears for it — a fixture the two
+readings agree on would prove nothing about which one ran. A run with no
+working copy to parse with fails the check rather than reporting a quiet
+fortnight, because a run that could not look has not established that nobody
+added a flag.
+
+Three smaller judgements. The marker names the flag *and* the repository, so
+two commits announcing one flag are one promise and one ticket — which is what
+makes `--fix` idempotent without flow remembering anything between runs —
+while `new_basket` in somebody else's repository stays somebody else's. A
+closed cleanup ticket counts as much as an open one: the check asks whether
+the promise was written down, not whether it has been kept, since flow does
+not read the code, and requiring the ticket to be open would fail the check
+for precisely the teams that did the work. And flow files it and then never
+touches it again: a follow-up (§4) is work flow can verify and may therefore
+close, taking a flag out is not, and the ticket says in as many words that a
+person closes this one — a ticket implying flow was watching would sit on a
+board being quietly untrue.
+
+Nineteen mutants were applied to the new code. Two survived the first draft
+and bought a test each: the no-tracker branch (deleting the guard whole
+compiled and passed, which means nothing had ever handed the check a run with
+no board), and the ordering of the evidence. Live on this repository:
+`live.flags.cleanup 0/0 nothing in the window added a feature flag` — counted
+and said in those words, rather than passing "all 0 flags were fine". It is
+[#70](https://github.com/17twenty/flow/issues/70), open as
+[#105](https://github.com/17twenty/flow/pull/105), green on `test`, `policy`
+and `setup checks`.
+
 **Single best next step:** `@17twenty` approves and squash-merges
-[#104](https://github.com/17twenty/flow/pull/104). Then, in order: attest the
-four native behaviours so the exit code depends only on real findings; land
-plan item 5.6 (`live.flags.cleanup`, #70) — the last of Phase 5, and a single
-self-contained check: git trailers, a marker, and a ticket filed under `--fix`
-exactly as 5.5 moves one; and settle
-[#102](https://github.com/17twenty/flow/issues/102) and
-[#100](https://github.com/17twenty/flow/issues/100), where
-`pr_closed_unmerged` cannot be configured to mean what it means. The
-fourteen-day clock starts the first morning the scheduled run exits 0.
+[#105](https://github.com/17twenty/flow/pull/105), which closes Phase 5. Then,
+in order: attest the four native behaviours
+(`tracker.native.{changes_requested,issue_closed,pr_merged}` and
+`tracker.expedite`) so the exit code depends only on real findings; settle
+[#102](https://github.com/17twenty/flow/issues/102) (an archived repository
+should be refused once, in the engine) and
+[#100](https://github.com/17twenty/flow/issues/100) (`pr_closed_unmerged`
+cannot be configured to mean what it means); and then Phase 6, the TUI. The
+fourteen-day clock starts the first morning the scheduled run exits 0 —
+`live.tickets.done_merged` is the only check still failing, and it ages out of
+the window on its own.
