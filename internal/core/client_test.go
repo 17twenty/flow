@@ -541,7 +541,31 @@ func TestDoRefusesANonLoopbackHostInATest(t *testing.T) {
 	}
 }
 
-func TestAllowHostOverridesTheGuard(t *testing.T) {
+// AllowHost narrows and never widens: a caller that allows everything still
+// cannot reach a provider from inside a test binary, so a fake nobody wired
+// up fails the test rather than talking to the real thing (spec 14).
+func TestAllowHostCanOnlyNarrow(t *testing.T) {
+	client, err := NewClient(ClientOptions{
+		BaseURL:   "https://api.github.com",
+		Retries:   -1,
+		AllowHost: func(string) bool { return true },
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = client.Do(context.Background(), Request{Path: "repos/17twenty/flow"})
+	if !errors.Is(err, ErrPermission) {
+		t.Fatalf("error = %v, want the test guard to refuse anyway", err)
+	}
+	var user *UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, LiveEnv) {
+		t.Errorf("the refusal does not say which guard refused: %+v", user)
+	}
+}
+
+// And a caller's own refusal says so in its own terms: this client was built
+// to address one host, and a request that left it would carry the credential.
+func TestAllowHostNarrowsTheGuard(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -556,6 +580,11 @@ func TestAllowHostOverridesTheGuard(t *testing.T) {
 	}
 	if len(asked) != 1 {
 		t.Errorf("AllowHost asked %v, want exactly the one host", asked)
+	}
+	_, err := client.Do(context.Background(), Request{Path: "x"})
+	var user *UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Why, "only address the host it was built for") {
+		t.Errorf("the refusal reads as the test guard's rather than the caller's: %+v", user)
 	}
 }
 

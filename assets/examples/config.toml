@@ -10,5 +10,11 @@ ascii = false
 token_cmd = ["gh", "auth", "token"]        # argv, no shell
 hosts = ["api.github.com"]                 # approved hosts for this credential
 
-[auth.github_projects]
+[auth.github-projects]
 token_cmd = ["gh", "auth", "token"]        # needs 'project' scope: gh auth refresh -s project
+hosts = ["api.github.com"]
+
+# The table is named after the provider exactly as .flow.yaml spells it, and
+# a host flow does not already know a provider by has to be listed here
+# before the credential is sent to it: a GitHub Enterprise Server would want
+# hosts = ["ghe.example.com"].

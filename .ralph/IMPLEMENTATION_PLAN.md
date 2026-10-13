@@ -242,8 +242,21 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
 - [ ] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
-- [ ] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
+- [x] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
   - AC: scenarios S01–S03
+  - note: approval is checked before the credential is resolved, so a
+    `token_cmd` never unlocks a vault to produce a secret flow has already
+    decided it will not send. A host is approved by flow's own knowledge of
+    the provider or by `[auth.<p>] hosts` in the user's file; `.flow.yaml`
+    cannot approve itself. Interactive runs ask and remember the answer for
+    the process; everything else exits 77 with the line to write (S02).
+    `core.ClientOptions.AllowHost` now binds the client to the host, can only
+    narrow the test guard, and refuses a redirect off it. S01 changed
+    behaviour: a tracked `.flow.local.toml` is left unread with a warning
+    rather than refusing the run. The shipped example's
+    `[auth.github_projects]` was never read — the table is keyed by the
+    provider kind — and both the missing-credential and unapproved-host
+    messages now point at a near miss.
 
 ## Phase 8 — Proof
 

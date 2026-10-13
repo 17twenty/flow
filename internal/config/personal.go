@@ -218,12 +218,19 @@ type Tracked func(path string) (bool, error)
 //
 // tracked may be nil when flow has no git to ask — the local file is then
 // trusted no further than the rules below allow it to be anyway.
-func LoadPersonal(userPath, localPath string, tracked Tracked) ([]Personal, error) {
+//
+// A local override flow will not trust is left unread and reported as a
+// warning rather than as a refusal (scenario S01): the file belongs to the
+// repository, and a file the team can commit must not be able to stop anybody
+// else working. The run goes on with the layers flow does trust, and fails
+// later — for want of a credential, say — only if it genuinely needed
+// something that file was carrying.
+func LoadPersonal(userPath, localPath string, tracked Tracked) ([]Personal, []string, error) {
 	var layers []Personal
 
 	user, ok, err := loadTOML(userPath, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if ok {
 		layers = append(layers, user)
@@ -231,26 +238,22 @@ func LoadPersonal(userPath, localPath string, tracked Tracked) ([]Personal, erro
 
 	if localPath != "" && tracked != nil {
 		isTracked, err := tracked(localPath)
-		if err != nil {
-			return nil, core.Errorf(core.ErrValidation, "read %s", localPath).
-				WithWhy("flow could not ask git whether the file is tracked: %s", err).
-				WithFix("run flow from inside the repository, or remove %s", filepath.Base(localPath))
-		}
-		if isTracked {
-			return nil, core.Errorf(core.ErrValidation, "read %s", localPath).
-				WithWhy("the file is tracked by git, so it is the team's and not yours; flow will not take personal settings or credentials from a file the repository can change").
-				WithFix("git rm --cached %s and add it to .gitignore", filepath.Base(localPath))
+		switch {
+		case err != nil:
+			return layers, []string{fmt.Sprintf("ignoring %s: flow could not ask git whether the file is tracked (%s), and a file it cannot tell apart from the team's is not personal", localPath, err)}, nil
+		case isTracked:
+			return layers, []string{fmt.Sprintf("ignoring %s: the file is tracked by git, so it is the team's and not yours; run git rm --cached %s and add it to .gitignore to have flow read it", localPath, filepath.Base(localPath))}, nil
 		}
 	}
 
 	local, ok, err := loadTOML(localPath, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if ok {
 		layers = append(layers, local)
 	}
-	return layers, nil
+	return layers, nil, nil
 }
 
 // loadTOML reads one personal file. The second result reports whether the file
