@@ -262,3 +262,11 @@ Secrets never printed.
   `--window 7d` on the command line are the same fortnight, and a tool that
   understood one and not the other would be two tools wearing one name. A
   bare number is still refused: an unqualified number is a question.
+- **§2 the last stub is gone (item 6.3).** `Context.unimplemented` existed so
+  that a command in the CLI contract whose plan item had not landed would fail
+  as `ErrUnsupported` rather than pretend to work, and `--watch` was the final
+  entry on the list a test walked to hold it to that. With this item every
+  command and every flag in this spec does what it says, so the helper and the
+  list went with it: a surface test that walks nothing proves nothing, and the
+  rule it stood for is now the parse error a command flow does not have
+  already gets.

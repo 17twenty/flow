@@ -571,6 +571,51 @@ type DoctorInput struct {
 	Only []string
 	// FlowVersion is the build doing the asking.
 	FlowVersion string
+	// Progress is told how the run is going, for a caller drawing it. It may
+	// be nil, which is a run nobody is watching.
+	Progress DoctorProgress
+}
+
+// DoctorProgress is told, as a run goes, which check has been reached and
+// what it answered (spec 12 §3).
+//
+// It is a callback rather than a channel because a run is one goroutine
+// asking one question at a time, and the thing being told is a terminal
+// drawing a line: a channel would add a buffer whose size decides whether
+// flow blocks on a screen. It is called from the goroutine running the
+// checks, so an implementation that does anything slow must hand it on.
+type DoctorProgress func(DoctorStep)
+
+// DoctorStep is one moment of a run: a check about to be asked, and then the
+// same check with its answer.
+//
+// Both moments are reported, because the thing a progress display is for is
+// the gap between them — a live check reading a fortnight of pull requests is
+// where a doctor run spends its time, and a screen that only spoke when a
+// check finished would be silent for exactly as long as the wait that made
+// somebody wonder whether flow had hung.
+type DoctorStep struct {
+	// Check is the one being asked.
+	Check Check
+	// Asked is how many checks have answered so far, and Total how many will
+	// be asked in all. A check in flight is not yet counted in Asked.
+	Asked, Total int
+	// Result is what it answered, and is the zero result while it is still
+	// being asked.
+	Result Result
+}
+
+// Answered reports whether this step is a check that has answered rather than
+// one being asked. Every result has a state, so the zero one cannot be
+// mistaken for an answer.
+func (s DoctorStep) Answered() bool { return s.Result.State != "" }
+
+// tell reports a step, when there is anybody to tell.
+func (in DoctorInput) tell(step DoctorStep) {
+	if in.Progress == nil {
+		return
+	}
+	in.Progress(step)
 }
 
 // Checked is one check and what it answered.
@@ -636,10 +681,11 @@ func RunDoctor(ctx context.Context, in DoctorInput) (Report, error) {
 		report.Window = config.Duration(in.Env.Window).String()
 	}
 
-	for _, check := range selected {
+	for asked, check := range selected {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
+		in.tell(DoctorStep{Check: check, Asked: asked, Total: len(selected)})
 		checked := Checked{
 			ID:        check.ID,
 			Title:     check.Title,
@@ -657,6 +703,7 @@ func RunDoctor(ctx context.Context, in DoctorInput) (Report, error) {
 		}
 		in.Env.results[check.ID] = checked.Result
 		report.Checks = append(report.Checks, checked)
+		in.tell(DoctorStep{Check: check, Asked: asked + 1, Total: len(selected), Result: checked.Result})
 	}
 	return report, nil
 }

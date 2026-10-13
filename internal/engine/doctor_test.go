@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -499,6 +500,62 @@ func TestDoctorGolden(t *testing.T) {
 	}
 	goldenFile(t, filepath.Join("doctor", "report.txt"), []byte(report.Text()))
 	goldenFile(t, filepath.Join("doctor", "report.json"), rendered)
+
+	var panes strings.Builder
+	for _, checked := range report.Checks {
+		panes.WriteString(checked.Detail())
+		panes.WriteString("\n")
+	}
+	goldenFile(t, filepath.Join("doctor", "detail.txt"), []byte(panes.String()))
+}
+
+// TestAPaneShowsEverythingTheCheckSaw states the one way a detail pane
+// differs from the report it was opened out of. A report caps the evidence
+// because scrolling a hundred pull requests past a reader tells them nothing;
+// a pane somebody opened on one check, and can scroll, is the case that cap
+// was protecting them from.
+func TestAPaneShowsEverythingTheCheckSaw(t *testing.T) {
+	report := doctorRun(t, doctorEnv(t), nil,
+		answering("live.prs.gated", engine.CategoryLive, liveFail()))
+	checked, ok := report.Find("live.prs.gated")
+	if !ok {
+		t.Fatal("the report has no live.prs.gated")
+	}
+	if len(checked.Result.Evidence) <= engine.EvidenceShown {
+		t.Fatalf("the fixture has %d pieces of evidence, which the report would not have capped",
+			len(checked.Result.Evidence))
+	}
+
+	pane := checked.Detail()
+	for _, item := range checked.Result.Evidence {
+		if !strings.Contains(pane, item.Text) {
+			t.Errorf("the pane leaves out %q:\n%s", item.Text, pane)
+		}
+	}
+	if strings.Contains(pane, "and 2 more") {
+		t.Errorf("the pane counted evidence it was showing:\n%s", pane)
+	}
+	if !strings.Contains(report.Text(), "and 2 more") {
+		t.Errorf("the report stopped capping its evidence:\n%s", report.Text())
+	}
+}
+
+// TestAPaneNamesTheQuestionItAnswers states that the pane carries the check's
+// title. A report is a list of findings and the id is enough to tell them
+// apart; a pane is one finding on its own, and "forge.protection" is not a
+// sentence anybody can act on.
+func TestAPaneNamesTheQuestionItAnswers(t *testing.T) {
+	report := doctorRun(t, doctorEnv(t), nil,
+		answering("forge.protection", engine.CategoryForge, engine.Pass("main is protected")))
+	checked, _ := report.Find("forge.protection")
+
+	pane := checked.Detail()
+	if !strings.Contains(pane, checked.Title) {
+		t.Errorf("the pane does not say what was asked (%q):\n%s", checked.Title, pane)
+	}
+	if !strings.Contains(pane, checked.Line()) {
+		t.Errorf("the pane does not lead with the finding (%q):\n%s", checked.Line(), pane)
+	}
 }
 
 // everyState is one check in each state, with the evidence and remedies the
@@ -574,4 +631,103 @@ func liveFail() engine.Result {
 		result = result.Saw(fmt.Sprintf("#%d merged with no status", i), fmt.Sprintf("https://example.test/pr/%d", i))
 	}
 	return result
+}
+
+// TestARunSaysWhereItHasGotTo states what a progress display is given: each
+// check twice, once as it is reached and once with its answer, and a count it
+// can draw a proportion from. The first of the pair is the one that matters —
+// the gap between reaching a live check and hearing back from it is where a
+// run spends its time, and a screen told only about answers would be silent
+// for exactly that wait.
+func TestARunSaysWhereItHasGotTo(t *testing.T) {
+	registry, err := engine.NewRegistry(
+		answering("config.syntax", engine.CategoryConfig, engine.Pass("it parses")),
+		answering("local.git", engine.CategoryLocal, engine.Fail("this is not a repository")),
+		answering("local.hooks", engine.CategoryLocal, engine.Pass("the hooks are in"), "local.git"),
+	)
+	if err != nil {
+		t.Fatalf("build the registry: %v", err)
+	}
+
+	var steps []engine.DoctorStep
+	report, err := engine.RunDoctor(t.Context(), engine.DoctorInput{
+		Registry: registry,
+		Env:      doctorEnv(t),
+		Progress: func(step engine.DoctorStep) { steps = append(steps, step) },
+	})
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+
+	if len(steps) != 2*len(report.Checks) {
+		t.Fatalf("%d steps for %d checks, want two each: %+v", len(steps), len(report.Checks), steps)
+	}
+	for i, checked := range report.Checks {
+		asking, answered := steps[2*i], steps[2*i+1]
+		if asking.Check.ID != checked.ID || answered.Check.ID != checked.ID {
+			t.Fatalf("step %d is about %q and %q, want %q", i, asking.Check.ID, answered.Check.ID, checked.ID)
+		}
+		if asking.Answered() {
+			t.Errorf("%s was reported as answered before it was asked: %+v", checked.ID, asking.Result)
+		}
+		if !answered.Answered() {
+			t.Errorf("%s answered %q and the step says it did not", checked.ID, checked.Result.State)
+		}
+		if answered.Result.State != checked.Result.State {
+			t.Errorf("%s answered %q to the screen and %q to the report",
+				checked.ID, answered.Result.State, checked.Result.State)
+		}
+		if asking.Asked != i || answered.Asked != i+1 {
+			t.Errorf("%s was asked %d/%d and answered %d/%d, want %d then %d",
+				checked.ID, asking.Asked, asking.Total, answered.Asked, answered.Total, i, i+1)
+		}
+		if asking.Total != len(report.Checks) || answered.Total != len(report.Checks) {
+			t.Errorf("%s says the run has %d checks, want %d", checked.ID, asking.Total, len(report.Checks))
+		}
+	}
+}
+
+// TestABlockedCheckIsStillReached states that a check nobody asked is still
+// a step. It appears in the report, so a screen that drew only the checks it was
+// told about would be missing rows the report has — and the reason a check was
+// not asked is one of the more useful things on the screen.
+func TestABlockedCheckIsStillReached(t *testing.T) {
+	registry, err := engine.NewRegistry(
+		answering("local.git", engine.CategoryLocal, engine.Fail("this is not a repository")),
+		answering("local.hooks", engine.CategoryLocal, engine.Pass("the hooks are in"), "local.git"),
+	)
+	if err != nil {
+		t.Fatalf("build the registry: %v", err)
+	}
+
+	var answered []engine.DoctorStep
+	if _, err := engine.RunDoctor(t.Context(), engine.DoctorInput{
+		Registry: registry,
+		Env:      doctorEnv(t),
+		Progress: func(step engine.DoctorStep) {
+			if step.Answered() {
+				answered = append(answered, step)
+			}
+		},
+	}); err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+
+	if len(answered) != 2 {
+		t.Fatalf("%d checks answered, want 2: %+v", len(answered), answered)
+	}
+	if got := answered[1].Result.State; got != engine.StateBlocked {
+		t.Errorf("local.hooks answered %q to the screen, want blocked", got)
+	}
+}
+
+// TestNobodyWatchingIsNotAFailure states that the hook is optional. Every
+// command but a drawn one passes no progress at all, and a run that dialled a
+// nil function would be every run flow makes in CI.
+func TestNobodyWatchingIsNotAFailure(t *testing.T) {
+	report := doctorRun(t, doctorEnv(t), nil,
+		answering("config.syntax", engine.CategoryConfig, engine.Pass("it parses")))
+	if len(report.Checks) != 1 {
+		t.Fatalf("%d checks, want 1", len(report.Checks))
+	}
 }

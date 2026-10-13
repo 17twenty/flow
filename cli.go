@@ -154,15 +154,6 @@ type Context struct {
 	CI bool
 }
 
-// unimplemented reports that a command exists in the CLI contract but has no
-// implementation yet. It is the only stub flow permits, and only until the
-// owning plan item lands (plan item 0.1).
-func (a *Context) unimplemented(command string) error {
-	return core.Errorf(core.ErrUnsupported, "run %s", command).
-		WithWhy("this build of flow does not implement %s yet", command).
-		WithFix("upgrade flow, or follow the plan item for %s in .ralph/IMPLEMENTATION_PLAN.md", command)
-}
-
 // exit records the code this command's own result asks for (spec 02 §4).
 //
 // It is not an error. A plan that found work to do has answered the question
@@ -545,11 +536,7 @@ func (a *Context) confirm(question string) (bool, error) {
 // type of the screen, and a method cannot say so.
 func onScreen[M tea.Model](a *Context, what string, screen M) (M, error) {
 	var nobody M
-	final, err := tea.NewProgram(screen,
-		tea.WithContext(a.Ctx),
-		tea.WithInput(a.Stdin),
-		tea.WithOutput(a.Stdout),
-	).Run()
+	final, err := a.programFor(screen).Run()
 	if err != nil {
 		return nobody, fmt.Errorf("%s: %w", what, err)
 	}
@@ -558,6 +545,53 @@ func onScreen[M tea.Model](a *Context, what string, screen M) (M, error) {
 		return nobody, nil
 	}
 	return answered, nil
+}
+
+// screenOptions are extra options every screen's program is run with.
+//
+// It exists for the same reason [terminalCheck] does, and only for tests. A
+// test process has no terminal, so bubbletea has no width to draw inside and
+// cuts every line it renders to nothing: a test can see that a screen was
+// reached but not a word of what it said. A test that wants to read the
+// screen hands it a size here. The shipped binary adds nothing, and asks the
+// terminal.
+var screenOptions []tea.ProgramOption
+
+// programFor builds the bubbletea program a screen runs in, on this
+// invocation's streams and deadline.
+func (a *Context) programFor(screen tea.Model) *tea.Program {
+	options := []tea.ProgramOption{
+		tea.WithContext(a.Ctx),
+		tea.WithInput(a.Stdin),
+		tea.WithOutput(a.Stdout),
+	}
+	return tea.NewProgram(screen, append(options, screenOptions...)...)
+}
+
+// whileWorking draws a screen for as long as some work takes, handing the
+// work a way to say where it has got to (spec 12 §3).
+//
+// The screen goes on its own goroutine because the work stays on this one. A
+// bubbletea program is an event loop, so one of the two has to be elsewhere,
+// and it is the work that can fail and whose answer the command needs: a
+// command that read its report out of a closure would have to decide what a
+// screen that never started means.
+//
+// The error returned is the screen's, never the work's. A terminal that could
+// not be drawn on has not stopped the work, and the caller is the one that
+// knows whether that matters.
+func (a *Context) whileWorking(screen tea.Model, work func(say func(tea.Msg))) error {
+	program := a.programFor(screen)
+	drawn := make(chan error, 1)
+	go func() {
+		_, err := program.Run()
+		drawn <- err
+	}()
+	work(program.Send)
+	// The screen is told rather than killed, so that it can take itself off
+	// the terminal: what it drew is a few lines of this shell session, and
+	// the document the command is about to print goes underneath them.
+	return <-drawn
 }
 
 // chooser is how a placeholder with more than one possible answer gets one

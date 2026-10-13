@@ -1,0 +1,58 @@
+✓ config.syntax  .flow.yaml parses
+      whether config.syntax
+
+✗ config.secrets  a credential is written into .flow.yaml
+      whether config.secrets
+      fix: move it to the environment and rotate it
+      1. rotate the token at the provider
+      2. set GITHUB_TOKEN
+      3. delete the line
+
+· local.hook  hooks are off in this configuration
+      whether local.hook
+
+! auth.tracker  the project board: rate limited
+      whether auth.tracker
+
+? tracker.project  flow does not know which board this is
+      whether tracker.project
+      fix: choose a project
+      run: flow doctor --fix
+
+⏸ tracker.status_options  not asked: tracker.project did not hold
+      whether tracker.status_options
+
+⏳ tracker.wip  a work-in-progress limit needs a board admin
+      whether tracker.wip
+      - FLOW-12 flow: set the WIP limits (17twenty/flow)  https://example.test/FLOW-12
+      fix: waiting on the follow-up (@board-admin)
+
+≠ forge.protection  main no longer requires a linear history
+      whether forge.protection
+      fix: put it back
+      run: flow apply
+
+✎ forge.merge_settings  flow cannot read the merge settings with this token
+      whether forge.merge_settings
+      fix: say it is so
+      run: flow attest forge.merge_settings
+
+⚠ live.prs.linked 8/10  merged pull requests linking a ticket
+      whether live.prs.linked
+      - #101 fix: stop the retry storm  https://example.test/pr/101
+      - #104 chore: tidy the Makefile  https://example.test/pr/104
+
+✗ live.prs.gated 2/9  merged pull requests carrying a flow/policy status
+      whether live.prs.gated
+      - #110 merged with no status  https://example.test/pr/110
+      - #111 merged with no status  https://example.test/pr/111
+      - #112 merged with no status  https://example.test/pr/112
+      - #113 merged with no status  https://example.test/pr/113
+      - #114 merged with no status  https://example.test/pr/114
+      - #115 merged with no status  https://example.test/pr/115
+      - #116 merged with no status  https://example.test/pr/116
+      fix: the gate is not running on every pull request
+
+✓ followups.health  no follow-up has been open longer than a week
+      whether followups.health
+

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -29,33 +32,12 @@ type DoctorCmd struct {
 
 // Run implements the doctor command.
 func (c *DoctorCmd) Run(app *Context) error {
-	if err := c.notYet(app); err != nil {
-		return err
-	}
 	app.CI = app.CI || c.CI
-	s, err := app.inspect()
-	if err != nil {
-		return err
+	if c.Watch {
+		return c.watch(app)
 	}
-	setup, err := c.world(app, s)
+	s, report, err := c.once(app)
 	if err != nil {
-		return err
-	}
-	registry, err := engine.DoctorRegistry(setup)
-	if err != nil {
-		return err
-	}
-
-	report, err := engine.RunDoctor(app.Ctx, engine.DoctorInput{
-		Registry:    registry,
-		Env:         c.env(app, s, setup),
-		Only:        c.Check,
-		FlowVersion: version,
-	})
-	if err != nil {
-		return err
-	}
-	if err := c.settle(app, s, &report); err != nil {
 		return err
 	}
 	if err := c.publish(app, s, report); err != nil {
@@ -71,6 +53,148 @@ func (c *DoctorCmd) Run(app *Context) error {
 	return nil
 }
 
+// once is a whole run: the world as it stands, every check asked, and the
+// lifecycles a finding starts. It is what `flow doctor` does between reading
+// the flags and printing, and what the watch screen asks for again every
+// minute — which is why the working copy is read afresh each time rather than
+// once at the top. Somebody fixing a repository with the screen open is
+// editing `.flow.yaml`, and a session that answered out of the file as it was
+// when the window opened would never go green.
+func (c *DoctorCmd) once(app *Context) (*session, engine.Report, error) {
+	s, err := app.inspect()
+	if err != nil {
+		return nil, engine.Report{}, err
+	}
+	setup, err := c.world(app, s)
+	if err != nil {
+		return s, engine.Report{}, err
+	}
+	registry, err := engine.DoctorRegistry(setup)
+	if err != nil {
+		return s, engine.Report{}, err
+	}
+	report, err := c.ask(app, s, engine.DoctorInput{
+		Registry:    registry,
+		Env:         c.env(app, s, setup),
+		Only:        c.Check,
+		FlowVersion: version,
+	})
+	if err != nil {
+		return s, report, err
+	}
+	if err := c.settle(app, s, &report); err != nil {
+		return s, report, err
+	}
+	return s, report, nil
+}
+
+// ask runs the checks, drawing a progress display for a terminal that can
+// take one (spec 12 §3).
+//
+// A doctor run reads a fortnight of pull requests, a board, a branch's
+// protection and a deployment history before it prints a word, because the
+// report is one document and half a document is not one. The display is what
+// fills that silence; it is inline rather than full-screen, so the report
+// lands in the scrollback underneath it where the rest of the session is.
+//
+// A run inside the watch screen draws none of this. That screen already has
+// the terminal and says where the run has got to itself.
+func (c *DoctorCmd) ask(app *Context, s *session, in engine.DoctorInput) (engine.Report, error) {
+	if c.Watch || !app.tui() {
+		return engine.RunDoctor(app.Ctx, in)
+	}
+	var report engine.Report
+	var err error
+	drawn := app.whileWorking(app.renderer(s.Settings).Progress(), func(say func(tea.Msg)) {
+		in.Progress = func(step engine.DoctorStep) { say(step) }
+		report, err = engine.RunDoctor(app.Ctx, in)
+	})
+	if drawn != nil {
+		// The run is what the command came for and it has already finished.
+		// A terminal that could not be drawn on is not a finding about the
+		// workflow, and the report is about to be printed to it anyway.
+		app.Log.Warn("doctor could not draw the run", "error", drawn)
+	}
+	return report, err
+}
+
+// watch draws the checks and keeps asking them (spec 12 §3). It is the half
+// hour somebody spends putting a repository right, where the answer changes
+// under them and they want to see it change.
+func (c *DoctorCmd) watch(app *Context) error {
+	s, err := app.inspect()
+	if err != nil {
+		return err
+	}
+	if err := c.watchable(app); err != nil {
+		return err
+	}
+	screen := app.renderer(s.Settings).Watch(&watchRunner{app: app, cmd: c})
+	final, err := onScreen(app, "watch the checks", screen)
+	if err != nil {
+		return err
+	}
+	report := final.Report()
+	if !report.GeneratedAt.IsZero() {
+		app.exit(report.Exit())
+		return nil
+	}
+	// Nothing ever answered, so there is no verdict to exit on. Whatever
+	// stopped the first run is the reason, and exiting 0 on it would report a
+	// healthy repository that nobody managed to look at. A window closed
+	// before the first run came back is nobody's failure.
+	return final.Failing()
+}
+
+// watchable refuses the combinations that would accept --watch and then not
+// honour it. A flag taken and ignored is worse than one that is missing,
+// because the run then looks like it did what was asked.
+func (c *DoctorCmd) watchable(app *Context) error {
+	if c.Report != "" {
+		return core.Errorf(core.ErrValidation, "watch the checks and write a report").
+			WithWhy("a watch session has no last run to write down: it keeps asking until you close it").
+			WithFix("run flow doctor --report %s on its own, or drop --report", c.Report)
+	}
+	if !app.tui() {
+		return core.Errorf(core.ErrValidation, "watch the checks").
+			WithWhy("there is no terminal to draw on").
+			WithFix("run flow doctor on its own for a report that can be read anywhere")
+	}
+	return nil
+}
+
+// watchRunner is what the watch screen acts through: the same two commands a
+// person would have typed, run again from inside the screen.
+//
+// It delegates rather than repeating. What an attestation may be taken
+// against, how long it lasts and whose word it is are the attest command's
+// rules (spec 07 §8), and a screen with its own copy of them would be a
+// second place for them to be wrong.
+type watchRunner struct {
+	app *Context
+	cmd *DoctorCmd
+}
+
+// Doctor implements [ui.Runner].
+func (w *watchRunner) Doctor(fix bool) (engine.Report, error) {
+	run := *w.cmd
+	run.Fix = fix
+	_, report, err := run.once(w.app)
+	return report, err
+}
+
+// Attest implements [ui.Runner].
+//
+// The command prints what it recorded, and the screen is holding the
+// terminal, so this one is run silently: anything written to stdout would
+// land on top of the display. What it wrote is in the lock, and the run that
+// follows is what says it took.
+func (w *watchRunner) Attest(check, note string) error {
+	quiet := *w.app
+	quiet.Stdout = io.Discard
+	return (&AttestCmd{CheckID: check, Note: note}).Run(&quiet)
+}
+
 // annotate offers the findings to the CI job flow is running inside, after
 // the report rather than instead of it: the log is the whole of what was
 // found, and the annotations are the few lines of it somebody is going to see
@@ -84,17 +208,6 @@ func (c *DoctorCmd) annotate(app *Context, s *session, report engine.Report) err
 		return nil
 	}
 	return ui.Fprint(app.Stderr, app.renderer(s.Settings).Annotations(report))
-}
-
-// notYet refuses a flag whose plan item has not landed rather than parsing
-// it and doing nothing. `--watch` is item 6.3; a flag that is accepted and
-// ignored is worse than one that is missing, because the run then looks like
-// it did what was asked.
-func (c *DoctorCmd) notYet(app *Context) error {
-	if c.Watch {
-		return app.unimplemented("doctor --watch")
-	}
-	return nil
 }
 
 // publish puts the report where it will be read again: the file --report
