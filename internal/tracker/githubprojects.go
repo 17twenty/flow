@@ -965,7 +965,8 @@ func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID)
 		return core.Errorf(core.ErrNotFound, "move %s to %s", key, to).
 			WithWhy("%s has no %s field, so it has no columns", g.Slug(), ghStatusFieldName)
 	}
-	if !project.Status.has(string(to)) {
+	target, found := project.Status.column(to)
+	if !found {
 		return core.Errorf(core.ErrValidation, "move %s to %s", key, to).
 			WithWhy("%s has no such column", g.Slug()).
 			WithFix("the columns of %s are: %s", g.Slug(), strings.Join(project.Status.names(), ", "))
@@ -979,10 +980,10 @@ func (g *GitHubProjects) Move(ctx context.Context, key string, to core.ColumnID)
 			WithWhy("%s is not on %s", key, g.Slug()).
 			WithFix("add the issue to the project, which flow will not do on a transition's behalf")
 	}
-	if item.optionID() == string(to) {
+	if item.optionID() == target.ID {
 		return nil
 	}
-	if err := g.setColumn(ctx, project, item.ID, string(to)); err != nil {
+	if err := g.setColumn(ctx, project, item.ID, target.ID); err != nil {
 		return core.Explain(err, "move %s to %s", key, to)
 	}
 	return nil

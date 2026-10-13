@@ -275,17 +275,42 @@ func (t *FakeTracker) Move(ctx context.Context, key string, to core.ColumnID) er
 	if at < 0 {
 		return notFound("ticket", key)
 	}
+	to, name, found := t.column(to)
+	if !found {
+		return core.Errorf(core.ErrValidation, "move %s to %s", key, to).
+			WithWhy("this board has no such column")
+	}
 	if t.tickets[at].ColumnID == to {
 		return nil
-	}
-	name := t.columns[to]
-	if name == "" {
-		name = string(to)
 	}
 	t.tickets[at].ColumnID = to
 	t.tickets[at].Status = core.Status{ID: string(to), Name: name}
 	t.tickets[at].UpdatedAt = t.clock.Now()
 	return nil
+}
+
+// column resolves what a caller named into the board's own column id and its
+// display name. A target is either, because that is what [core.Tracker.Move]
+// promises: the engine knows the name the configuration gave a column, and
+// only the tracker knows its id.
+//
+// A fixture that lists no columns describes no board, and a fake cannot
+// refuse a column it was never told about: it takes the caller's word and
+// uses it for both. Any fixture that does list them refuses the rest, which
+// is what makes a transition naming a column nobody has a test failure.
+func (t *FakeTracker) column(to core.ColumnID) (core.ColumnID, string, bool) {
+	if len(t.columns) == 0 {
+		return to, string(to), true
+	}
+	if name, found := t.columns[to]; found {
+		return to, name, true
+	}
+	for id, name := range t.columns {
+		if strings.EqualFold(name, string(to)) {
+			return id, name, true
+		}
+	}
+	return to, "", false
 }
 
 // CreateFollowUp files a ticket, or returns the one the marker already names.

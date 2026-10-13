@@ -355,3 +355,26 @@ reopen, pagination, error mapping.
   both when the marker is absent, and still sends nothing when both already
   say this — so the "no work" rule now compares the title too, and the
   contract suite asserts that a change to the title alone takes effect.
+- **§2 `Move` takes the column's display name as readily as the tracker's own
+  id (Stage B, found live).** `core.ColumnID` is documented as the tracker's
+  identifier — a Projects status option id, a Linear state id — and the
+  GitHub Projects adapter matched on exactly that. But the engine has no such
+  id to give it: `workflow.columns` is written by hand (spec 04 §2), the lock
+  records no mapping from a configured column to an option, and a column flow
+  never created has no id anywhere in flow's world. So every configured
+  transition named its target by display name and every one of them was
+  refused, with `has no such column` and a list containing that very column.
+  The adapter now resolves a target as an option id first and a display name
+  second, folding case on the name because `engine.ColumnOf` reads a column
+  back by a folded name and a move flow could not read back would not be
+  idempotent. The ticket still comes back carrying the tracker's id.
+- **§2 a column the board does not have is `ErrValidation`, and the contract
+  says so (Stage B, found live).** The refusal existed in the real adapter
+  and not in the reference fake, which invented a column out of whatever it
+  was handed and recorded the ticket in it. That is why the contract suite
+  was green while the only caller in the product was broken: the suite moved
+  by id, because the fixture's constants are ids, and the fake accepted a
+  name without noticing it had never heard of it. `FakeTracker` now refuses a
+  column its fixture does not list — and only then, since a fixture that
+  lists none describes no board — and the contract moves by name as well as
+  by id.
