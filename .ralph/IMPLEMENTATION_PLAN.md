@@ -232,13 +232,13 @@ Human-only steps use ids `H.<n>` (never seeded).
 ## Phase 7 — More adapters and hardening
 
 - [ ] 7.1 Jira Cloud tracker — specs: 11 §3 — deps: 3.12 (#79)
-  - AC: contract suite; key fallback linkage; board configuration verify
+  - AC: contract suite; key fallback linkage; board configuration verify; archived issues (spec 11 §1: derived from the full JQL listing, never from a narrowed one)
 - [ ] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
-  - AC: contract suite; attachment-first linkage
+  - AC: contract suite; attachment-first linkage; archived issues (spec 11 §1: `includeArchived` off for the board, on for a key — Linear auto-archives closed work)
 - [ ] 7.3 Gitea/Forgejo forge — specs: 10 §3 — deps: 3.12 (#81)
-  - AC: contract suite; commit_status deploy source
+  - AC: contract suite; commit_status deploy source; `core.Repository.Archived` reported (spec 10 §2, #102)
 - [ ] 7.4 GitLab forge — specs: 10 §4 — deps: 3.12 (#82)
-  - AC: both gate strategies; closes_issues linkage; deployments read
+  - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102)
 - [ ] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
 - [ ] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)

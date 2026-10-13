@@ -290,3 +290,15 @@ duplicate-pipeline hazards). MR closing issues: `GET
   that looks like one, and the cost is unbounded by anything the caller chose.
   Anything that judges a merge therefore re-reads it by number, bounded by the
   window it already asked for.
+- **§2 an archived repository is the forge's version of the same fact (issue
+  #103).** Archiving a repository makes it read-only: GitHub refuses the
+  writes, GitLab answers 403, and Gitea/Forgejo built the feature for the same
+  purpose — confirm the field each one reports when its adapter is written.
+  `core.Repository.Archived` already exists and the GitHub adapter already
+  fills it from the repository payload's `archived`; **nothing reads it**, so
+  `flow apply` against an archived repository fails item by item instead of
+  saying the one thing that is true of all of them. That is issue #102, and
+  the refusal belongs in the engine rather than in each adapter, so §3 and §4
+  inherit it with the flag. Observing is deliberately unaffected: a read-only
+  repository is still worth auditing, and this is the forge-side shape of the
+  tracker rule in spec 11 §1.
