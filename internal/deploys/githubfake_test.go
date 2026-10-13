@@ -155,25 +155,13 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.agents[r.Header.Get("User-Agent")]++
 	f.mu.Unlock()
 
-	// A dated API and a media type are asked for on everything. The fake
-	// refuses a request that pins neither, so a call built without them
-	// fails every test it is in rather than only the one that looked.
-	if r.Header.Get("X-GitHub-Api-Version") != gitHubAPIVersion {
-		f.fail(w, http.StatusBadRequest, "no API version was pinned")
-		return
-	}
-	if accept := r.Header.Get("Accept"); accept != gitHubAccept {
-		f.fail(w, http.StatusNotAcceptable, "unexpected Accept "+accept)
-		return
-	}
-	if r.Method != http.MethodGet {
-		f.fail(w, http.StatusMethodNotAllowed, "a deployment source only reads")
+	if !readsLikeFlow(w, r) {
 		return
 	}
 	prefix := "/repos/" + fakeOwner + "/" + fakeRepo + "/deployments"
 	path, under := strings.CutPrefix(r.URL.EscapedPath(), prefix)
 	if !under {
-		f.fail(w, http.StatusNotFound, "Not Found")
+		failJSON(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	switch {
@@ -182,7 +170,7 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/statuses"):
 		f.listStatuses(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/"), "/statuses"))
 	default:
-		f.fail(w, http.StatusNotFound, "Not Found")
+		failJSON(w, http.StatusNotFound, "Not Found")
 	}
 }
 
@@ -203,14 +191,14 @@ func (f *gitHubFake) listDeployments(w http.ResponseWriter, r *http.Request) {
 		items = append(items, record)
 	}
 	f.mu.Unlock()
-	f.writePage(w, r, items)
+	writePage(w, r, items, f.pageSize)
 }
 
 // listStatuses serves one record's status history.
 func (f *gitHubFake) listStatuses(w http.ResponseWriter, r *http.Request, raw string) {
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		f.fail(w, http.StatusNotFound, "Not Found")
+		failJSON(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	f.mu.Lock()
@@ -220,20 +208,38 @@ func (f *gitHubFake) listStatuses(w http.ResponseWriter, r *http.Request, raw st
 	for _, status := range statuses {
 		items = append(items, status)
 	}
-	f.writePage(w, r, items)
+	writePage(w, r, items, f.pageSize)
+}
+
+// readsLikeFlow checks what every call is required to carry. A dated API and
+// a media type are asked for on everything, and a deployment source only
+// reads, so a request missing any of the three fails every test it is in
+// rather than only the one that looked.
+func readsLikeFlow(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case r.Header.Get("X-GitHub-Api-Version") != gitHubAPIVersion:
+		failJSON(w, http.StatusBadRequest, "no API version was pinned")
+	case r.Header.Get("Accept") != gitHubAccept:
+		failJSON(w, http.StatusNotAcceptable, "unexpected Accept "+r.Header.Get("Accept"))
+	case r.Method != http.MethodGet:
+		failJSON(w, http.StatusMethodNotAllowed, "a deployment source only reads")
+	default:
+		return true
+	}
+	return false
 }
 
 // writePage serves one page and the Link header that leads to the next, so
 // that the adapter has to follow it rather than count.
-func (f *gitHubFake) writePage(w http.ResponseWriter, r *http.Request, items []any) {
+func writePage(w http.ResponseWriter, r *http.Request, items []any, pageSize int) {
 	page := 1
 	if raw := r.URL.Query().Get("page"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			page = n
 		}
 	}
-	start := min((page-1)*f.pageSize, len(items))
-	end := min(start+f.pageSize, len(items))
+	start := min((page-1)*pageSize, len(items))
+	end := min(start+pageSize, len(items))
 	slice := items[start:end]
 	if slice == nil {
 		slice = []any{}
@@ -246,15 +252,15 @@ func (f *gitHubFake) writePage(w http.ResponseWriter, r *http.Request, items []a
 		next.Scheme, next.Host = "http", r.Host
 		w.Header().Set("Link", `<`+next.String()+`>; rel="next", <`+next.String()+`>; rel="last"`)
 	}
-	f.writeJSON(w, r, slice)
+	writeJSON(w, r, slice)
 }
 
 // writeJSON encodes a document and serves it with an ETag, so that a repeated
 // read is a conditional request.
-func (f *gitHubFake) writeJSON(w http.ResponseWriter, r *http.Request, doc any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, doc any) {
 	raw, err := json.Marshal(doc)
 	if err != nil {
-		f.fail(w, http.StatusInternalServerError, err.Error())
+		failJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	sum := sha256.Sum256(raw)
@@ -271,8 +277,8 @@ func (f *gitHubFake) writeJSON(w http.ResponseWriter, r *http.Request, doc any) 
 	_, _ = w.Write(raw)
 }
 
-// fail answers in GitHub's error shape.
-func (f *gitHubFake) fail(w http.ResponseWriter, status int, message string) {
+// failJSON answers in GitHub's error shape.
+func failJSON(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = fmt.Fprintf(w, `{"message":%q}`, message)

@@ -8,11 +8,9 @@ package deploys
 import (
 	"cmp"
 	"context"
-	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/17twenty/flow/internal/core"
 )
@@ -49,28 +47,22 @@ type GitHubOptions struct {
 
 // GitHub reads GitHub's own deployment records.
 type GitHub struct {
-	client *core.Client
-	owner  string
-	repo   string
-	caps   core.CapabilitySet
+	ghRepo
+	caps core.CapabilitySet
 }
 
 // NewGitHub returns a deployment source for one repository.
 func NewGitHub(o GitHubOptions) (*GitHub, error) {
-	switch {
-	case o.Client == nil:
-		return nil, core.Errorf(core.ErrValidation, "build the github deployment source").
-			WithWhy("no HTTP client was given")
-	case o.Owner == "" || o.Repo == "":
-		return nil, core.Errorf(core.ErrValidation, "build the github deployment source").
-			WithWhy("the repository was given as %q/%q", o.Owner, o.Repo).
-			WithFix("name the application repository as owner/name")
-	case o.Capabilities.Adapter == "":
+	repo := ghRepo{client: o.Client, owner: o.Owner, repo: o.Repo}
+	if err := repo.validate("github deployment source"); err != nil {
+		return nil, err
+	}
+	if o.Capabilities.Adapter == "" {
 		return nil, core.Errorf(core.ErrValidation, "build the github deployment source").
 			WithWhy("no capability declaration was given").
 			WithFix("load assets/capabilities/%s.yaml and pass the declaration", CapabilityAdapter)
 	}
-	return &GitHub{client: o.Client, owner: o.Owner, repo: o.Repo, caps: o.Capabilities}, nil
+	return &GitHub{ghRepo: repo, caps: o.Capabilities}, nil
 }
 
 // Kind is the source this is: the forge's own deployment records.
@@ -80,7 +72,7 @@ func (g *GitHub) Kind() string { return core.SourceForgeDeployments }
 func (g *GitHub) Capabilities() core.CapabilitySet { return g.caps }
 
 // Slug is the repository the records are read from, as owner/name.
-func (g *GitHub) Slug() string { return g.owner + "/" + g.repo }
+func (g *GitHub) Slug() string { return g.slug() }
 
 // Deployments returns the records matching q, newest first.
 //
@@ -169,31 +161,6 @@ func (g *GitHub) state(ctx context.Context, payload ghDeployment) (core.Deployme
 	// exactly what pending means (spec 13 §1).
 	record.State = core.DeployPending
 	return record, nil
-}
-
-// do sends one request with GitHub's media type and API version.
-func (g *GitHub) do(ctx context.Context, r core.Request) (*core.Response, error) {
-	return g.client.Do(ctx, g.decorate(r))
-}
-
-// decorate returns the request with GitHub's media type and API version on it.
-func (g *GitHub) decorate(r core.Request) core.Request {
-	header := http.Header{}
-	for name, values := range r.Header {
-		header[name] = slices.Clone(values)
-	}
-	header.Set("Accept", gitHubAccept)
-	header.Set("X-GitHub-Api-Version", gitHubAPIVersion)
-	r.Header = header
-	return r
-}
-
-// path builds a path under this repository. Every segment below it is a
-// literal or a decimal identifier, so only the repository's own name needs
-// escaping.
-func (g *GitHub) path(segments ...string) string {
-	parts := append([]string{"repos", url.PathEscape(g.owner), url.PathEscape(g.repo)}, segments...)
-	return strings.Join(parts, "/")
 }
 
 // GitHub is a deployment source.

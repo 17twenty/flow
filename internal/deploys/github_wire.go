@@ -80,3 +80,62 @@ type ghDeploymentStatus struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// The states GitHub puts on a commit status (spec 10 §2). There are four, and
+// none of them is "in progress": a commit status says a check is pending or
+// what it decided, so a deployment reported this way has no running state to
+// report.
+const (
+	ghStatusSuccess = "success"
+	ghStatusFailure = "failure"
+	ghStatusError   = "error"
+	ghStatusPending = "pending"
+)
+
+// statusState maps a GitHub commit status state onto core's, and reports
+// whether it is one flow knows. An unknown state is refused for the same
+// reason a deployment status's is: guessing would either hide a deployment or
+// invent one.
+func statusState(state string) (string, bool) {
+	switch state {
+	case ghStatusSuccess:
+		return core.DeploySuccess, true
+	case ghStatusFailure, ghStatusError:
+		return core.DeployFailure, true
+	case ghStatusPending:
+		return core.DeployPending, true
+	default:
+		return "", false
+	}
+}
+
+// ghRepository is GET /repos/{owner}/{repo}, read for one field: which branch
+// the trunk is. Configuration does not name it (spec 03 §1), and the
+// repository does.
+type ghRepository struct {
+	DefaultBranch string `json:"default_branch"`
+}
+
+// ghTrunkCommit is GET /repos/{owner}/{repo}/commits, which GitHub serves
+// newest first. The deployment sources need the name of each commit and its
+// date, and nothing else about it.
+type ghTrunkCommit struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Committer struct {
+			Date time.Time `json:"date"`
+		} `json:"committer"`
+	} `json:"commit"`
+}
+
+// ghCommitStatus is GET /repos/{owner}/{repo}/commits/{sha}/statuses, which
+// GitHub serves newest first.
+type ghCommitStatus struct {
+	ID          int64     `json:"id"`
+	Context     string    `json:"context"`
+	State       string    `json:"state"`
+	Description string    `json:"description"`
+	TargetURL   string    `json:"target_url"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
