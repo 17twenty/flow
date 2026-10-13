@@ -124,8 +124,12 @@ func (c *ApplyCmd) approve(app *Context, s *session, plan engine.Plan) (bool, er
 			WithWhy("nobody can answer: this run is not interactive").
 			WithFix("pass --auto-approve, or run flow plan first and read it")
 	}
+	question := fmt.Sprintf("apply %d changes?", changes)
+	if app.tui() {
+		return app.onScreen(app.renderer(s.Settings).Confirmation(plan, question))
+	}
 	if err := app.render(s, func(r ui.Renderer) (string, error) { return r.Plan(plan) }); err != nil {
 		return false, err
 	}
-	return app.confirm(fmt.Sprintf("apply %d changes?", changes))
+	return app.confirm(question)
 }

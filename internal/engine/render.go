@@ -134,10 +134,7 @@ func (p Plan) Summary() string {
 	if len(p.Items) == 1 {
 		parts[0] = "1 item"
 	}
-	for _, outcome := range []Outcome{
-		OutcomeNoop, OutcomeNative, OutcomeCompensated,
-		OutcomeFollowUp, OutcomeAttest, OutcomeUnsupported,
-	} {
+	for _, outcome := range Outcomes {
 		if count := p.Count(outcome); count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", count, outcome.Label()))
 		}

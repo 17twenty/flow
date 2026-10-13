@@ -7,6 +7,8 @@ require github.com/alecthomas/kong v1.16.1
 require go.yaml.in/yaml/v3 v3.0.5
 
 require (
+	charm.land/bubbles/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.0.7
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/BurntSushi/toml v1.6.0
 	golang.org/x/term v0.47.0

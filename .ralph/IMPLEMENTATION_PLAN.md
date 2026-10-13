@@ -227,8 +227,16 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: Update-driven model tests
 - [ ] 6.3 Doctor inline spinners and --watch — specs: 12 — deps: 5.7 (#76)
   - AC: golden renders; key bindings tested via Update
-- [ ] 6.4 Apply confirmation — specs: 12 — deps: 4.2 (#77)
+- [x] 6.4 Apply confirmation — specs: 12 — deps: 4.2 (#77)
   - AC: non-TTY without --auto-approve exits 64
+  - note: the outcome-grouped table is `ui.Confirmation`, a `tea.Model` whose
+    view is a pure function of the plan and the terminal's width. The decision
+    was already where it belongs — `approve` refuses non-interactively with
+    exit 64 and skips the question for a plan with nothing to do — so this
+    item chose the shape and nothing else: `Context.tui` picks the screen,
+    `Context.confirm` is what is left, and the same apply happens either way.
+    `engine.Outcomes` is new and the plan's summary line now counts in it, so
+    the groups and the summary cannot disagree about their order.
 
 ## Phase 7 — More adapters and hardening
 

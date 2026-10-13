@@ -33,6 +33,18 @@ const (
 	OutcomeUnsupported Outcome = "unsupported"
 )
 
+// Outcomes is every outcome, in the order a person is shown them: what is
+// already true, then what flow does itself, then what it compensates for,
+// then what it hands to somebody, and last what nobody can do here.
+//
+// The order is a property of the decision rather than of any one rendering
+// (spec 05 §5), so the summary line, the plan and the confirmation screen all
+// count in it and cannot disagree about what comes first.
+var Outcomes = []Outcome{
+	OutcomeNoop, OutcomeNative, OutcomeCompensated,
+	OutcomeFollowUp, OutcomeAttest, OutcomeUnsupported,
+}
+
 // String renders the outcome as the word that appears in JSON and logs.
 func (o Outcome) String() string { return string(o) }
 

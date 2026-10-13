@@ -1,0 +1,17 @@
++--------------------------------------------------------------------------------------------------------------------------+
+| . up to date (1)                                                                                                         |
+|   forge.pr_template                                           the template is already what the configuration asks for    |
+| + native (1)                                                                                                             |
+|   forge.branch_protection                                     main is unprotected and the credential may protect it      |
+| ~ compensated (1)                                                                                                        |
+|   tracker.columns          -> a saved view                    the board cannot name its own columns through the API      |
+| ! follow-up (1)                                                                                                          |
+|   tracker.automation       -> @platform                       the credential may not change this board's workflow        |
+| * attest (1)                                                                                                             |
+|   tracker.saved_view       -> flow attest tracker.saved_view  no API reports whether the view exists -- a human must say |
+| x unsupported (1)                                                                                                        |
+|   deploys.environments                                        this deployment source has no environments to configure    |
++--------------------------------------------------------------------------------------------------------------------------+
+
+apply 5 changes?
+y apply - n cancel
