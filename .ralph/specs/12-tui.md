@@ -72,3 +72,46 @@ Render functions are pure and golden-tested; models tested via `Update`.
   reports to a terminal and to a parser, and posts nothing anywhere that would
   want a table. Asking for `--format markdown` is `ErrValidation`, as it is
   for the gate.
+- **§4 the screen is the shape, never the decision (item 6.4).** Whether flow
+  may ask at all, what it is asking about and what the answer means were
+  already settled before any of this: `ApplyCmd.approve` refuses
+  non-interactively with exit 64 and counts the changes, and a plan with
+  nothing to do is approved without a question (spec 06 §3). The screen is
+  chosen after all of that, by one predicate, and the plain prompt is what is
+  left when it says no. So there is no apply a terminal can agree to that a
+  pipe cannot, which is what "every screen has a plain equivalent" has to mean
+  to be worth anything.
+- **§0 a TUI needs both ends of a terminal, and one function decides it
+  (item 6.4).** `Context.tui` is `Context.interactive` plus two things: stdin
+  must be a terminal too, because a screen reads keys, and `TERM=dumb` is a
+  terminal saying it cannot do this. `--json` is excluded there rather than at
+  each call site, since a document for a machine is the one case where asking
+  is still fine and drawing never is. Both go through `terminalCheck`, a
+  package variable holding `isTerminal`, for the same reason `newAdapters` is
+  one: a test process is never a terminal, and the half of every one of these
+  rules that matters is the half that only happens when it is.
+- **§4 the table is grouped, and the order of the groups is the engine's
+  (item 6.4).** An apply is agreed to as a few kinds of thing — this many flow
+  will do, these it is handing to somebody, this one nobody can do here — so
+  the rows are grouped by outcome with a count on each heading. The order is
+  `engine.Outcomes`, the same list the plan's own summary line counts in, so
+  the screen and the line under it cannot disagree about what comes first. The
+  words and the glyph are the engine's (spec 05 §5); the shape, the padding
+  and the colour are this package's.
+- **§4 the first answer is the answer (item 6.4).** Quitting is a command and
+  not an exit, so a key already in the terminal's buffer is still delivered
+  after the question has been settled. The model ignores it. A refusal that a
+  second keystroke could turn into an apply would be worse than no
+  confirmation at all, and this is the one screen where that is true.
+- **§4 an unanswered screen is a no (item 6.4).** The zero `Confirmation`
+  refuses, so an interrupt, a terminal closing and a model that came back as
+  something else all land on "nothing was applied" without anybody having to
+  enumerate them. What is not that is an error: a terminal that could not be
+  put into raw mode or a run whose deadline expired has not refused anything,
+  and reporting it as a refusal would describe the symptom and hide the cause.
+- **§4 the screen takes the width the program gives it (item 6.4).** A table
+  wider than the terminal is folded by the terminal wherever it runs out, which
+  turns a grouped table into a wall. `tea.WindowSizeMsg` is therefore the one
+  message besides a key press that the model keeps, and the table is rendered
+  to it. Until the program has said, the table is unconstrained: guessing
+  eighty columns would fold a plan that fits.

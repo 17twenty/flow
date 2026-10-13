@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/17twenty/flow/assets"
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -422,7 +423,7 @@ func (a *Context) render(s *session, document func(ui.Renderer) (string, error))
 // renderer builds the renderer for this invocation from the flags, the
 // environment and the user's own configuration (spec 02 §1, spec 12).
 func (a *Context) renderer(settings config.Settings) ui.Renderer {
-	return ui.New(a.options(settings, isTerminal(a.Stdout)))
+	return ui.New(a.options(settings, terminalCheck(a.Stdout)))
 }
 
 // options is the rendering this invocation asked for, given whether what it
@@ -452,17 +453,31 @@ func (a *Context) options(settings config.Settings, terminal bool) ui.Options {
 // the trunk another way (see [DoctorCmd.proposeLock]).
 func (a *Context) keepsWhatItLearns() bool { return !a.CI }
 
-// isTerminal reports whether w is a terminal, which is what decides colour
-// and whether a confirmation may be asked for.
-func isTerminal(w io.Writer) bool {
-	file, ok := w.(*os.File)
+// isTerminal reports whether a stream flow was handed is a terminal, which is
+// what decides colour and whether a question may be asked at all.
+//
+// It takes any, because the answer is the same question of a reader and of a
+// writer — is there a person on the other end of this file — and two
+// functions differing only in a parameter type would be two places to get it
+// wrong.
+func isTerminal(stream any) bool {
+	file, ok := stream.(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
 }
+
+// terminalCheck is how flow asks whether there is a person on the other end
+// of a stream. It is a variable for the same reason [newAdapters] is one: a
+// test is never a terminal, so a question asked of the real world can only
+// ever be answered no, and the half of every one of these rules that matters
+// is the half that happens when both ends really are terminals.
+//
+// The shipped binary only ever holds [isTerminal].
+var terminalCheck = isTerminal
 
 // interactive reports whether flow may ask a question: not with
 // --non-interactive, not in CI, and not when stdout is not a terminal
 // (spec 02 §1).
-func (a *Context) interactive() bool { return a.mayAsk(isTerminal(a.Stdout)) }
+func (a *Context) interactive() bool { return a.mayAsk(terminalCheck(a.Stdout)) }
 
 // mayAsk is that same decision with the terminal as a parameter, for the same
 // reason [Context.options] takes one: a test is never a terminal, so a rule
@@ -475,12 +490,30 @@ func (a *Context) mayAsk(terminal bool) bool {
 	return terminal
 }
 
+// tui reports whether flow may draw a screen rather than print a document
+// (spec 12): both ends have to be a terminal, --json is a document for a
+// machine, and a terminal calling itself dumb has said it cannot do this.
+//
+// It is strictly narrower than [Context.interactive]: everything flow draws
+// has a plain equivalent, so the question is only ever which of the two to
+// use and never whether the command can go on.
+func (a *Context) tui() bool {
+	if a.CLI.JSON || !a.interactive() {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	return terminalCheck(a.Stdin)
+}
+
 // confirm asks a yes/no question and reads the answer, defaulting to no: an
 // apply that proceeded because somebody pressed return is the one outcome a
 // confirmation exists to prevent.
 //
-// This is the plain prompt. Spec 12 §4's outcome-grouped screen is item 6.4,
-// and it replaces what is drawn here rather than what is decided here.
+// This is the plain prompt, the plain equivalent spec 12 requires of every
+// screen. [Context.onScreen] draws the same question for a terminal that can
+// take one; what either of them is asked is decided before both.
 func (a *Context) confirm(question string) (bool, error) {
 	if _, err := fmt.Fprintf(a.Stdout, "\n%s [y/N] ", question); err != nil {
 		return false, fmt.Errorf("ask for confirmation: %w", err)
@@ -495,6 +528,29 @@ func (a *Context) confirm(question string) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// onScreen puts a question to a person as the screen spec 12 §4 describes,
+// and reports what they answered.
+//
+// Ctrl-c is one of the screen's own keys, so a person stopping this is a
+// refusal and arrives here as one. What is left — a terminal that could not
+// be put into raw mode, an output that stopped taking bytes, the run's own
+// deadline — is the run failing, and answering "nothing was applied" would
+// report the symptom and hide the cause. A model that came back as something
+// else cannot be read at all, and the safe reading of an unreadable answer is
+// the one a confirmation defaults to.
+func (a *Context) onScreen(screen ui.Confirmation) (bool, error) {
+	final, err := tea.NewProgram(screen,
+		tea.WithContext(a.Ctx),
+		tea.WithInput(a.Stdin),
+		tea.WithOutput(a.Stdout),
+	).Run()
+	if err != nil {
+		return false, fmt.Errorf("ask for confirmation: %w", err)
+	}
+	answered, ok := final.(ui.Confirmation)
+	return ok && answered.Approved(), nil
 }
 
 // adapterBuilder builds the providers a command acts through. It is a
@@ -610,7 +666,7 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 // run to produce a secret flow has already decided it will not send
 // (spec 15 §1).
 func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, base string) (*core.Client, error) {
-	host, err := a.approveHost(s, credentials, provider, base, a.hostApprover(isTerminal(a.Stdout)))
+	host, err := a.approveHost(s, credentials, provider, base, a.hostApprover(terminalCheck(a.Stdout)))
 	if err != nil {
 		return nil, err
 	}
