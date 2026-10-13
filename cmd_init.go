@@ -12,6 +12,7 @@ import (
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/git"
+	"github.com/17twenty/flow/internal/ui"
 )
 
 // InitCmd writes .flow.yaml and the supporting files for a repository
@@ -72,9 +73,13 @@ func (c *InitCmd) Run(app *Context) error {
 		return err
 	}
 
-	source, err := c.configure(app, repo)
+	source, asked, err := c.ask(app, repo)
 	if err != nil {
 		return err
+	}
+	if !asked {
+		fmt.Fprintln(app.Stdout, "nothing was written")
+		return nil
 	}
 
 	written, err := c.write(app, repo.Dir(), source)
@@ -153,6 +158,113 @@ func (c *InitCmd) configure(app *Context, repo *git.Repo) ([]byte, error) {
 		}
 	}
 	return source, c.validate(source)
+}
+
+// ask puts the questions of spec 12 §1 to whoever is running init, and
+// returns the configuration they agreed to.
+//
+// The wizard fills in the flags and nothing else: what it collects goes back
+// onto the command and down the same road a command line takes, so the plain
+// equivalent spec 12 asks of every screen is not a second implementation that
+// has to be kept in step — it is the same one. The second result is whether
+// anything was agreed to at all.
+//
+// --yes is what a person says when they do not want to be asked, and a run
+// with nobody watching cannot be asked, so both go straight to the defaults.
+func (c *InitCmd) ask(app *Context, repo *git.Repo) ([]byte, bool, error) {
+	if c.Yes || !app.tui() {
+		source, err := c.configure(app, repo)
+		return source, err == nil, err
+	}
+
+	var s session
+	if err := app.settings(&s, repo); err != nil {
+		return nil, false, err
+	}
+	screen := app.renderer(s.Settings).Wizard(c.detected(app, repo), func(a ui.Answers) ([]byte, error) {
+		asked := *c
+		asked.fill(a)
+		return asked.configure(app, repo)
+	})
+	answered, err := onScreen(app, "ask how to configure this repository", screen)
+	switch {
+	case err != nil:
+		return nil, false, err
+	case !answered.Confirmed():
+		return nil, false, nil
+	}
+
+	c.fill(answered.Answers())
+	source, err := c.configure(app, repo)
+	return source, err == nil, err
+}
+
+// detected is where the wizard starts and what its command line is
+// shortened against: the flags somebody already passed, the forge the remote
+// names, and the preset's own answer to anything still blank.
+//
+// It is the file flow would have written had nobody been asked, which is what
+// makes every question open on that answer and makes the review's `flow init`
+// hold only the flags that changed something.
+//
+// A forge flow cannot work out is a question here rather than the refusal it
+// is on the command line (A02): the whole point of the screen is that there
+// is somebody to ask.
+func (c *InitCmd) detected(app *Context, repo *git.Repo) ui.Answers {
+	answers := ui.Answers{
+		Preset:     c.Preset,
+		Forge:      c.Forge,
+		Tracker:    c.Tracker,
+		TrackerURL: c.TrackerURL,
+		Owner:      c.Owner,
+		Project:    c.Project,
+	}
+	if kind, _, _, err := c.detect(app, repo); err == nil {
+		answers.Forge = kind
+	}
+	return c.presetBlanks(answers)
+}
+
+// presetBlanks fills in the answers the preset already gives, so that a
+// question opens on what flow would have written rather than on the first of
+// its options. A preset flow cannot read leaves them blank, which is the same
+// thing a flag nobody passed means.
+func (c *InitCmd) presetBlanks(answers ui.Answers) ui.Answers {
+	presets, err := assets.Presets()
+	if err != nil {
+		return answers
+	}
+	source, err := config.PresetSource(presets, answers.Preset)
+	if err != nil {
+		return answers
+	}
+	cfg, err := config.Parse(source, configFile)
+	if err != nil {
+		return answers
+	}
+	for _, blank := range []struct {
+		into *string
+		from string
+	}{
+		{&answers.Forge, string(cfg.Forge.Type)},
+		{&answers.Tracker, string(cfg.Tracker.Type)},
+	} {
+		if *blank.into == "" {
+			*blank.into = blank.from
+		}
+	}
+	return answers
+}
+
+// fill puts a wizard's answers back on the command, which is what makes them
+// the same answers a command line gives.
+func (c *InitCmd) fill(a ui.Answers) {
+	c.Preset = a.Preset
+	c.Forge = a.Forge
+	c.Tracker = a.Tracker
+	c.TrackerURL = a.TrackerURL
+	c.Owner = a.Owner
+	c.Project = a.Project
 }
 
 // setting is one value init fills into the preset.

@@ -221,8 +221,32 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 6 — TUI
 
-- [ ] 6.1 Init wizard — specs: 12 — deps: 4.1 (#74)
+- [x] 6.1 Init wizard — specs: 12 — deps: 4.1 (#74)
   - AC: plain equivalent produces identical config
+  - note: the acceptance criterion is a sentence about two code paths being
+    one, so the wizard was built as the thing that makes it true by
+    construction: every question it asks is a flag of spec 02 §2, and what it
+    collects goes back onto the command and down the road a command line
+    takes. Spec 12 §1 ends with two questions that looked like two more flags,
+    `--done-on` and `--deploy-source`. They were written, and then a test that
+    set each of them on its own showed they could not be used at all:
+    `workflow.done_on` has to agree with `workflow.transitions.deployed` and
+    `deploys.source` with the rest of its block, while `init` splices scalars
+    into a preset rather than restructuring one, so every value either
+    repeated the preset's own answer or produced a file flow refused to read.
+    Both were dropped and both questions are asked at `--preset`, which is
+    where their answer actually lives; the step says so in a line of its own,
+    because a question folded into another has to be visibly answered there.
+    The screen starts from the file flow would have written unasked — the
+    detected forge, the preset, that preset's tracker — and the same value is
+    the baseline the review's `flow init` is shortened against, so the two
+    cannot drift. `Discover` is deliberately not here: spec 02 §2's offline
+    MUST beats §1's parenthesis, the board stays `${pending:project}`, and the
+    picker over candidates is the one `flow doctor --fix` already draws in the
+    command that has the credential. The screen itself cannot be read back
+    from a test, because a bubbletea program takes its frames off the terminal
+    as it leaves, so the acceptance test writes two repositories — one
+    answered, one typed — and compares the bytes.
 - [x] 6.2 Picker for placeholders — specs: 12 — deps: 4.5 (#75)
   - AC: Update-driven model tests
   - note: the decision was already in the engine — `Placeholders` walks the

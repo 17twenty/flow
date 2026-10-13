@@ -216,3 +216,60 @@ Render functions are pure and golden-tested; models tested via `Update`.
   a usage error for the same kind of reason: it is a request to keep asking,
   and a report printed once is not that. Neither quietly becomes the other
   command.
+
+- **§1 the wizard fills in the flags and configures nothing (item 6.1).**
+  Every question it asks is a flag of spec 02 §2, and what it collects goes
+  back onto the command and down the road a command line takes. That is what
+  makes the plain equivalent plain: it is not a second implementation that has
+  to be kept in step with this one, it is the same one. A person who answers
+  eight questions is shown, on the last screen, the `flow init` that does it
+  again without them — and only the flags that differ from what flow would
+  have done unasked, because every flag in a command line is one more thing a
+  reader has to decide whether somebody meant.
+- **§1 the wizard does not discover, because `init` works offline
+  (item 6.1).** §1 offers a picker over `Discover` "when credentials exist",
+  and spec 02 §2 says in the same breath that `init` MUST succeed offline and
+  that it is the command run before there is a configuration naming a tracker
+  to hold a credential for. The MUST wins. The board is left as
+  `${pending:project}`, which is what `flow doctor --fix` resolves — through
+  the picker of §2, over that adapter's `Discover`, in the command that has
+  the credential (spec 07 §3). So the picker spec 12 asks for is reached, and
+  reached once: the placeholder ladder is not reimplemented here.
+- **§1 `done_on` and the deploy source are asked at the preset, because that
+  is where their answer is (item 6.1).** §1 ends the wizard with two more
+  questions, and in flow's configuration neither is a value a repository can
+  hold on its own: `workflow.done_on` must agree with
+  `workflow.transitions.deployed` and `deploys.source` with the rest of its
+  block, so the only answer either can be given is the one its preset already
+  gives (spec 02 §2). Asking them as steps of their own would have been two
+  screens on which every other answer produced a file flow refuses to read.
+  They are therefore asked at `--preset`, where each option says what it means
+  for both, and the step carries a line saying so — a question that is folded
+  into another has to be visibly answered there, or the wizard has quietly
+  dropped it.
+- **§1 the screen starts from the file flow would have written (item 6.1).**
+  The answers open filled in — the detected forge, the preset and that
+  preset's own tracker — rather than blank, and the same value is the
+  baseline the review's command line is shortened against. The two cannot
+  drift apart because they are one value, which is what makes "press enter all
+  the way through" and `flow init --yes` the same file and `flow init` the
+  command the review offers for it.
+- **§1 a question this configuration does not have is not asked (item 6.1).**
+  An owner is a GitHub Projects idea and an address is a Jira one, so each is
+  a step that applies or does not, and the count in the heading is of the
+  questions there are rather than of the steps there might have been. A wizard
+  that asked everybody everything would be a form.
+- **§1 escape goes back, and backing out of the first question is cancelling
+  (item 6.1).** Going back has to cost nothing — an answer somebody returns to
+  check is still there, or the screen is a reason not to look — and there has
+  to be a way out that is not an interrupt. `q` quits a list and is a letter
+  in a field, because a board called "quarterly" has to be typeable; ctrl-c is
+  both, because ctrl-c is always both. A screen nobody confirmed writes
+  nothing, which is what an interrupt, a terminal closing and a model that
+  came back as something else all arrive here as.
+- **§1 the review shows the file, cut rather than scrolled (item 6.1).** The
+  point of the last screen is that somebody recognises what their answers
+  became, and the file itself is about to be in their working tree where they
+  can read all of it. A preview that failed is on the screen in place of the
+  file: a configuration flow would refuse to read is a thing to know before it
+  is written, not after.
