@@ -3,6 +3,8 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -459,6 +461,165 @@ func TestApplyNeedsALockAndAClock(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestApplyRefusesARepositoryThatTakesNoWrites: an archived repository is
+// read-only on every forge that has the feature, so each forge item in the
+// plan would be refused by its own endpoint, one at a time, in whatever words
+// that endpoint uses. The whole truth is one sentence and flow says it before
+// the first item (issue #102).
+//
+// The tracker items go with it, and that is the part worth asserting: a board
+// is configured for work in a repository, and nobody is working in a
+// repository nobody can write to.
+func TestApplyRefusesARepositoryThatTakesNoWrites(t *testing.T) {
+	w := githubProjectsWorld(t)
+	fx := forgeFixture(t)
+	fx.Repo.Archived = true
+	w.forge = coretest.NewFakeForge(fx)
+	plan := planFor(t, w)
+
+	records := &saver{}
+	_, err := engine.Apply(context.Background(), engine.ApplyInput{
+		Plan:     plan,
+		Desired:  desired(t, preset(t, config.PresetLeanKanban)),
+		Adapters: w.adapters(),
+		Lock:     w.lock,
+		Clock:    coretest.NewClock(coretest.ContractNow),
+		Save:     records.save,
+	})
+	if err == nil {
+		t.Fatal("apply against an archived repository was carried out, so every write in it is waiting to be refused one at a time")
+	}
+	if !errors.Is(err, core.ErrConflict) {
+		t.Errorf("the refusal is %v, want a conflict: the world and the plan disagree about whether this repository takes writes", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) {
+		t.Fatalf("the refusal is %v, and a person has to be told which repository and why", err)
+	}
+	if !strings.Contains(user.Why, "archived") {
+		t.Errorf("why is %q, and it does not say the repository is archived", user.Why)
+	}
+	if !strings.Contains(user.Error(), "acme/widget") {
+		t.Errorf("the refusal is %q, and it does not name the repository", user.Error())
+	}
+	if user.Fix == "" {
+		t.Error("the refusal offers no way out, and unarchiving is one")
+	}
+
+	if len(records.writes) != 0 {
+		t.Errorf("the lock was written %d times by a run that did nothing", len(records.writes))
+	}
+	after := planFor(t, w)
+	if before, now := actionsOf(plan), actionsOf(after); !maps.Equal(before, now) {
+		t.Errorf("the plan after the refused apply is %v, want %v: nothing should have been carried out", now, before)
+	}
+}
+
+// TestAnArchivedRepositoryIsStillWorthObserving: archiving refuses the writes
+// and changes nothing about the reading. A repository nobody may write to is
+// still a repository whose rules a person wants reported, and the flag is not
+// in the canonical encoding, so it can never read as drift either.
+func TestAnArchivedRepositoryIsStillWorthObserving(t *testing.T) {
+	open := githubProjectsWorld(t)
+	open.forge = coretest.NewFakeForge(forgeFixture(t))
+
+	shut := githubProjectsWorld(t)
+	fx := forgeFixture(t)
+	fx.Repo.Archived = true
+	shut.forge = coretest.NewFakeForge(fx)
+
+	live, archived := planFor(t, open), planFor(t, shut)
+	if live.DesiredHash != archived.DesiredHash {
+		t.Errorf("archiving moved the desired hash from %s to %s, so it would read as drift", live.DesiredHash, archived.DesiredHash)
+	}
+	if want, got := actionsOf(live), actionsOf(archived); !maps.Equal(want, got) {
+		t.Errorf("the plan for an archived repository is %v, want the same %v it is for a live one", got, want)
+	}
+}
+
+// TestApplyAgainstAForgeItCannotReadFailsItemByItem: a repository flow could
+// not read is not a repository that refused. A rate limit on the way in must
+// not look like archiving — the one is over in a minute and the other is a
+// decision somebody made — so the read error is carried to the items that
+// need the answer, and the tracker half of the plan, which never needed it,
+// is carried out.
+func TestApplyAgainstAForgeItCannotReadFailsItemByItem(t *testing.T) {
+	w := githubProjectsWorld(t)
+	plan := planFor(t, w)
+	forge := &countingForge{
+		FakeForge: coretest.NewFakeForge(forgeFixture(t)),
+		err:       fmt.Errorf("%w: 60 calls an hour", core.ErrRateLimited),
+	}
+	adapters := w.adapters()
+	adapters.Forge = forge
+
+	applied, _ := applyTo(t, w, engine.ApplyInput{Plan: plan, Adapters: adapters})
+	protection := item(t, applied, core.ItemForgeProtection)
+	if protection.Err == nil {
+		t.Fatalf("%s is %s with no error, and it cannot have been written without the trunk's name", protection.ID, protection.Outcome)
+	}
+	if !strings.Contains(protection.Err.Error(), "60 calls an hour") {
+		t.Errorf("%s failed with %q, which does not say the forge could not be read", protection.ID, protection.Err)
+	}
+	if labels := item(t, applied, core.ItemTrackerLabels); !labels.Done() {
+		t.Errorf("%s was not carried out (%v, skipped %q): a forge flow could not read is no reason to leave the board alone",
+			labels.ID, labels.Err, labels.Skipped)
+	}
+	if forge.calls != 1 {
+		t.Errorf("the repository was read %d times, want once: a forge that is rate-limiting is the last one to ask the same question again", forge.calls)
+	}
+}
+
+// TestApplyReadsTheRepositoryOnce: may flow write here, and what is the trunk
+// called, are the same question of the same endpoint. Asking it twice spends
+// two calls to learn one thing, and leaves an apply that could be told yes
+// and then no about the repository it is half way through.
+func TestApplyReadsTheRepositoryOnce(t *testing.T) {
+	w := githubProjectsWorld(t)
+	plan := planFor(t, w)
+	forge := &countingForge{FakeForge: coretest.NewFakeForge(forgeFixture(t))}
+	adapters := w.adapters()
+	adapters.Forge = forge
+
+	applied, _ := applyTo(t, w, engine.ApplyInput{Plan: plan, Adapters: adapters})
+	for _, id := range []string{core.ItemForgeProtection, core.ItemForgeRequiredStatus} {
+		if got := item(t, applied, id); !got.Done() {
+			t.Fatalf("%s was not carried out (%v, skipped %q), so the trunk was never wanted", id, got.Err, got.Skipped)
+		}
+	}
+	if forge.calls != 1 {
+		t.Errorf("the repository was read %d times, want once", forge.calls)
+	}
+}
+
+// actionsOf is what a plan proposes for each item, which is the part of it a
+// test comparing two worlds cares about: the timestamps and the version
+// differ between runs and mean nothing here.
+func actionsOf(plan engine.Plan) map[string]string {
+	actions := make(map[string]string, len(plan.Items))
+	for _, planned := range plan.Items {
+		actions[planned.ID] = fmt.Sprintf("%s/%d", planned.Outcome, len(planned.Changes))
+	}
+	return actions
+}
+
+// countingForge records how often the repository was read, and can be told
+// to refuse the reading: a credential that expired overnight, or a forge that
+// is rate-limiting the run.
+type countingForge struct {
+	*coretest.FakeForge
+	err   error
+	calls int
+}
+
+func (f *countingForge) Repo(ctx context.Context) (core.RepoInfo, error) {
+	f.calls++
+	if f.err != nil {
+		return core.RepoInfo{}, f.err
+	}
+	return f.FakeForge.Repo(ctx)
 }
 
 // refused is the reasons an item's changes were declined.

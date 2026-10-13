@@ -178,6 +178,9 @@ func Apply(ctx context.Context, in ApplyInput) (Applied, error) {
 	}
 
 	runner := &applier{in: in}
+	if err := runner.writable(ctx); err != nil {
+		return Applied{}, err
+	}
 	applied := Applied{
 		FlowVersion: in.Plan.FlowVersion,
 		AppliedAt:   in.Clock.Now().UTC().Truncate(time.Second),
@@ -192,12 +195,65 @@ func Apply(ctx context.Context, in ApplyInput) (Applied, error) {
 }
 
 // applier carries the state one pass accumulates: which items failed, so that
-// their dependants are not attempted, and the trunk's name, which every forge
-// setting is about.
+// their dependants are not attempted, and the repository, which every forge
+// setting is about and whose trunk they all name.
 type applier struct {
-	in     ApplyInput
-	failed map[string]string
-	branch string
+	in      ApplyInput
+	failed  map[string]string
+	repo    *core.RepoInfo
+	repoErr error
+}
+
+// writable refuses a run against a repository that takes no writes.
+//
+// An archived repository is read-only on every forge that has the feature, so
+// without this each forge item fails with whatever its endpoint said, one at
+// a time, when the whole truth is one sentence. Refusing before the first
+// item is what makes it one sentence, and it is here rather than in each
+// adapter so that Gitea and GitLab inherit it with the flag (spec 10 §2).
+//
+// The tracker items go with it. A board is configured for work in a
+// repository, and nobody is working in a repository nobody can write to; an
+// apply that reconciled half the world would also leave a lock saying it had.
+//
+// A repository flow could not read is not a repository that refused. The read
+// error is kept rather than raised, so a forge that was rate-limited fails
+// the items that need it, one by one with the reason, and a plan with nothing
+// of the forge in it is not stopped by a question it never had to ask.
+func (a *applier) writable(ctx context.Context) error {
+	repo, err := a.repoInfo(ctx)
+	if err != nil || !repo.Archived {
+		return nil
+	}
+	return core.Errorf(core.ErrConflict, "apply the plan to %s", repo.Slug()).
+		WithWhy("the repository is archived, and an archived repository takes no writes").
+		WithFix("unarchive %s, or point flow at the repository the work moved to", repo.Slug())
+}
+
+// repoInfo reads the repository once, failure included.
+//
+// Apply asks whether it may write at all before it asks what the trunk is
+// called, and those are the same question of the same endpoint: asking twice
+// would spend two calls to learn one thing, and could be answered differently
+// each time.
+func (a *applier) repoInfo(ctx context.Context) (core.RepoInfo, error) {
+	if a.repo != nil || a.repoErr != nil {
+		if a.repoErr != nil {
+			return core.RepoInfo{}, a.repoErr
+		}
+		return *a.repo, nil
+	}
+	if a.in.Adapters.Forge == nil {
+		a.repoErr = fmt.Errorf("%w: no forge", core.ErrUnsupported)
+		return core.RepoInfo{}, a.repoErr
+	}
+	repo, err := a.in.Adapters.Forge.Repo(ctx)
+	if err != nil {
+		a.repoErr = err
+		return core.RepoInfo{}, err
+	}
+	a.repo = &repo
+	return repo, nil
 }
 
 // item carries out one planned item.
@@ -501,20 +557,16 @@ func (a *applier) record(wanted DesiredItem, change core.Change, item core.Item)
 	}
 }
 
-// trunk is the default branch, read once.
+// trunk is the default branch of the repository read once above.
 func (a *applier) trunk(ctx context.Context) (string, error) {
-	if a.branch != "" {
-		return a.branch, nil
-	}
-	repo, err := a.in.Adapters.Forge.Repo(ctx)
+	repo, err := a.repoInfo(ctx)
 	if err != nil {
 		return "", err
 	}
 	if repo.DefaultBranch == "" {
 		return "", fmt.Errorf("%w: the repository has no default branch", core.ErrNotFound)
 	}
-	a.branch = repo.DefaultBranch
-	return a.branch, nil
+	return repo.DefaultBranch, nil
 }
 
 // save writes the lock where the caller said to put it. It is called after
