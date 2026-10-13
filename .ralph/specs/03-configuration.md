@@ -168,7 +168,7 @@ ascii = false
 token_cmd = ["gh", "auth", "token"]        # argv, no shell
 hosts = ["api.github.com"]                 # approved hosts for this credential
 
-[auth.github_projects]
+[auth.github-projects]
 token_cmd = ["gh", "auth", "token"]        # needs 'project' scope: gh auth refresh -s project
 ```
 `token_cmd` is read only from user-owned TOML; a git-tracked `.flow.local.toml`
@@ -437,3 +437,25 @@ gate, relaxed policy).
   `health` holds how strictly the answer is graded, which is a property of the
   team; `--window` stays a flag, because a daily job and somebody checking by
   hand want different fortnights from the same repository on the same day.
+- **§4 a tracked override is left unread, not fatal (item 7.6).** Scenario S01
+  settles what "refused" means: the *file* is refused, not the run. A
+  `.flow.local.toml` that is tracked is the team's, and a file anybody can
+  commit must not be able to stop everybody else working — so flow leaves it
+  unread, says so once on stderr, and carries on with the layers it does
+  trust. The run then fails for want of a credential (77) only if that file
+  was carrying the only one, which is the failure it would have had if the
+  file had never existed. The same applies when git cannot be asked whether
+  the file is tracked: a file flow cannot tell apart from the team's is not
+  personal, and not reading it is the whole remedy.
+- **§4 the user's own file is still worth stopping for (item 7.6).** An
+  *untracked* `.flow.local.toml` naming a `token_cmd` remains an error, not a
+  warning. Nobody but its owner can have written it, so flow is telling a
+  person about their own mistake and naming the key, where the tracked case is
+  flow declining to be used as a lever by somebody else.
+- **§4 the auth table is keyed by the provider exactly (item 7.6).** The kind
+  as `.flow.yaml` spells it — `github-projects`, with a hyphen. The shipped
+  example said `[auth.github_projects]`, which is read as a provider nothing
+  asks about and is therefore silently never used; it is corrected. Because
+  the mistake is invisible until a credential or a host is missing, both of
+  those messages now point at a table that names the provider with the wrong
+  punctuation.

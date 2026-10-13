@@ -242,9 +242,21 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
 - [x] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
-  - note: a commit status carries no environment, so the configured contexts are what stand for one and the source speaks for exactly that environment — a query for another is answered without asking the provider anything, which is the same answer as an environment nothing deploys to. A context is a whole name unless it ends in a star, and a star anywhere else is a character: `argocd/*/prod` matches itself and nothing else. Matching is byte-exact, because `argocd/App-Prod` and `argocd/app-prod` are two checks to the forge. A context's status history is one deployment's progress and not several, so the newest word per context wins and the pending a deployer wrote before it finished is not a second record. The walk is over the trunk's commits, because GitHub can be asked for the commits of a window and never for the statuses of one; the trunk itself is asked for once, since configuration has no key for it and the repository already knows. A query naming a commit walks nothing at all. The GitHub request plumbing both sources share — media type, API version, path, slug — became `ghRepo` rather than a second copy, and the test fake's paging helpers became free functions for the same reason.
-- [ ] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
+- [x] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
   - AC: scenarios S01–S03
+  - note: approval is checked before the credential is resolved, so a
+    `token_cmd` never unlocks a vault to produce a secret flow has already
+    decided it will not send. A host is approved by flow's own knowledge of
+    the provider or by `[auth.<p>] hosts` in the user's file; `.flow.yaml`
+    cannot approve itself. Interactive runs ask and remember the answer for
+    the process; everything else exits 77 with the line to write (S02).
+    `core.ClientOptions.AllowHost` now binds the client to the host, can only
+    narrow the test guard, and refuses a redirect off it. S01 changed
+    behaviour: a tracked `.flow.local.toml` is left unread with a warning
+    rather than refusing the run. The shipped example's
+    `[auth.github_projects]` was never read — the table is keyed by the
+    provider kind — and both the missing-credential and unapproved-host
+    messages now point at a near miss.
 
 ## Phase 8 — Proof
 

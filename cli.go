@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -192,8 +193,9 @@ type session struct {
 	ConfigErr    error
 	SemanticsErr error
 	// Settings are the personal preferences after every layer has had its
-	// say (spec 03 §4).
-	Settings config.Settings
+	// say, and SettingsPath is where the user's own file lives (spec 03 §4).
+	Settings     config.Settings
+	SettingsPath string
 	// LockPath is where `.flow.lock` lives and Lock what it holds. A
 	// repository with no lock yet gets a new one rather than an error.
 	LockPath string
@@ -279,7 +281,7 @@ func (a *Context) inspect() (*session, error) {
 		s.SemanticsErr = err
 	}
 
-	if s.Settings, err = a.settings(repo); err != nil {
+	if err := a.settings(s, repo); err != nil {
 		return nil, err
 	}
 
@@ -324,19 +326,36 @@ func (s *session) connect(a *Context) error {
 	return nil
 }
 
-// settings resolves the personal layers: the user's own TOML, then the
-// repository-local override, which is refused if it is tracked (spec 03 §4).
-func (a *Context) settings(repo *git.Repo) (config.Settings, error) {
-	userPath := a.CLI.UserConfig
-	if userPath == "" {
-		userPath = config.UserConfigPath(os.Getenv)
-	}
+// settings resolves the personal layers onto the session: the user's own
+// TOML, then the repository-local override, which is left unread if it is
+// tracked (spec 03 §4). The path to the user's own file is kept, because it
+// is where flow sends anybody whose configuration needs an answer adding to
+// it.
+//
+// A layer flow would not read is a warning on stderr rather than a refusal,
+// so it is said once, to the person, and nothing downstream has to decide
+// what to do about it.
+func (a *Context) settings(s *session, repo *git.Repo) error {
+	s.SettingsPath = a.userConfigPath()
 	tracked := func(path string) (bool, error) { return repo.Tracked(a.Ctx, path) }
-	layers, err := config.LoadPersonal(userPath, filepath.Join(repo.Dir(), config.LocalConfigName), tracked)
+	layers, warnings, err := config.LoadPersonal(s.SettingsPath, filepath.Join(repo.Dir(), config.LocalConfigName), tracked)
 	if err != nil {
-		return config.Settings{}, err
+		return err
 	}
-	return config.Resolve(layers...), nil
+	for _, warning := range warnings {
+		a.Log.Warn(warning)
+	}
+	s.Settings = config.Resolve(layers...)
+	return nil
+}
+
+// userConfigPath is where this invocation reads personal settings from: the
+// flag when it was given, and otherwise wherever this machine keeps them.
+func (a *Context) userConfigPath() string {
+	if a.CLI.UserConfig != "" {
+		return a.CLI.UserConfig
+	}
+	return config.UserConfigPath(os.Getenv)
 }
 
 // saveLock writes the lock where it belongs, atomically.
@@ -443,11 +462,17 @@ func isTerminal(w io.Writer) bool {
 // interactive reports whether flow may ask a question: not with
 // --non-interactive, not in CI, and not when stdout is not a terminal
 // (spec 02 §1).
-func (a *Context) interactive() bool {
+func (a *Context) interactive() bool { return a.mayAsk(isTerminal(a.Stdout)) }
+
+// mayAsk is that same decision with the terminal as a parameter, for the same
+// reason [Context.options] takes one: a test is never a terminal, so a rule
+// asked of the real world can only ever be answered no, and the half of it
+// that matters is the half where somebody really is watching.
+func (a *Context) mayAsk(terminal bool) bool {
 	if a.CLI.NonInteractive || os.Getenv("CI") != "" {
 		return false
 	}
-	return isTerminal(a.Stdout)
+	return terminal
 }
 
 // confirm asks a yes/no question and reads the answer, defaulting to no: an
@@ -579,7 +604,16 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 
 // client builds the HTTP client one provider speaks through, carrying its
 // credential, its API root and flow's own headers.
+//
+// Where the credential may go is settled before it is asked for. A
+// `token_cmd` that unlocks a vault or asks for a fingerprint should not be
+// run to produce a secret flow has already decided it will not send
+// (spec 15 §1).
 func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, base string) (*core.Client, error) {
+	host, err := a.approveHost(s, credentials, provider, base, a.hostApprover(isTerminal(a.Stdout)))
+	if err != nil {
+		return nil, err
+	}
 	credential, err := credentials.Token(a.Ctx, provider, auth)
 	if err != nil {
 		return nil, err
@@ -590,7 +624,85 @@ func (a *Context) client(s *session, credentials *config.Credentials, provider s
 		Version: version,
 		Header:  forge.GitHubHeader(),
 		Logger:  a.Log,
+		// What was approved is a host, not one request to it: a redirect
+		// off it would take the credential along, so the guard holds every
+		// request this client makes to the host the approval was about.
+		AllowHost: func(other string) bool { return strings.EqualFold(other, host) },
 	})
+}
+
+// hostApprover is how flow puts the host question to the person running it,
+// and is nil when there is nobody to put it to: `--json` is output for a
+// machine, and a run that is not interactive has no one at the other end
+// (spec 02 §1).
+type hostApprover func(question string) (bool, error)
+
+// hostApprover returns the asker for this invocation, given whether what
+// flow is writing to is a terminal.
+func (a *Context) hostApprover(terminal bool) hostApprover {
+	if a.CLI.JSON || !a.mayAsk(terminal) {
+		return nil
+	}
+	return a.confirm
+}
+
+// approveHost decides whether provider's credential may be sent to the host
+// base names, and returns that host (spec 15 §1).
+//
+// The configuration under which flow runs cannot answer this for itself:
+// `.flow.yaml` is the repository's and names the URL, while what approves a
+// host is flow's own knowledge of where the provider answers or a list only
+// the person running it can write. When neither does and ask is nil, the run
+// stops at 77 with the edit that would let it through, rather than asking a
+// question nobody is there to read (scenario S02).
+func (a *Context) approveHost(s *session, credentials *config.Credentials, provider, base string, ask hostApprover) (string, error) {
+	host := hostOf(base)
+	if host == "" {
+		return "", core.Errorf(core.ErrValidation, "work out where the %s API is", provider).
+			WithWhy("%q is not a URL flow can address", base).
+			WithFix("write the provider's url as https://<host> in %s", s.ConfigPath)
+	}
+	standard := standardHost(provider)
+	if credentials.ApprovedHost(provider, host, standard) {
+		return host, nil
+	}
+	if ask == nil {
+		return "", credentials.UnapprovedHost(provider, host, standard, s.SettingsPath)
+	}
+	agreed, err := ask(config.HostQuestion(provider, host))
+	if err != nil {
+		return "", err
+	}
+	if !agreed {
+		return "", config.DeclinedHost(provider, host, s.SettingsPath)
+	}
+	credentials.ApproveHost(provider, host)
+	return host, nil
+}
+
+// standardHost is where a provider answers when nobody has configured
+// anything else, and is empty for a provider flow ships no API host for.
+//
+// It is flow's own knowledge rather than the repository's, which is the whole
+// point of the question: a `.flow.yaml` that could nominate the host it is
+// trusted to be sent to would approve itself (spec 15 §1).
+func standardHost(provider string) string {
+	switch provider {
+	case forge.GitHubKind, tracker.GitHubProjectsKind:
+		return hostOf(forge.GitHubAPI)
+	default:
+		return ""
+	}
+}
+
+// hostOf is the host name a URL addresses, without its port, or "" when the
+// text does not address one.
+func hostOf(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
 }
 
 // forgeAPI turns a configured base URL into an API root: github.com answers
