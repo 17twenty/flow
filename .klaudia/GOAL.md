@@ -75,7 +75,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [x] Phase 9 — TUI (plan Phase 6): the init wizard, the picker, the apply confirmation and doctor's display with `--watch`
-- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo done; Jira, Linear, GitLab, credential approval to go
+- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo, GitLab and Jira Cloud done; Linear and credential approval to go
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios and the README demo are done; 14 green doctor days to go
 
 ### Status notes
@@ -1038,15 +1038,83 @@ work* — so §4 now tells an agent to go and read the repository's own
 conventions first, which is the honest division: flow owns the workflow and
 the repository owns everything else.
 
-**Single best next step:** the GitLab forge
-([#82](https://github.com/17twenty/flow/issues/82)) — the last Phase 7 forge,
-and the one that reuses everything the Gitea adapter generalised. The two
-trackers, Jira ([#79](https://github.com/17twenty/flow/issues/79)) and Linear
-([#80](https://github.com/17twenty/flow/issues/80)), depend on nothing and can
-go up beside it. Two pull requests are waiting on `@17twenty` now:
-[#136](https://github.com/17twenty/flow/pull/136) (this skill) and
-[#137](https://github.com/17twenty/flow/pull/137) (the dogfood gate, by the
-harness).
+### A board flow does not write to (item 7.1)
+
+Every tracker so far has been one flow configures. Jira is the first that is
+not, and finding that out was most of the work.
+
+The capability file said, from the research, that flow could set a project's
+columns and its labels and read its WIP limits. None of the three survived
+contact with the API. A status can be created — and a created status is still
+not a column, because which statuses a project's workflow offers is the
+workflow's business and which column of a board shows one is the board's, and
+neither is writable in the public Cloud API. A label has no registry at all:
+it exists the moment an issue carries one, so there is nothing to create and
+nothing to read back. A WIP limit is on a board, and a project may have
+several, so flow cannot say which board a limit it read would be on. The
+declaration now says `set: false` everywhere, `Apply` refuses every change
+with `ErrUnsupported`, and the plan for a Jira project files a follow-up for
+whoever administers it rather than proposing work that could never land. That
+is the capability model doing exactly what spec 05 wrote it for: the plan got
+*smaller* and more honest, and nothing downstream had to learn about Jira.
+
+What is left is reading, and Jira answers differently enough to be worth an
+adapter of its own:
+
+- **An archived issue has no flag anywhere.** Not on the issue, not in a
+  field, not as an expansion; the request for one has been open for years. An
+  archived issue is read-only, keeps its status, answers by key in full, and
+  is in no search — and that disagreement between the two readings is the
+  whole of the evidence, so that is what flow derives it from. The listing it
+  is derived from is the whole project and nothing narrower, because absence
+  from a windowed search means the window.
+- **A move is a transition, not an assignment.** GitHub Projects takes any
+  option id for any item; Jira will only make the moves the workflow offers
+  from where the issue is now. A column the workflow will not reach from here
+  is refused with both status names in the message, pointed at whoever
+  administers the workflow. Closing is the same mechanism, with a resolution
+  set on the way through only where the transition's own screen offers the
+  field.
+- **Linkage is Jira's convention and not the forge's.** What a pull request
+  says it closes is an issue of the repository, which is nothing here. So the
+  key is read out of the branch name, the title, and the header a squash will
+  land — never a pattern somebody configured.
+- **Basic is a pair, and only half of it is the secret.** A Jira API token
+  authenticates against the email of the account that made it. The two are
+  paired in the root, after the credential is resolved and before the client
+  is built, so the HTTP client still knows one way to authenticate and the
+  email never becomes a second secret.
+
+**Taking the contract is what generalised it.** The tracker contract suite
+said `#10` and `tracker.labels` — GitHub's word for a ticket and GitHub's
+registry. A Jira issue is `FLOW-10` and a Jira project has no registry flow
+can write to, so a contract spelling either its own way tests the fixture
+rather than the product. The fixture now carries a key prefix every case
+spells its keys through, and the desired item the adapter writes — or the
+declaration that it writes none, which is held to refusing every change *and*
+to saying `set: false`, since an adapter quietly refusing what it declares it
+can do would make a plan propose work that never lands.
+
+**Nineteen mutants, five survivors**, and the five are the interesting part.
+Three were gaps: a resolution matched letter by letter where a team spells
+`Won't Do` its own way, the header a squash lands never read for a key, and
+flow's order of preference among resolutions — it would rather record `Won't
+Do` than `Duplicate`, and a scheme holding both must not decide that by
+whichever it lists first. Two were not gaps but redundancy. A key folded on
+both sides of a comparison whose halves both come from Jira is a fold that
+cannot matter, and three readings had the ETag store switched off for fear of
+acting on a stale answer — but `core.Client` revalidates every cached GET, so
+a body it reuses is one the provider has just agreed with, and on the JQL
+search the flag was doing nothing at all, since only a GET is cached and a
+search is a POST. A surviving mutant is always a finding; it is not always a
+missing test.
+
+**Single best next step:** the Linear tracker
+([#80](https://github.com/17twenty/flow/issues/80)) — the last item of Phase 7
+and the last adapter of v1. It is the mirror image of Jira: states *are*
+columns and are writable, linkage is an attachment the integration creates,
+and Linear auto-archives closed work, so `includeArchived` is off for the
+board and on for a key.
 
 The thing only `@17twenty` can do is unchanged, and it is still the only part
 of the fourteen-day clock waiting on a decision rather than on the calendar:
