@@ -431,3 +431,33 @@ reopen, pagination, error mapping.
   write, the adapter refuses it from the flag it already read — the contract
   is about what flow does, and flow must not report a move that it cannot
   know landed.
+
+- **§3 flow does not translate its markdown into Jira's formatting (item
+  7.1).** Jira Cloud keeps every body as an Atlassian Document Format tree,
+  and the obvious reading of that is to render flow's headings, lists and
+  fenced blocks as heading, list and code nodes. The obvious reading is
+  wrong, and it is wrong because of what flow does with a body afterwards: a
+  follow-up that already says the right thing must not be rewritten (§4,
+  spec 07 §4), and the pinned health report parses its own table back out of
+  the issue it wrote (spec 07 §10). Both rest on the body coming back as what
+  went in, and a translation flow cannot reverse makes every run find the
+  ticket changed. So the heading stays `## What to do`: ugly on the screen,
+  and true.
+
+- **§3 a line is a paragraph and a blank line is an empty one (item 7.1).**
+  The one thing text has that an ADF document does not come by honestly is
+  line structure. One line becomes one paragraph; a blank line becomes a
+  paragraph with no content, which is valid ADF and the only node that reads
+  back as a blank line. A text node holding an empty string, which is the
+  other way to write it, Jira rejects. The rendering is exact in both
+  directions and `FuzzADFRoundTrip` is what keeps it that way.
+
+- **§3 reading a body is not the same job as writing one (item 7.1).** Flow
+  writes two kinds of node and has to read every kind there is: an issue
+  somebody wrote by hand is full of headings, lists, tables and panels, and
+  the marker flow is looking for is in the text of them. The reading walks
+  whatever it is given — a node whose children are blocks contributes each
+  child's lines, one whose children are inline contributes a line — so a
+  bulleted list reads as its items rather than as nothing. The v2 API's plain
+  string is read as the text it is for the same reason: a body flow cannot
+  parse is a ticket flow cannot read.
