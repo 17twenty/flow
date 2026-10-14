@@ -154,6 +154,9 @@ func TestTheAPIRootIsTheOneTheForgeAnswersAt(t *testing.T) {
 		{"a gitea somebody installed", forge.GiteaKind, "https://codeberg.org", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
 		{"a gitea named with its path already", forge.GiteaKind, "https://codeberg.org/api/v1", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
 		{"a gitea named with a trailing slash", forge.GiteaKind, "https://codeberg.org/", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
+		{"gitlab.com", forge.GitLabKind, "https://gitlab.com", forge.GitLabHost + forge.GitLabAPIPath, "application/json"},
+		{"a self-managed gitlab", forge.GitLabKind, "https://gitlab.acme.test", "https://gitlab.acme.test" + forge.GitLabAPIPath, "application/json"},
+		{"a gitlab named with its path already", forge.GitLabKind, "https://gitlab.acme.test/api/v4", "https://gitlab.acme.test" + forge.GitLabAPIPath, "application/json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -177,6 +180,9 @@ func TestAForgeWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
 	if _, _, err := forgeEndpoint(forge.GitHubKind, "", ".flow.yaml"); err != nil {
 		t.Errorf("forgeEndpoint(github, no url) = %v, want the one host GitHub has", err)
 	}
+	if _, _, err := forgeEndpoint(forge.GitLabKind, "", ".flow.yaml"); err != nil {
+		t.Errorf("forgeEndpoint(gitlab, no url) = %v, want gitlab.com", err)
+	}
 	_, _, err := forgeEndpoint(forge.GiteaKind, "", ".flow.yaml")
 	if !errors.Is(err, core.ErrValidation) {
 		t.Fatalf("forgeEndpoint(gitea, no url) = %v, want a question", err)
@@ -188,8 +194,12 @@ func TestAForgeWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
 }
 
 func TestAForgeThisBuildCannotSpeakToIsRefusedBeforeTheCredential(t *testing.T) {
-	_, _, err := forgeEndpoint("gitlab", "https://gitlab.com", ".flow.yaml")
+	_, _, err := forgeEndpoint("bitbucket", "https://bitbucket.org", ".flow.yaml")
 	if !errors.Is(err, core.ErrUnsupported) {
-		t.Fatalf("forgeEndpoint(gitlab) = %v, want an unsupported forge", err)
+		t.Fatalf("forgeEndpoint(bitbucket) = %v, want an unsupported forge", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, "gitlab") {
+		t.Errorf("the refusal does not offer the forges this build has: %+v", err)
 	}
 }
