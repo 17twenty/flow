@@ -114,14 +114,14 @@ func blockLines(node adfNode) []string {
 // text. ADF does not say so in the payload, so it is read off the children:
 // a node holding a paragraph, a list item or a row holds blocks.
 func blocky(node adfNode) bool {
-	for _, child := range node.Content {
-		switch child.Type {
-		case adfText, "hardBreak", "emoji", "mention", "inlineCard", "date", "status":
-			return false
-		}
-		return true
+	if len(node.Content) == 0 {
+		return false
 	}
-	return false
+	switch node.Content[0].Type {
+	case adfText, "hardBreak", "emoji", "mention", "inlineCard", "date", "status":
+		return false
+	}
+	return true
 }
 
 // inlineText joins the text of one block's inline children. A hard break

@@ -106,11 +106,11 @@ func TestCompareFindsWhatWouldChange(t *testing.T) {
 			mechanism: core.CompensatePolicyExpedite,
 		},
 		{
-			// Both can be told their columns. Jira's needs a permission the
-			// credential in TestPlanOutcomes did not hold, and that is not
-			// what a comparison is about: the question is which tracker can
-			// do this, not whose token is in the environment today.
-			left: "github-projects", right: "jira-cloud",
+			// Both can be told their columns. Linear's needs a permission
+			// the credential in TestPlanOutcomes did not hold, and that is
+			// not what a comparison is about: the question is which tracker
+			// can do this, not whose token is in the environment today.
+			left: "github-projects", right: "linear",
 			id:          core.ItemTrackerStatusOptions,
 			want:        [2]engine.Outcome{engine.OutcomeNative, engine.OutcomeNative},
 			sameVerdict: true,

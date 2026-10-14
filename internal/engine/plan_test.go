@@ -284,10 +284,14 @@ func TestPlanOutcomes(t *testing.T) {
 			name:  "jira-cloud",
 			world: jiraWorld,
 			want: map[string]engine.Outcome{
-				// Jira can be told its columns, but not by this credential.
+				// A status is the project workflow's business and a column is
+				// the board's, and neither is writable: somebody who
+				// administers the project has to do it (spec 11 §3).
 				core.ItemTrackerStatusOptions: engine.OutcomeFollowUp,
-				// Labels are free-form, so flow just makes them.
-				core.ItemTrackerLabels: engine.OutcomeNative,
+				// A Jira label is free-form in the other direction: there is no
+				// registry to create one in and none to read one back from, so
+				// a person vouches for it instead.
+				core.ItemTrackerLabels: engine.OutcomeAttest,
 				// Jira reports its own limits, and this one disagrees; it
 				// cannot be told otherwise, so flow enforces it at the gate.
 				core.ItemTrackerWIP: engine.OutcomeCompensated,

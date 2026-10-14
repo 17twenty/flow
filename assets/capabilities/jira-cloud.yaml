@@ -1,20 +1,21 @@
 adapter: jira-cloud
 kind: tracker
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-14
 sources:
   - https://developer.atlassian.com/cloud/jira/platform/rate-limiting
   - https://jira.atlassian.com/browse/JRACLOUD-74565
+  - https://jira.atlassian.com/browse/JRACLOUD-94071
 limits: { rate: "API tokens: burst limits; apps: points-based hourly quotas since 2026-03-02" }
 capabilities:
-  project:            { set: false, verify: true, remediation: follow_up }
-  status_options:     { set: true,  verify: true, requires: [project_admin], remediation: follow_up, notes: "Bulk workflow API; board columns themselves are NOT writable (verify via board configuration)." }
-  status_categories:  { set: true,  verify: true, requires: [project_admin], remediation: follow_up }
-  wip_limits:         { set: false, verify: true, remediation: compensate, compensated_by: policy.wip }
+  project:            { set: false, verify: true,  remediation: follow_up }
+  status_options:     { set: false, verify: true,  remediation: follow_up, notes: "Statuses can be created through the status API and a created status is still not a column: which statuses a project's workflow offers is the workflow's business and which column of the board shows one is the board's, and neither is writable in the public Cloud API. Read from GET /project/{key}/statuses." }
+  status_categories:  { set: false, verify: true,  remediation: follow_up, notes: "A category belongs to a status, so it is settable exactly where the status is." }
+  wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip, notes: "Board configuration is read-only, and a project may have several boards: flow cannot say which one a limit is on." }
   expedite_view:      { set: false, verify: false, remediation: attest }
-  labels:             { set: true,  verify: true, remediation: none, notes: "Free-form." }
-  follow_up_tickets:  { set: true,  verify: true, requires: [create_issues], remediation: none }
-  ticket_move:        { set: true,  verify: true, requires: [transition_issues], remediation: follow_up }
+  labels:             { set: false, verify: false, remediation: attest, notes: "Free-form: a label exists the moment an issue carries one, and there is no registry to create one in or to read one from." }
+  follow_up_tickets:  { set: true,  verify: true,  requires: [create_issues], remediation: none }
+  ticket_move:        { set: true,  verify: true,  requires: [transition_issues], remediation: follow_up, notes: "A move is a workflow transition, so a column the workflow does not reach from here is refused." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: attest }
   native_transition_changes_requested:   { set: false, verify: false, remediation: attest }

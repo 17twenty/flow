@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -261,7 +262,7 @@ func TestTheApprovalBindsTheClientAndNotOneRequest(t *testing.T) {
 		map[string]config.AuthSource{forge.GitHubKind: {Hosts: []string{"127.0.0.1"}}},
 	)
 
-	client, err := app.client(hostSession(), credentials, forge.GitHubKind, config.Auth{}, "http://127.0.0.1:"+port, forge.GitHubHeader())
+	client, err := app.client(hostSession(), credentials, forge.GitHubKind, config.Auth{}, apiEndpoint{Root: "http://127.0.0.1:" + port, Header: forge.GitHubHeader()})
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
@@ -272,6 +273,45 @@ func TestTheApprovalBindsTheClientAndNotOneRequest(t *testing.T) {
 	_, err = client.Do(app.Ctx, core.Request{Method: http.MethodGet, Path: "http://localhost:" + port + "/"})
 	if !errors.Is(err, core.ErrPermission) {
 		t.Fatalf("err = %v, want the credential kept off a host nobody approved", err)
+	}
+}
+
+// TestTheCredentialIsSentTheWayTheProviderAuthenticates: the endpoint's
+// encoding runs between resolving the credential and building the client, so
+// what reaches the wire is the value Jira Cloud's Basic authentication wants
+// rather than the token on its own (spec 11 §3).
+func TestTheCredentialIsSentTheWayTheProviderAuthenticates(t *testing.T) {
+	t.Setenv("FLOW_JIRA_CLOUD_TOKEN", "the-token")
+	t.Setenv("JIRA_EMAIL", "dev@acme.test")
+	var sent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	app := hostContext(t, CLI{})
+	credentials := config.NewCredentials(os.Getenv,
+		map[string]config.AuthSource{config.TrackerJiraCloud: {Hosts: []string{"127.0.0.1"}}})
+	auth := config.Auth{EmailEnv: "JIRA_EMAIL"}
+
+	endpoint, err := trackerEndpoint(config.TrackerJiraCloud, "http://127.0.0.1:"+portOf(t, server.URL), ".flow.yaml")
+	if err != nil {
+		t.Fatalf("trackerEndpoint: %v", err)
+	}
+	endpoint.Encode = jiraBasic(credentials, config.TrackerJiraCloud, auth)
+
+	client, err := app.client(hostSession(), credentials, config.TrackerJiraCloud, auth, endpoint)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.Do(app.Ctx, core.Request{Method: http.MethodGet, Path: "/myself"}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("dev@acme.test:the-token"))
+	if sent != want {
+		t.Errorf("Authorization = %q, want the email and the token encoded together", sent)
 	}
 }
 

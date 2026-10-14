@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"io"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/forge"
+	"github.com/17twenty/flow/internal/tracker"
 	"github.com/17twenty/flow/internal/ui"
 )
 
@@ -160,14 +162,14 @@ func TestTheAPIRootIsTheOneTheForgeAnswersAt(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root, header, err := forgeEndpoint(tc.kind, tc.configured, ".flow.yaml")
+			endpoint, err := forgeEndpoint(tc.kind, tc.configured, ".flow.yaml")
 			if err != nil {
 				t.Fatalf("forgeEndpoint: %v", err)
 			}
-			if root != tc.want {
-				t.Errorf("root = %q, want %q", root, tc.want)
+			if endpoint.Root != tc.want {
+				t.Errorf("root = %q, want %q", endpoint.Root, tc.want)
 			}
-			if got := header.Get("Accept"); got != tc.accept {
+			if got := endpoint.Header.Get("Accept"); got != tc.accept {
 				t.Errorf("Accept = %q, want %q", got, tc.accept)
 			}
 		})
@@ -177,13 +179,13 @@ func TestTheAPIRootIsTheOneTheForgeAnswersAt(t *testing.T) {
 func TestAForgeWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
 	// GitHub has one host and a Gitea has whichever one it was installed
 	// on, so silence means different things to the two of them.
-	if _, _, err := forgeEndpoint(forge.GitHubKind, "", ".flow.yaml"); err != nil {
+	if _, err := forgeEndpoint(forge.GitHubKind, "", ".flow.yaml"); err != nil {
 		t.Errorf("forgeEndpoint(github, no url) = %v, want the one host GitHub has", err)
 	}
-	if _, _, err := forgeEndpoint(forge.GitLabKind, "", ".flow.yaml"); err != nil {
+	if _, err := forgeEndpoint(forge.GitLabKind, "", ".flow.yaml"); err != nil {
 		t.Errorf("forgeEndpoint(gitlab, no url) = %v, want gitlab.com", err)
 	}
-	_, _, err := forgeEndpoint(forge.GiteaKind, "", ".flow.yaml")
+	_, err := forgeEndpoint(forge.GiteaKind, "", ".flow.yaml")
 	if !errors.Is(err, core.ErrValidation) {
 		t.Fatalf("forgeEndpoint(gitea, no url) = %v, want a question", err)
 	}
@@ -193,8 +195,120 @@ func TestAForgeWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
 	}
 }
 
+// TestTheAPIRootIsTheOneTheTrackerAnswersAt: a tracker's API root is derived
+// from what the configuration names the board's home, and the Authorization
+// scheme comes with it — Jira Cloud authenticates with Basic and nothing
+// else does (spec 11 §3).
+func TestTheAPIRootIsTheOneTheTrackerAnswersAt(t *testing.T) {
+	cases := []struct {
+		name       string
+		kind       string
+		configured string
+		want       string
+		scheme     string
+	}{
+		{"a github project", tracker.GitHubProjectsKind, "https://github.com", forge.GitHubAPI, ""},
+		{"a jira site", tracker.JiraCloudKind, "https://acme.atlassian.net", "https://acme.atlassian.net" + tracker.JiraAPIPath, "Basic"},
+		{"a jira site named with a trailing slash", tracker.JiraCloudKind, "https://acme.atlassian.net/", "https://acme.atlassian.net" + tracker.JiraAPIPath, "Basic"},
+		{"a jira site named with its path already", tracker.JiraCloudKind, "https://acme.atlassian.net" + tracker.JiraAPIPath, "https://acme.atlassian.net" + tracker.JiraAPIPath, "Basic"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint, err := trackerEndpoint(tc.kind, tc.configured, ".flow.yaml")
+			if err != nil {
+				t.Fatalf("trackerEndpoint: %v", err)
+			}
+			if endpoint.Root != tc.want {
+				t.Errorf("root = %q, want %q", endpoint.Root, tc.want)
+			}
+			if endpoint.Scheme != tc.scheme {
+				t.Errorf("scheme = %q, want %q", endpoint.Scheme, tc.scheme)
+			}
+			if endpoint.Header.Get("Accept") == "" {
+				t.Error("no Accept header, so the provider chooses the representation")
+			}
+		})
+	}
+}
+
+// TestATrackerWithNowhereToAnswerIsAQuestionAndNotADefault: every Jira Cloud
+// site is somebody's own address, so silence is a question — where
+// github.com is the one host GitHub Projects has.
+func TestATrackerWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
+	if _, err := trackerEndpoint(tracker.GitHubProjectsKind, "", ".flow.yaml"); err != nil {
+		t.Errorf("trackerEndpoint(github-projects, no url) = %v, want the one host GitHub has", err)
+	}
+	_, err := trackerEndpoint(tracker.JiraCloudKind, "", ".flow.yaml")
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("trackerEndpoint(jira-cloud, no url) = %v, want a question", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, "tracker.url") {
+		t.Errorf("the refusal does not say to set tracker.url: %+v", err)
+	}
+}
+
+// TestATrackerThisBuildCannotSpeakToIsRefusedBeforeTheCredential: Linear is
+// a kind the configuration accepts and this build ships no adapter for, so
+// the refusal comes before a `token_cmd` is run (spec 15 §1).
+func TestATrackerThisBuildCannotSpeakToIsRefusedBeforeTheCredential(t *testing.T) {
+	_, err := trackerEndpoint(config.TrackerLinear, "", ".flow.yaml")
+	if !errors.Is(err, core.ErrUnsupported) {
+		t.Fatalf("trackerEndpoint(linear) = %v, want an unsupported tracker", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, "jira-cloud") {
+		t.Errorf("the refusal does not offer the trackers this build has: %+v", err)
+	}
+}
+
+// TestJiraPairsTheTokenWithTheEmailItBelongsTo: Basic is a pair and only half
+// of it is the secret, so the credential flow sends is built from both — and
+// an email nobody exported stops the run rather than authenticating as half
+// an account.
+func TestJiraPairsTheTokenWithTheEmailItBelongsTo(t *testing.T) {
+	env := map[string]string{"JIRA_EMAIL": "dev@acme.test"}
+	credentials := config.NewCredentials(func(name string) string { return env[name] }, nil)
+	auth := config.Auth{EmailEnv: "JIRA_EMAIL"}
+
+	encoded, err := jiraBasic(credentials, config.TrackerJiraCloud, auth)("the-token")
+	if err != nil {
+		t.Fatalf("jiraBasic: %v", err)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte("dev@acme.test:the-token"))
+	if encoded != want {
+		t.Errorf("the Basic value is %q, want the email and the token together", encoded)
+	}
+
+	delete(env, "JIRA_EMAIL")
+	if _, err := jiraBasic(credentials, config.TrackerJiraCloud, auth)("the-token"); err == nil {
+		t.Error("an unexported email authenticated anyway")
+	}
+}
+
+// TestTheBoardsKeyIsReadFromTheConfigurationThenTheLock: a named project is
+// resolved the way a numbered one is, because tracker.project holds a
+// placeholder until doctor has found the board (spec 03 §1).
+func TestTheBoardsKeyIsReadFromTheConfigurationThenTheLock(t *testing.T) {
+	configured := &config.Config{}
+	configured.Tracker.Project = config.Pending{Text: "FLOW"}
+	if got := projectKey(configured, nil); got != "FLOW" {
+		t.Errorf("projectKey = %q, want the configured key", got)
+	}
+
+	unresolved := &config.Config{}
+	lock := &config.Lock{}
+	lock.Resolve("tracker.project", "DELIVERY")
+	if got := projectKey(unresolved, lock); got != "DELIVERY" {
+		t.Errorf("projectKey = %q, want the key the lock resolved", got)
+	}
+	if got := projectKey(unresolved, nil); got != "" {
+		t.Errorf("projectKey = %q, want nothing: discovery has not run", got)
+	}
+}
+
 func TestAForgeThisBuildCannotSpeakToIsRefusedBeforeTheCredential(t *testing.T) {
-	_, _, err := forgeEndpoint("bitbucket", "https://bitbucket.org", ".flow.yaml")
+	_, err := forgeEndpoint("bitbucket", "https://bitbucket.org", ".flow.yaml")
 	if !errors.Is(err, core.ErrUnsupported) {
 		t.Fatalf("forgeEndpoint(bitbucket) = %v, want an unsupported forge", err)
 	}

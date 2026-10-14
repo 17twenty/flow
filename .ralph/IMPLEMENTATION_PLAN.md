@@ -309,8 +309,27 @@ Human-only steps use ids `H.<n>` (never seeded).
     reports — `test`, the check run's own name, not the `ci / test` the web
     UI composes out of the workflow and the job.
 
-- [ ] 7.1 Jira Cloud tracker — specs: 11 §3 — deps: 3.12 (#79)
+- [x] 7.1 Jira Cloud tracker — specs: 11 §3 — deps: 3.12 (#79)
   - AC: contract suite; key fallback linkage; board configuration verify; archived issues (spec 11 §1: derived from the full JQL listing, never from a narrowed one)
+  - note: internal/tracker/jira.go + jira_wire.go + jira_adf.go. A body is an
+    Atlassian Document Format tree and flow's is text, so the rendering is
+    exact in both directions rather than pretty: a follow-up that already
+    says the right thing must not be rewritten. A column is a status, not a
+    board column — a board column is several statuses and a project may have
+    several boards. The AC's "board configuration verify" did not survive
+    contact: nothing in `.flow.yaml` names a board, so `wip_limits` is
+    `verify: false` and compensated by `policy.wip`. Nor did anything else
+    writable: a created status is still not a column and a label has no
+    registry, so `Apply` refuses every change and the declaration says so.
+    Archiving is derived from two readings disagreeing, because Jira
+    publishes no flag for it; the listing is the whole project, read once a
+    run. A move is a workflow transition, so a column the workflow will not
+    reach from here is refused with both status names in the message.
+    Linkage is the key in the branch, the title or the squash header. Taking
+    the contract was what generalised it: it is now written in the adapter's
+    own vocabulary rather than in GitHub's. Nothing switches the ETag store
+    off: `core.Client` revalidates, so a reading flow kept is one the
+    provider has just agreed with.
 - [ ] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
   - AC: contract suite; attachment-first linkage; archived issues (spec 11 §1: `includeArchived` off for the board, on for a key — Linear auto-archives closed work)
 - [x] 7.3 Gitea/Forgejo forge — specs: 10 §3 — deps: 3.12 (#81)

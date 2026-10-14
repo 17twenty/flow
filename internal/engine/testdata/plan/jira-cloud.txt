@@ -7,14 +7,14 @@ deploys  forge_deployments
     the provider already matches what was asked for
 
 ⚠ follow-up → ${pending:owners.tracker_admin}  tracker.status_options (status_options)
-    the credential is missing project_admin, so a person with those permissions has to do it
+    the provider has no API for this, so a person has to do it
     create "Backlog"
     create "In progress"
     create "In review"
     create "Ready"
 
-✓ native  tracker.labels (labels)
-    flow can set it through the provider's API
+✎ attest → flow attest tracker.labels  tracker.labels (labels)
+    flow cannot see this through the API, so a person has to confirm it
     create "agent"
     create "blocked"
     create "flow-followup"
@@ -69,4 +69,4 @@ deploys  forge_deployments
 · up to date  deploys.records (deploy_records)
     the provider already matches what was asked for
 
-15 items · 3 up to date · 6 native · 1 compensated · 1 follow-up · 3 attest · 1 unsupported
+15 items · 3 up to date · 5 native · 1 compensated · 1 follow-up · 4 attest · 1 unsupported

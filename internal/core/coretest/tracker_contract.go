@@ -11,7 +11,7 @@ import (
 )
 
 // NewTracker builds the tracker under test from a fixture.
-type NewTracker func(t *testing.T, fx TrackerFixture) core.Tracker
+type NewTracker func(t *testing.T, fx *TrackerFixture) core.Tracker
 
 // TrackerContractCase is one named behaviour in the tracker contract. The
 // cases are named and addressable so that an adapter still being built can be
@@ -84,7 +84,8 @@ func TrackerContractSubset(t *testing.T, newTracker NewTracker, names ...string)
 // trackerIdentity: a tracker names itself and declares every capability its
 // kind has, because silence is not a finding (spec 05 §1).
 func trackerIdentity(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	if tracker.Kind() == "" {
 		t.Error("the tracker has no kind, so no capability declaration can be found for it")
 	}
@@ -102,7 +103,8 @@ func trackerIdentity(t *testing.T, newTracker NewTracker) {
 // trackerProbe: a credential the fixture grants everything to comes back with
 // something, so a resolution has tokens to compare against (spec 05 §4).
 func trackerProbe(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	permissions, err := tracker.Probe(t.Context())
 	if err != nil {
 		t.Fatalf("Probe: %v", err)
@@ -115,7 +117,8 @@ func trackerProbe(t *testing.T, newTracker NewTracker) {
 // trackerDiscover: everything discovery offers can be recorded, shown, and —
 // where it has an address — parsed back into the same id (spec 07 §3).
 func trackerDiscover(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	candidates, err := tracker.Discover(t.Context(), "tracker.project", nil)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
@@ -144,7 +147,8 @@ func trackerDiscover(t *testing.T, newTracker NewTracker) {
 // trackerDiscoverHint: a hint narrows the candidates rather than reordering
 // them, so setup can be driven from what configuration already knows.
 func trackerDiscoverHint(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	candidates, err := tracker.Discover(t.Context(), "tracker.project", map[string]string{"name": "Delivery"})
 	if err != nil {
 		t.Fatalf("Discover with a hint: %v", err)
@@ -159,7 +163,8 @@ func trackerDiscoverHint(t *testing.T, newTracker NewTracker) {
 // trackerParseRefNonsense: a reference flow cannot read is the user's to fix,
 // so it is ErrValidation and not a provider failure.
 func trackerParseRefNonsense(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	if _, err := tracker.ParseRef("the delivery board, you know the one"); !errors.Is(err, core.ErrValidation) {
 		t.Errorf("ParseRef of nonsense = %v, want it to wrap ErrValidation", err)
 	}
@@ -168,7 +173,8 @@ func trackerParseRefNonsense(t *testing.T, newTracker NewTracker) {
 // trackerObserve: an observation is canonical and stable, because spec 06 §2
 // diffs and hashes it and the provider's own order is nobody's contract.
 func trackerObserve(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	first, err := tracker.Observe(t.Context(), "tracker.status_options")
 	if err != nil {
 		t.Fatalf("Observe: %v", err)
@@ -194,7 +200,8 @@ func trackerObserve(t *testing.T, newTracker NewTracker) {
 // trackerObserveMissing: something the tracker does not hold is an observation
 // that does not exist, not an error — that is the plan's "create" case.
 func trackerObserveMissing(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	observation, err := tracker.Observe(t.Context(), "tracker.expedite")
 	if err != nil {
 		t.Fatalf("Observe of an unconfigured thing: %v", err)
@@ -207,12 +214,14 @@ func trackerObserveMissing(t *testing.T, newTracker NewTracker) {
 // trackerApplyCreate: a change is visible in the next observation, carries an
 // id the lock can record, and says what it did.
 func trackerApplyCreate(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	change := core.Change{
-		What: "tracker.labels",
-		Op:   core.ChangeCreate,
-		Item: core.Item{Name: "incident", Fields: map[string]string{"color": "d93f0b"}},
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if fx.ReadOnly {
+		trackerRefusesEveryChange(t, tracker)
+		return
 	}
+	write := fx.Write()
+	change := core.Change{What: write.What, Op: core.ChangeCreate, Item: write.Create}
 	result, err := tracker.Apply(t.Context(), change)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -224,79 +233,124 @@ func trackerApplyCreate(t *testing.T, newTracker NewTracker) {
 		t.Error("the result explains nothing, so the log cannot say what happened")
 	}
 
-	observation, err := tracker.Observe(t.Context(), "tracker.labels")
+	observation, err := tracker.Observe(t.Context(), write.What)
 	if err != nil {
 		t.Fatalf("Observe after Apply: %v", err)
 	}
-	item, ok := observation.Find("incident")
+	item, ok := observation.Find(write.Create.Name)
 	if !ok {
-		t.Fatalf("the created label is not there: %+v", observation.Items)
+		t.Fatalf("the created %s is not there: %+v", write.What, observation.Items)
 	}
-	if item.Field("color") != "d93f0b" {
-		t.Errorf("the created label is %+v, want the colour it was given", item)
+	for field, want := range write.Create.Fields {
+		if item.Field(field) != want {
+			t.Errorf("the created item is %+v, want %s = %q", item, field, want)
+		}
 	}
 }
 
 // trackerApplyConflict: creating something that is already there is
 // ErrConflict, which is what tells apply to update instead.
 func trackerApplyConflict(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	change := core.Change{
-		What: "tracker.labels",
-		Op:   core.ChangeCreate,
-		Item: core.Item{Name: "blocked", Fields: map[string]string{"color": "b60205"}},
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if fx.ReadOnly {
+		return
 	}
+	write := fx.Write()
+	existing, err := tracker.Observe(t.Context(), write.What)
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	already, ok := existing.Find(write.Existing)
+	if !ok {
+		t.Fatalf("the fixture has no %s called %q", write.What, write.Existing)
+	}
+	change := core.Change{What: write.What, Op: core.ChangeCreate, Item: core.Item{Name: already.Name, Fields: already.Fields}}
 	if _, err := tracker.Apply(t.Context(), change); !errors.Is(err, core.ErrConflict) {
-		t.Errorf("creating a label that is already there = %v, want ErrConflict", err)
+		t.Errorf("creating a %s that is already there = %v, want ErrConflict", write.What, err)
 	}
 }
 
 // trackerApplyUpdateDelete: a thing is updated in place and then deleted, and
 // deleting it twice is ErrNotFound.
 func trackerApplyUpdateDelete(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	before, err := tracker.Observe(t.Context(), "tracker.labels")
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if fx.ReadOnly {
+		return
+	}
+	write := fx.Write()
+	before, err := tracker.Observe(t.Context(), write.What)
 	if err != nil {
 		t.Fatalf("Observe: %v", err)
 	}
-	existing, ok := before.Find("blocked")
+	existing, ok := before.Find(write.Existing)
 	if !ok {
-		t.Fatal("the fixture's blocked label is missing")
+		t.Fatalf("the fixture's %q is missing from %s", write.Existing, write.What)
 	}
 
-	updated := existing.WithField("color", "000000")
-	if _, err := tracker.Apply(t.Context(), core.Change{What: "tracker.labels", Op: core.ChangeUpdate, Item: updated}); err != nil {
+	updated := existing.WithField(write.Field, write.Value)
+	if _, err := tracker.Apply(t.Context(), core.Change{What: write.What, Op: core.ChangeUpdate, Item: updated}); err != nil {
 		t.Fatalf("Apply(update): %v", err)
 	}
-	after, err := tracker.Observe(t.Context(), "tracker.labels")
+	after, err := tracker.Observe(t.Context(), write.What)
 	if err != nil {
 		t.Fatalf("Observe after the update: %v", err)
 	}
-	if item, _ := after.Find("blocked"); item.Field("color") != "000000" {
-		t.Errorf("the label is %+v, want the colour it was updated to", item)
+	if item, _ := after.Find(write.Existing); item.Field(write.Field) != write.Value {
+		t.Errorf("the item is %+v, want %s = %q", item, write.Field, write.Value)
 	}
 
-	if _, err := tracker.Apply(t.Context(), core.Change{What: "tracker.labels", Op: core.ChangeDelete, Item: updated}); err != nil {
+	if _, err := tracker.Apply(t.Context(), core.Change{What: write.What, Op: core.ChangeDelete, Item: updated}); err != nil {
 		t.Fatalf("Apply(delete): %v", err)
 	}
-	gone, err := tracker.Observe(t.Context(), "tracker.labels")
+	gone, err := tracker.Observe(t.Context(), write.What)
 	if err != nil {
 		t.Fatalf("Observe after the delete: %v", err)
 	}
-	if _, ok := gone.Find("blocked"); ok {
-		t.Error("the label survived being deleted")
+	if _, ok := gone.Find(write.Existing); ok {
+		t.Errorf("the %s survived being deleted", write.Existing)
 	}
 
-	if _, err := tracker.Apply(t.Context(), core.Change{What: "tracker.labels", Op: core.ChangeDelete, Item: updated}); !errors.Is(err, core.ErrNotFound) {
+	if _, err := tracker.Apply(t.Context(), core.Change{What: write.What, Op: core.ChangeDelete, Item: updated}); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("deleting it again = %v, want ErrNotFound", err)
+	}
+}
+
+// trackerRefusesEveryChange holds a tracker that sets no desired state to
+// refusing one, and to saying so in its declaration. A tracker whose board is
+// the team's to configure is a finding and not a silence: the engine reads the
+// declaration to decide whether to ask at all (spec 05 §1, §4), and a
+// declaration that claims a write the adapter refuses would make a plan
+// propose work that can never land.
+func trackerRefusesEveryChange(t *testing.T, tracker core.Tracker) {
+	t.Helper()
+	capabilities := tracker.Capabilities()
+	for item, capability := range map[string]string{
+		core.ItemTrackerProject:       core.CapProject,
+		core.ItemTrackerStatusOptions: core.CapStatusOptions,
+		core.ItemTrackerLabels:        core.CapLabels,
+	} {
+		if capabilities.Can(capability) {
+			t.Errorf("the declaration says %s can be set, and the adapter refuses to set it", capability)
+		}
+		change := core.Change{
+			What: item,
+			Op:   core.ChangeCreate,
+			Item: core.Item{Name: "whatever the configuration wants"},
+		}
+		if _, err := tracker.Apply(t.Context(), change); !errors.Is(err, core.ErrUnsupported) {
+			t.Errorf("Apply(create %s) = %v, want ErrUnsupported", item, err)
+		}
 	}
 }
 
 // trackerTickets: tickets by key, by column, in a window, and all of them —
 // which for a real adapter means every page of them.
 func trackerTickets(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	ticket, err := tracker.Ticket(t.Context(), "#10")
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	ticket, err := tracker.Ticket(t.Context(), fx.Key("#10"))
 	if err != nil {
 		t.Fatalf("Ticket(#10): %v", err)
 	}
@@ -307,7 +361,7 @@ func trackerTickets(t *testing.T, newTracker NewTracker) {
 		t.Error("the ticket has no parent, and the Definition of Ready needs one")
 	}
 
-	byKey, err := tracker.Tickets(t.Context(), core.TicketQuery{Keys: []string{"#10", "#12"}})
+	byKey, err := tracker.Tickets(t.Context(), core.TicketQuery{Keys: []string{fx.Key("#10"), fx.Key("#12")}})
 	if err != nil {
 		t.Fatalf("Tickets by key: %v", err)
 	}
@@ -352,11 +406,12 @@ func trackerTickets(t *testing.T, newTracker NewTracker) {
 // trackerMissingTicket: a key the board does not hold is ErrNotFound, whether
 // it is read or moved.
 func trackerMissingTicket(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	if _, err := tracker.Ticket(t.Context(), "#4040"); !errors.Is(err, core.ErrNotFound) {
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if _, err := tracker.Ticket(t.Context(), fx.Key("#4040")); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("Ticket(#4040) = %v, want it to wrap ErrNotFound", err)
 	}
-	if err := tracker.Move(t.Context(), "#4040", ColumnDone); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.Move(t.Context(), fx.Key("#4040"), ColumnDone); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("Move(#4040) = %v, want it to wrap ErrNotFound", err)
 	}
 }
@@ -371,8 +426,9 @@ func trackerMissingTicket(t *testing.T, newTracker NewTracker) {
 // refused rather than quietly dropped, because a tracker that accepted one
 // would have flow report a move the board never made (spec 11 §5).
 func trackerArchived(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	archived, err := tracker.Ticket(t.Context(), ContractArchivedKey)
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	archived, err := tracker.Ticket(t.Context(), fx.Key(ContractArchivedKey))
 	if err != nil {
 		t.Fatalf("Ticket(%s): %v", ContractArchivedKey, err)
 	}
@@ -384,7 +440,7 @@ func trackerArchived(t *testing.T, newTracker NewTracker) {
 			ContractArchivedKey, archived.ColumnID, ColumnInReview)
 	}
 
-	byKey, err := tracker.Tickets(t.Context(), core.TicketQuery{Keys: []string{ContractArchivedKey}})
+	byKey, err := tracker.Tickets(t.Context(), core.TicketQuery{Keys: []string{fx.Key(ContractArchivedKey)}})
 	if err != nil {
 		t.Fatalf("Tickets by key: %v", err)
 	}
@@ -399,13 +455,13 @@ func trackerArchived(t *testing.T, newTracker NewTracker) {
 			t.Fatalf("Tickets(%+v): %v", q, err)
 		}
 		for _, ticket := range listing {
-			if sameKey(ticket.Key, ContractArchivedKey) {
+			if sameKey(ticket.Key, fx.Key(ContractArchivedKey)) {
 				t.Errorf("Tickets(%+v) reported %s, which is archived and not on the board", q, ticket.Key)
 			}
 		}
 	}
 
-	err = tracker.Move(t.Context(), ContractArchivedKey, ColumnDone)
+	err = tracker.Move(t.Context(), fx.Key(ContractArchivedKey), ColumnDone)
 	if !errors.Is(err, core.ErrConflict) {
 		t.Errorf("Move of an archived item = %v, want it to wrap ErrConflict: the item takes no change", err)
 	}
@@ -413,7 +469,7 @@ func trackerArchived(t *testing.T, newTracker NewTracker) {
 	if errors.As(err, &user) && !strings.Contains(user.Why, "archiv") {
 		t.Errorf("the refusal explains itself as %q, want it to name the archiving: a person reading it has one thing to undo", user.Why)
 	}
-	after, err := tracker.Ticket(t.Context(), ContractArchivedKey)
+	after, err := tracker.Ticket(t.Context(), fx.Key(ContractArchivedKey))
 	if err != nil {
 		t.Fatalf("Ticket after a refused Move: %v", err)
 	}
@@ -431,11 +487,12 @@ func sameKey(a, b string) bool {
 // trackerMove: a move lands the ticket in the column with a name a human would
 // recognise, and moving it where it already is changes nothing at all.
 func trackerMove(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	if err := tracker.Move(t.Context(), "#10", ColumnInReview); err != nil {
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if err := tracker.Move(t.Context(), fx.Key("#10"), ColumnInReview); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	moved, err := tracker.Ticket(t.Context(), "#10")
+	moved, err := tracker.Ticket(t.Context(), fx.Key("#10"))
 	if err != nil {
 		t.Fatalf("Ticket after Move: %v", err)
 	}
@@ -446,10 +503,10 @@ func trackerMove(t *testing.T, newTracker NewTracker) {
 		t.Error("the ticket's status has no name after a move")
 	}
 
-	if err := tracker.Move(t.Context(), "#10", ColumnInReview); err != nil {
+	if err := tracker.Move(t.Context(), fx.Key("#10"), ColumnInReview); err != nil {
 		t.Fatalf("moving a ticket to the column it is already in failed: %v", err)
 	}
-	again, err := tracker.Ticket(t.Context(), "#10")
+	again, err := tracker.Ticket(t.Context(), fx.Key("#10"))
 	if err != nil {
 		t.Fatalf("Ticket after the second Move: %v", err)
 	}
@@ -465,23 +522,24 @@ func trackerMove(t *testing.T, newTracker NewTracker) {
 // understood only its own ids would make every configured transition
 // unperformable. The ticket still comes back carrying the tracker's id.
 func trackerMoveByName(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	name := ContractTracker().Columns[ColumnInReview]
-	if err := tracker.Move(t.Context(), "#10", core.ColumnID(name)); err != nil {
+	if err := tracker.Move(t.Context(), fx.Key("#10"), core.ColumnID(name)); err != nil {
 		t.Fatalf("Move(%q): %v", name, err)
 	}
-	moved, err := tracker.Ticket(t.Context(), "#10")
+	moved, err := tracker.Ticket(t.Context(), fx.Key("#10"))
 	if err != nil {
 		t.Fatalf("Ticket after Move: %v", err)
 	}
 	if moved.ColumnID != ColumnInReview {
 		t.Fatalf("moving to %q left the ticket in %s, want %s", name, moved.ColumnID, ColumnInReview)
 	}
-	if err := tracker.Move(t.Context(), "#10", core.ColumnID(name)); err != nil {
+	if err := tracker.Move(t.Context(), fx.Key("#10"), core.ColumnID(name)); err != nil {
 		t.Fatalf("moving by name to the column it is already in failed: %v", err)
 	}
 
-	err = tracker.Move(t.Context(), "#10", "Pending triage")
+	err = tracker.Move(t.Context(), fx.Key("#10"), "Pending triage")
 	if !errors.Is(err, core.ErrValidation) {
 		t.Errorf("Move to a column the board does not have = %v, want it to wrap ErrValidation", err)
 	}
@@ -490,7 +548,8 @@ func trackerMoveByName(t *testing.T, newTracker NewTracker) {
 // trackerFollowUp: a follow-up is filed once and found by its marker, and a
 // search naming fewer fields still finds it (spec 11 §1).
 func trackerFollowUp(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	marker := ContractFollowUpMarker()
 
 	found, err := tracker.FindFollowUp(t.Context(), marker)
@@ -535,7 +594,8 @@ func trackerFollowUp(t *testing.T, newTracker NewTracker) {
 // trackerNewFollowUp: a ticket flow has just filed can be referred to and
 // found again, which is what stops the next run filing a second one.
 func trackerNewFollowUp(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.expedite", "repo", "acme/widget")
 	filed, err := tracker.CreateFollowUp(t.Context(), core.FollowUp{
 		Marker: marker,
@@ -561,14 +621,15 @@ func trackerNewFollowUp(t *testing.T, newTracker NewTracker) {
 // trackerUpdateFollowUp: the body of flow's own ticket is rewritten in place,
 // the marker survives the rewrite, and a ticket a person wrote is refused.
 func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	marker := ContractFollowUpMarker()
 
-	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+	if err := tracker.UpdateFollowUp(t.Context(), fx.Key("#13"), marker,
 		"flow: the trunk is still unprotected", "Still not enforced, three days on."); err != nil {
 		t.Fatalf("UpdateFollowUp: %v", err)
 	}
-	after, err := tracker.Ticket(t.Context(), "#13")
+	after, err := tracker.Ticket(t.Context(), fx.Key("#13"))
 	if err != nil {
 		t.Fatalf("Ticket after the rewrite: %v", err)
 	}
@@ -591,11 +652,11 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	// report is rewritten every morning (spec 07 §10), and a report that
 	// sent identical bytes would move the moment the issue last changed and
 	// make a quiet fortnight look like news every day.
-	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+	if err := tracker.UpdateFollowUp(t.Context(), fx.Key("#13"), marker,
 		"flow: the trunk is still unprotected", "Still not enforced, three days on."); err != nil {
 		t.Errorf("UpdateFollowUp with nothing to change: %v", err)
 	}
-	again, err := tracker.Ticket(t.Context(), "#13")
+	again, err := tracker.Ticket(t.Context(), fx.Key("#13"))
 	if err != nil {
 		t.Fatalf("Ticket after the second rewrite: %v", err)
 	}
@@ -607,11 +668,11 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	// The title is not a thing the body decides. A summary can improve
 	// without a word of the body changing, and the title is the whole of
 	// what a person reads in the issue list.
-	if err := tracker.UpdateFollowUp(t.Context(), "#13", marker,
+	if err := tracker.UpdateFollowUp(t.Context(), fx.Key("#13"), marker,
 		"flow: the trunk takes anything anyone pushes", "Still not enforced, three days on."); err != nil {
 		t.Fatalf("UpdateFollowUp with only the title to change: %v", err)
 	}
-	retitled, err := tracker.Ticket(t.Context(), "#13")
+	retitled, err := tracker.Ticket(t.Context(), fx.Key("#13"))
 	if err != nil {
 		t.Fatalf("Ticket after the retitle: %v", err)
 	}
@@ -620,10 +681,10 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 	}
 
 	// #12 is a person's ticket. flow edits only its own writing.
-	if err := tracker.UpdateFollowUp(t.Context(), "#12", marker, "flow took over", "flow was here"); !errors.Is(err, core.ErrValidation) {
+	if err := tracker.UpdateFollowUp(t.Context(), fx.Key("#12"), marker, "flow took over", "flow was here"); !errors.Is(err, core.ErrValidation) {
 		t.Errorf("rewriting a ticket flow did not open = %v, want ErrValidation", err)
 	}
-	theirs, err := tracker.Ticket(t.Context(), "#12")
+	theirs, err := tracker.Ticket(t.Context(), fx.Key("#12"))
 	if err != nil {
 		t.Fatalf("Ticket #12: %v", err)
 	}
@@ -634,7 +695,7 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 		t.Errorf("flow retitled somebody else's ticket anyway: %q", theirs.Title)
 	}
 
-	if err := tracker.UpdateFollowUp(t.Context(), "#4040", marker, "nobody", "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.UpdateFollowUp(t.Context(), fx.Key("#4040"), marker, "nobody", "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("rewriting a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }
@@ -642,15 +703,16 @@ func trackerUpdateFollowUp(t *testing.T, newTracker NewTracker) {
 // trackerComment: a marked comment is written and then edited in place, and a
 // ticket that is not there is ErrNotFound.
 func trackerComment(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
 	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
-	if err := tracker.Comment(t.Context(), "#13", marker, "still not done"); err != nil {
+	if err := tracker.Comment(t.Context(), fx.Key("#13"), marker, "still not done"); err != nil {
 		t.Fatalf("Comment: %v", err)
 	}
-	if err := tracker.Comment(t.Context(), "#13", marker, "still not done, a week on"); err != nil {
+	if err := tracker.Comment(t.Context(), fx.Key("#13"), marker, "still not done, a week on"); err != nil {
 		t.Fatalf("Comment again: %v", err)
 	}
-	if err := tracker.Comment(t.Context(), "#4040", marker, "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.Comment(t.Context(), fx.Key("#4040"), marker, "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("commenting on a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }
@@ -658,11 +720,12 @@ func trackerComment(t *testing.T, newTracker NewTracker) {
 // trackerClose: a ticket is closed with a reason, and closing it again does not
 // move the moment the work was finished.
 func trackerClose(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	if err := tracker.Close(t.Context(), "#13", core.ClosedCompleted); err != nil {
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if err := tracker.Close(t.Context(), fx.Key("#13"), core.ClosedCompleted); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	closed, err := tracker.Ticket(t.Context(), "#13")
+	closed, err := tracker.Ticket(t.Context(), fx.Key("#13"))
 	if err != nil {
 		t.Fatalf("Ticket after Close: %v", err)
 	}
@@ -677,17 +740,17 @@ func trackerClose(t *testing.T, newTracker NewTracker) {
 	}
 	// Idempotent: doctor runs daily, and the second run must not move the
 	// moment the work was finished.
-	if err := tracker.Close(t.Context(), "#13", core.ClosedCompleted); err != nil {
+	if err := tracker.Close(t.Context(), fx.Key("#13"), core.ClosedCompleted); err != nil {
 		t.Fatalf("Close again: %v", err)
 	}
-	again, err := tracker.Ticket(t.Context(), "#13")
+	again, err := tracker.Ticket(t.Context(), fx.Key("#13"))
 	if err != nil {
 		t.Fatalf("Ticket after the second Close: %v", err)
 	}
 	if !again.ClosedAt.Equal(closed.ClosedAt) {
 		t.Errorf("closed at %v then %v: closing a closed ticket moved the date", closed.ClosedAt, again.ClosedAt)
 	}
-	if err := tracker.Close(t.Context(), "#4040", core.ClosedCompleted); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.Close(t.Context(), fx.Key("#4040"), core.ClosedCompleted); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("closing a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }
@@ -695,25 +758,26 @@ func trackerClose(t *testing.T, newTracker NewTracker) {
 // trackerReopen: a closed ticket is reopened, and reopening one that is not
 // there is ErrNotFound.
 func trackerReopen(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	before, err := tracker.Ticket(t.Context(), "#11")
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	before, err := tracker.Ticket(t.Context(), fx.Key("#11"))
 	if err != nil {
 		t.Fatalf("Ticket(#11): %v", err)
 	}
 	if !before.Closed {
 		t.Fatal("the fixture's #11 should be closed")
 	}
-	if err := tracker.Reopen(t.Context(), "#11", "flow could not verify it was done"); err != nil {
+	if err := tracker.Reopen(t.Context(), fx.Key("#11"), "flow could not verify it was done"); err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
-	after, err := tracker.Ticket(t.Context(), "#11")
+	after, err := tracker.Ticket(t.Context(), fx.Key("#11"))
 	if err != nil {
 		t.Fatalf("Ticket after Reopen: %v", err)
 	}
 	if after.Closed {
 		t.Error("the ticket is still closed after being reopened")
 	}
-	if err := tracker.Reopen(t.Context(), "#4040", "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
+	if err := tracker.Reopen(t.Context(), fx.Key("#4040"), "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("reopening a ticket that is not there = %v, want ErrNotFound", err)
 	}
 }
@@ -721,10 +785,11 @@ func trackerReopen(t *testing.T, newTracker NewTracker) {
 // trackerLinkedKeys: linkage comes from the forge's own structured link, and a
 // pull request that names nothing links to nothing (P12, spec 04 §3).
 func trackerLinkedKeys(t *testing.T, newTracker NewTracker) {
-	tracker := newTracker(t, ContractTracker())
-	pr := ContractForge().PullRequests[1]
-	if keys := tracker.LinkedKeys(pr); !slices.Contains(keys, "#11") {
-		t.Errorf("LinkedKeys = %v, want the issue the forge says it closes", keys)
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	pr := fx.Linked()
+	if keys := tracker.LinkedKeys(pr); !slices.Contains(keys, fx.Key("#11")) {
+		t.Errorf("LinkedKeys = %v, want the ticket the pull request is for", keys)
 	}
 	if keys := tracker.LinkedKeys(core.PullRequest{Number: 99}); len(keys) != 0 {
 		t.Errorf("LinkedKeys of an unlinked pull request = %v, want none: flow never guesses", keys)

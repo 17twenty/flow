@@ -20,8 +20,8 @@ func TestFakeForgeMeetsTheContract(t *testing.T) {
 }
 
 func TestFakeTrackerMeetsTheContract(t *testing.T) {
-	coretest.TrackerContract(t, func(t *testing.T, fx coretest.TrackerFixture) core.Tracker {
-		return coretest.NewFakeTracker(fx)
+	coretest.TrackerContract(t, func(t *testing.T, fx *coretest.TrackerFixture) core.Tracker {
+		return coretest.NewFakeTracker(*fx)
 	})
 }
 

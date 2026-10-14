@@ -2,7 +2,9 @@ package core
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -235,6 +237,42 @@ func SecondaryRateLimited(h http.Header, body []byte) bool {
 	return false
 }
 
+// listedErrors reads whatever a provider put under "errors": a list of
+// objects, as GitHub writes it, or a map of field to message, as Jira does.
+// Anything else says nothing.
+func listedErrors(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var listed []struct {
+		Message  string `json:"message"`
+		Field    string `json:"field"`
+		Code     string `json:"code"`
+		Resource string `json:"resource"`
+	}
+	if err := json.Unmarshal(raw, &listed); err == nil {
+		var detail []string
+		for _, e := range listed {
+			switch {
+			case e.Message != "":
+				detail = append(detail, e.Message)
+			case e.Field != "" && e.Code != "":
+				detail = append(detail, e.Resource+"."+e.Field+" "+e.Code)
+			}
+		}
+		return detail
+	}
+	var byField map[string]string
+	if err := json.Unmarshal(raw, &byField); err != nil {
+		return nil
+	}
+	detail := make([]string, 0, len(byField))
+	for _, field := range slices.Sorted(maps.Keys(byField)) {
+		detail = append(detail, field+": "+byField[field])
+	}
+	return detail
+}
+
 // APIMessage returns the human-readable message of a JSON error body, which
 // GitHub, GitLab and Jira all put under "message" or "error". It returns the
 // empty string for a body that is not JSON or says nothing, and never returns
@@ -246,12 +284,14 @@ func APIMessage(body []byte) string {
 	var doc struct {
 		Message any    `json:"message"`
 		Error   string `json:"error"`
-		Errors  []struct {
-			Message  string `json:"message"`
-			Field    string `json:"field"`
-			Code     string `json:"code"`
-			Resource string `json:"resource"`
-		} `json:"errors"`
+		// Errors is a list of objects to GitHub and a map of field to
+		// message to Jira, so it is read twice rather than decoded once:
+		// one shape declared would make the other body unreadable
+		// altogether, and a refusal nobody can read is the one thing this
+		// exists to prevent.
+		Errors json.RawMessage `json:"errors"`
+		// ErrorMessages is Jira's list of what went wrong.
+		ErrorMessages []string `json:"errorMessages"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return ""
@@ -260,15 +300,8 @@ func APIMessage(body []byte) string {
 	if message == "" {
 		message = doc.Error
 	}
-	var detail []string
-	for _, e := range doc.Errors {
-		switch {
-		case e.Message != "":
-			detail = append(detail, e.Message)
-		case e.Field != "" && e.Code != "":
-			detail = append(detail, e.Resource+"."+e.Field+" "+e.Code)
-		}
-	}
+	detail := append([]string(nil), doc.ErrorMessages...)
+	detail = append(detail, listedErrors(doc.Errors)...)
 	if len(detail) > 0 {
 		if message == "" {
 			message = strings.Join(detail, "; ")
