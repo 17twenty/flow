@@ -850,3 +850,12 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   flag" grade the same and read very differently. The second is what a reader
   needs to tell a healthy fortnight from a blind one, and it is also what
   stops the check asking the tracker a question about nothing.
+- **§8 a promise about an automation names the audit that watches it (item
+  4.6, revisited).** `tracker.native.*` is the one family flow holds both
+  halves of: nobody can ask GitHub Projects whether a built-in workflow is
+  switched on, and anybody can watch whether tickets actually moved. So the
+  remediation steps point at `live.transitions.<event>` in the same report
+  before asking for the promise. A person vouching from memory is the failure
+  mode attestation has, and the fortnight of outcome is the cheapest thing
+  that stops it. Every other attestation names no audit, because naming a
+  check the report does not contain would send a reader looking for it.
