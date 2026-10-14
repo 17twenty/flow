@@ -556,3 +556,86 @@ reopen, pagination, error mapping.
   all, since only a GET is cached and a JQL search is a POST — and a test
   moves an issue twice through one client with a warm store to prove the
   second move was decided on the issue as it then stood.
+
+
+- **§4 one adapter for a workspace nobody hosts (item 7.2).** Linear has one
+  host for everybody, so `tracker.url` names nothing and `tracker.project`
+  holds a team key such as `ENG`. A team owns the workflow states that are
+  flow's columns and the issues that are its tickets, which is what makes a
+  team the board. The key is resolved into the team's id once a run and
+  remembered; a key the workspace has not got is `ErrNotFound` naming the
+  setting, not a failed query.
+
+- **§4 the credential is the whole Authorization header (item 7.2).** A
+  Linear personal API key is sent with no scheme in front of it, which every
+  other provider flow speaks to would read as a malformed header. The empty
+  string already means "the default", so `core.AuthSchemeNone` is what says
+  it, and which kind of credential it is, is in the credential: a token
+  beginning `lin_oauth_` is an OAuth access token and goes out as a Bearer
+  token. Nobody has to be asked a second question about a credential that
+  names itself.
+
+- **§4 a provider names a failure where it likes, and `core` finds it (item
+  7.2).** GitHub writes `type` beside the message and Linear writes
+  `extensions: {{type, code}}` underneath it. `core.GraphQLError.Kind` answers
+  the first non-empty of the two, so an adapter maps the names its own
+  provider uses and never unwraps the envelope again. Both of Linear's are
+  mapped: the codes are the precise names and the coarse types are underneath
+  them, and a refusal flow has no code for must not read as an outage worth
+  retrying.
+
+- **§4 six state types are three categories (item 7.2).** Linear calls a
+  state triage, backlog, unstarted, started, completed or canceled. The first
+  three are work nobody has begun, the fourth is work in hand, and the last
+  two are work that is over — a column flow calls done is a column work leaves
+  the board from, and cancelled work has left it. Going the other way, a
+  column flow creates in a category it was not told becomes `started`, because
+  the two ends of the board are where Linear's own automations fire and the
+  middle is the only category that cannot make the board say something untrue
+  about work nobody has touched.
+
+- **§4 a category is settled when a column is created (item 7.2).**
+  `WorkflowStateUpdateInput` carries no type, so the only way to give an
+  existing state another category would be to archive it and make a new one,
+  which takes every issue standing in it off the board. flow refuses with
+  `ErrUnsupported` and says what a person does instead; the declaration says
+  `status_categories: set: false` for the same reason. A rename, a colour and
+  a description are all changes Linear does take.
+
+- **§4 an issue has no closed flag, so the column is the closing (item
+  7.2).** Work is finished when it stands in a state Linear calls completed
+  and dropped when it stands in one it calls canceled, and Linear dates both
+  itself. `Close` with `not_planned` therefore looks for a cancelled column
+  and `Close` with `completed` for a completed one, each the leftmost of its
+  type; `Reopen` looks for unstarted, then backlog, then triage. A team with
+  nowhere to cancel work completes it rather than failing the run.
+
+- **§4 archived is the board's absence and trashed is gone (item 7.2).**
+  Every Linear connection leaves archived issues out unless it is asked for
+  them, and a lookup by identifier answers for one regardless — the two
+  readings flow needs, with no deriving. Linear archives an issue a while
+  after it closes, so the follow-up search asks `includeArchived: true` or
+  flow would file the same ticket every month. An issue in the trash is not
+  there at all, which is `ErrNotFound`.
+
+- **§4 linkage is what Linear recorded, then what the branch says (item
+  7.2).** `core.Tracker.LinkedKeys` is handed a pull request, no context and
+  no error, so it cannot ask: the attachment reading is the one flow has
+  already done. Every issue flow reads carries its attachments, and the
+  addresses in them answer first — Linear's own GitHub integration records a
+  pull request there. The fallback is the identifier in the branch, the title
+  or the header a squash will land, which is Linear's own documented
+  convention and never a pattern somebody configured (P12).
+
+- **§4 the labels of the workspace, the labels of this board (item 7.2).** A
+  Linear label belongs to a team or to the workspace, and a team may use
+  either. flow reads them all and keeps the ones this team may use, so a
+  `flow-followup` somebody made workspace-wide is found rather than created a
+  second time; a label group is a heading rather than a label and a retired
+  one is no longer offered, so neither is one. What flow creates, it creates
+  on the team: a label every team sees is somebody else's decision.
+
+- **§4 an estimate is points, and points are not hours (item 7.2).**
+  `core.Ticket.Size` is a duration, and Linear's estimate is a number of
+  points whose meaning each team settles for itself. flow leaves the field
+  empty rather than multiplying by an hour it invented.

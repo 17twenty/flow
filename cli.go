@@ -735,6 +735,23 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		if err != nil {
 			return engine.Adapters{}, err
 		}
+	case tracker.LinearKind:
+		declaration, err := s.Registry.Of(tracker.LinearKind)
+		if err != nil {
+			return engine.Adapters{}, err
+		}
+		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth, trackerAt)
+		if err != nil {
+			return engine.Adapters{}, err
+		}
+		adapters.Tracker, err = tracker.NewLinear(tracker.LinearOptions{
+			Client:       trackerClient,
+			Team:         projectKey(s.Config, s.Lock),
+			Capabilities: declaration,
+		})
+		if err != nil {
+			return engine.Adapters{}, err
+		}
 	}
 
 	switch s.Config.Deploys.Source {
@@ -966,10 +983,21 @@ func trackerEndpoint(kind, configured, configPath string) (apiEndpoint, error) {
 			root += tracker.JiraAPIPath
 		}
 		return apiEndpoint{Root: root, Header: tracker.JiraHeader(), Scheme: "Basic"}, nil
+	case tracker.LinearKind:
+		// Linear has one host for every workspace, so there is nothing to
+		// point flow at and tracker.url names nothing (spec 11 §4). A
+		// personal API key is the whole Authorization header, which is what
+		// the scheme says here.
+		return apiEndpoint{
+			Root:   tracker.LinearAPI,
+			Header: tracker.LinearHeader(),
+			Scheme: core.AuthSchemeNone,
+			Encode: func(token string) (string, error) { return tracker.LinearAuthorization(token), nil },
+		}, nil
 	default:
 		return apiEndpoint{}, core.Errorf(core.ErrUnsupported, "talk to the %s tracker", kind).
 			WithWhy("this build ships no adapter for it").
-			WithFix("set tracker.type to github-projects or jira-cloud in %s", configPath)
+			WithFix("set tracker.type to github-projects, jira-cloud or linear in %s", configPath)
 	}
 }
 

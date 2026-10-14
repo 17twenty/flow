@@ -330,8 +330,20 @@ Human-only steps use ids `H.<n>` (never seeded).
     own vocabulary rather than in GitHub's. Nothing switches the ETag store
     off: `core.Client` revalidates, so a reading flow kept is one the
     provider has just agreed with.
-- [ ] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
+- [x] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
   - AC: contract suite; attachment-first linkage; archived issues (spec 11 §1: `includeArchived` off for the board, on for a key — Linear auto-archives closed work)
+  - note: internal/tracker/linear.go + linear_wire.go. One host, so
+    `tracker.url` names nothing and `tracker.project` holds a team key. A
+    personal API key is the whole Authorization header — `core.AuthSchemeNone`
+    — and a `lin_oauth_` token goes out as a Bearer token. Linear names a
+    failure under `extensions`, so `core.GraphQLError.Kind` now answers
+    wherever a provider put it. Six state types are flow's three categories;
+    a category is settled when a state is created, so recategorising a column
+    is `ErrUnsupported` with what a person does instead. An issue has no
+    closed flag: completed and canceled are the two endings, and Linear dates
+    both. Linkage reads the attachments of every issue flow reads —
+    `LinkedKeys` is given no context and cannot ask — and falls back to the
+    identifier in the branch.
 - [x] 7.3 Gitea/Forgejo forge — specs: 10 §3 — deps: 3.12 (#81)
   - AC: contract suite; commit_status deploy source; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — Gitea appends the number (spec 10 §2, #106)
   - note: internal/forge/gitea.go + gitea_wire.go, one adapter for both

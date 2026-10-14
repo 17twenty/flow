@@ -167,3 +167,68 @@ func TestGraphQLWithoutAMapperIsUnavailable(t *testing.T) {
 		t.Errorf("GraphQL without a mapper = %v, want ErrUnavailable", err)
 	}
 }
+
+// linearSentinel is a provider that names its failures where GitHub does not:
+// Linear writes the name under extensions rather than beside the message.
+func linearSentinel(errType string) error {
+	switch errType {
+	case "ENTITY_NOT_FOUND":
+		return ErrNotFound
+	case "authentication error":
+		return ErrPermission
+	default:
+		return nil
+	}
+}
+
+// A provider that names the failure under extensions is read, because the
+// envelope has two places for it and an adapter should not have to unwrap the
+// answer a second time to find out which one its provider uses.
+func TestGraphQLReadsTheNameOfAFailureWhereverTheProviderPutIt(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{
+			name: "beside the message",
+			body: `{"errors":[{"type":"NOT_FOUND","message":"gone"}]}`,
+			want: ErrNotFound,
+		},
+		{
+			name: "the code under extensions",
+			body: `{"errors":[{"message":"gone","extensions":{"type":"invalid input","code":"ENTITY_NOT_FOUND"}}]}`,
+			want: ErrNotFound,
+		},
+		{
+			name: "the coarse type under extensions, where there is no code",
+			body: `{"errors":[{"message":"no","extensions":{"type":"authentication error"}}]}`,
+			want: ErrPermission,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			client, _ := graphQLServer(t, c.body)
+			_, err := GraphQL[graphQLViewer](t.Context(), client, Request{Path: "graphql"},
+				GraphQLQuery{Query: "query { viewer { login } }"}, func(errType string) error {
+					if mapped := ghSentinel(errType); mapped != nil {
+						return mapped
+					}
+					return linearSentinel(errType)
+				})
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+		})
+	}
+}
+
+// The top-level name wins where a provider sends both, because that is the
+// one GitHub means and the extensions it also sends are GraphQL's own.
+func TestGraphQLErrorPrefersTheNameBesideTheMessage(t *testing.T) {
+	var e GraphQLError
+	e.Type = "NOT_FOUND"
+	e.Extensions.Code = "RATELIMITED"
+	if got := e.Kind(); got != "NOT_FOUND" {
+		t.Errorf("Kind() = %q, want the provider's own top-level name", got)
+	}
+}

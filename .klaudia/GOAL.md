@@ -34,7 +34,7 @@ tests, dependencies limited to spec 01 §4.
 ### Binary and specs
 - [x] `go build -o bin/flow .` succeeds; `flow --help` lists the Setup/Verify/CI/Meta groups of spec 02; no command returns `ErrUnsupported`.
 - [x] Every command in spec 00 §5 (`init`, `plan`, `apply`, `attest`, `doctor`, `check pr|deploy|commit`, `hook install|uninstall`, `schema`, `version`) implemented with `--json` and the exit codes of spec 02 §4.
-- [ ] GitHub forge and GitHub Projects adapters pass their contract suites against `httptest` fakes; Jira Cloud, Linear, Gitea/Forgejo and GitLab adapters pass theirs (plan Phase 7).
+- [x] GitHub forge and GitHub Projects adapters pass their contract suites against `httptest` fakes; Jira Cloud, Linear, Gitea/Forgejo and GitLab adapters pass theirs (plan Phase 7).
 - [x] `go test ./... -race -count=1` green with no network access from tests and the transport guard active; no test skipped or weakened to pass.
 - [x] `gofmt -l .` empty; `go vet ./...`, `staticcheck ./...` and `govulncheck ./...` clean.
 - [x] One test exists and passes per acceptance scenario id in `specs/19-acceptance-scenarios.md` (A01–A07, G01–G06, V01–V05, S01–S03).
@@ -75,8 +75,8 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [x] Phase 9 — TUI (plan Phase 6): the init wizard, the picker, the apply confirmation and doctor's display with `--watch`
-- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo, GitLab and Jira Cloud done; Linear and credential approval to go
-- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios and the README demo are done; 14 green doctor days to go
+- [x] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo, GitLab, Jira Cloud and Linear, plus `forge.required_checks`, the commit-status deploy source and credential host approval
+- [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios, the README demo and the agent skill are done; **every plan item but the human gate is ticked**, and 14 green doctor days are what is left
 
 ### Status notes
 
@@ -1109,14 +1109,75 @@ search the flag was doing nothing at all, since only a GET is cached and a
 search is a POST. A surviving mutant is always a finding; it is not always a
 missing test.
 
-**Single best next step:** the Linear tracker
-([#80](https://github.com/17twenty/flow/issues/80)) — the last item of Phase 7
-and the last adapter of v1. It is the mirror image of Jira: states *are*
-columns and are writable, linkage is an attachment the integration creates,
-and Linear auto-archives closed work, so `includeArchived` is off for the
-board and on for a key.
+### The last adapter, and the header with nothing in front of it (item 7.2)
 
-The thing only `@17twenty` can do is unchanged, and it is still the only part
-of the fourteen-day clock waiting on a decision rather than on the calendar:
+**Linear is a board flow writes to.** `internal/tracker/linear.go` and
+`linear_wire.go` are the fourth adapter and the last code of the plan. One
+host serves every workspace, so `tracker.url` names nothing and
+`tracker.project` holds a team key such as `ENG`: a Linear team owns the
+workflow states that are flow's columns and the issues that are its tickets,
+which is what makes a team the board. The whole tracker contract passes
+against a GraphQL fake in Linear's own shapes — Relay cursor pages, errors at
+HTTP 200, and an `Authorization` header that is the credential and nothing
+else.
+
+**That header cost a seam in `core`.** Every other provider flow speaks to
+takes a scheme in front of the credential, and `""` already means "use the
+default", so a Linear personal API key had nowhere to say "none at all".
+`core.AuthSchemeNone` is what says it, and which kind of credential it is, is
+in the credential itself: a token beginning `lin_oauth_` is an OAuth access
+token and goes out as a Bearer token. Nobody is asked a second question about
+a credential that names itself.
+
+**And a second one, because Linear names failures somewhere else.** GitHub
+writes `type` beside the message; Linear writes `extensions: {type, code}`
+underneath it. `core.GraphQLError.Kind` now answers the first of those a
+provider filled in, so an adapter maps the names its own provider uses and
+never unwraps the envelope a second time. Both of Linear's are mapped — the
+codes are precise and the types are the coarse ones under them — because a
+refusal flow has no code for must not read as an outage worth retrying.
+
+**Three things Linear would not let flow say.** A category is settled when a
+state is created: `WorkflowStateUpdateInput` carries no type, so moving a
+column into another category would mean archiving it and taking every issue
+standing in it off the board. flow refuses with `ErrUnsupported` and says what
+a person does instead, and the declaration now reads `status_categories: set:
+false` for the same reason. An issue has no closed flag either — completed and
+canceled are the two endings, and Linear dates both itself — so closing work
+nobody will do means finding the leftmost cancelled column, and the column is
+the closing. And an estimate is points, whose meaning each team settles for
+itself, so `core.Ticket.Size` is left empty rather than multiplied by an hour
+flow invented.
+
+**Linkage is what Linear recorded, then what the branch says.**
+`core.Tracker.LinkedKeys` is handed a pull request, no context and no error,
+so it cannot ask: the attachment reading is the one flow has already done.
+Every issue flow reads carries its attachments, and the addresses in them
+answer first — Linear's own GitHub integration puts a pull request there. The
+fallback is the identifier in the branch, the title or the header a squash
+will land, which is Linear's convention and never a pattern somebody
+configured.
+
+**Fifty-six mutants over three passes, and the two that mattered were
+redundancy.** Taking the leftmost column of a type compared positions inside a
+loop over a list `states()` had already sorted by position — two mechanisms
+answering one question, and the second one deleted. Reading a close reason
+from the dates *and* from the state type was the same fault: the state type
+now says why and the dates say when, so there is one answer to each. The rest
+bought tests — a trashed issue read as gone, a follow-up remembered rather
+than searched for twice, flow's own comment edited rather than written again,
+a limit that is a limit. The fake needed fixing twice as well: it answered
+`trashed: false` for an issue in the trash, which is the field's whole
+purpose, and it wrote every edit at the same instant, so a date that moved
+could not be told from one that did not.
+
+**Every plan item but the human gate is now ticked.** 0.1–8.3 are done;
+`- [ ] H.2` is the only unchecked line left in
+`.ralph/IMPLEMENTATION_PLAN.md`, and it is the fourteen-day confirmation.
+
+**Single best next step:** nothing in the plan — the code of v1 is written.
+What remains is the clock and the one thing only `@17twenty` can do, which is
+still the only part of it waiting on a decision rather than on the calendar:
 run the four `flow attest` commands in `docs/cookbook.md` §6.1 and land the
-resulting `.flow.lock` through a pull request.
+resulting `.flow.lock` through a pull request. Until those four states are
+vouched for, `flow doctor` exits 2 every day and the fourteen cannot start.
