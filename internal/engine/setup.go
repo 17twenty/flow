@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -807,15 +806,21 @@ func noteSteps(item PlanItem) []string {
 	return steps
 }
 
-// changeInstruction is one change written out in full, fields and all. The
-// report's one-line form is deliberately terse; a person about to reproduce
-// the change by hand needs the values, not a summary of them.
+// changeInstruction is one change written out with its values. The report's
+// one-line form is deliberately terse; a person about to reproduce the change
+// by hand needs the values, not a summary of them.
+//
+// What it does not need is the settings that already say what flow asked.
+// [core.Change.Fields] is what decides that, for this and for the plan
+// together: a follow-up ticket is a copy of a plan line that outlives the run
+// it came from, and the two reading the same change differently is how
+// somebody ends up checking four settings to find the fifth.
 func changeInstruction(change core.Change) string {
+	names := change.Fields()
 	line := describeChange(change)
-	if len(change.Item.Fields) == 0 {
+	if len(names) == 0 {
 		return line
 	}
-	names := slices.Sorted(maps.Keys(change.Item.Fields))
 	pairs := make([]string, 0, len(names))
 	for _, name := range names {
 		pairs = append(pairs, name+"="+change.Item.Fields[name])

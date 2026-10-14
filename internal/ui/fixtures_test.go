@@ -42,6 +42,10 @@ func samplePlan() engine.Plan {
 						"required_checks": "flow/policy",
 						"reviews":         "1",
 					}},
+					// The branch already requires the check; what it does not
+					// have is a review. A rendering names the part that is not
+					// already so, and the item stays whole for the adapter.
+					Differs: []string{"reviews"},
 				}},
 				Hazards: []string{"rewriting protection clears any rule flow does not send"},
 			},
