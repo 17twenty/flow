@@ -288,3 +288,24 @@ each successful mutation (atomic) and at the end. Summary.
   call, exactly as `forge.protection` and `forge.required_status` already do,
   and the squash text depends on the strategies so that the order a person
   reads the plan in is the order the call is made in.
+- **§4 the title of a pull request flow opens is composed, never written down
+  (issue #152).** Both pull requests flow opens for itself — the files a
+  workflow needs and the refreshed lock — are judged afterwards by flow's own
+  gate, against the team's own `commits` section. A constant title cannot
+  keep to a convention it has never read: `chore(flow): refresh .flow.lock`
+  has a scope this repository does not allow and a type this repository does
+  not let through unlinked, so flow opened a pull request every morning that
+  flow then refused. `engine.Proposal` therefore composes the header from
+  what the configuration permits — a type that may merge without a ticket, a
+  scope the team names, and the header a squash would land, number and all —
+  and lints it with the linter the gate will lint it with. There is one
+  mechanism for the question "is this title landable here?" and the gate owns
+  it.
+- **§4 flow opens nothing rather than something unlandable (issue #152).**
+  When no type flow can honestly claim may merge without a ticket, or the
+  team demands a scope it names none of, there is no landable title and flow
+  makes no proposal. A pull request the author's own gate refuses is worse
+  than no pull request: it is a red cross on the trunk's gate, on a change
+  nobody can act on. The refusal names the key in its *reason* and not only
+  in its remedy, because an apply reports an item's failure by the message
+  alone.

@@ -58,6 +58,11 @@ func (p Plan) Mutations() []core.Change {
 type ApplyInput struct {
 	// Plan is what was decided, and approved.
 	Plan Plan
+	// Config is the team's own configuration. Apply reads it only for the
+	// conventions a pull request flow opens itself has to keep to: what is
+	// made is decided by the plan, which was made from the configuration
+	// already.
+	Config *config.Config
 	// Desired is the state the plan was made from. The changes say what to
 	// make; the desired item says what the whole thing should be, which is
 	// what a forge setting is written as.
@@ -487,9 +492,16 @@ func (a *applier) propose(ctx context.Context, planned PlanItem, wanted DesiredI
 	for _, file := range files {
 		paths = append(paths, file.Path)
 	}
+	// Judged by the linter the gate will judge it with, against this team's
+	// own convention: a pull request flow's own gate refuses is worse than
+	// no pull request (issue #152).
+	title, err := FilesProposal.Title(a.in.Config)
+	if err != nil {
+		return "", err
+	}
 	pr, err := a.in.Adapters.Forge.ProposeFiles(ctx, core.FileProposal{
-		ID:    "files",
-		Title: "chore(flow): add the files the workflow needs",
+		ID:    FilesProposal.ID,
+		Title: title,
 		Body:  proposalBody(paths),
 		Files: files,
 	})

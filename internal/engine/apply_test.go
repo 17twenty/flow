@@ -49,6 +49,9 @@ func applyTo(t *testing.T, w world, in engine.ApplyInput) (engine.Applied, *save
 	if in.Desired.Items == nil {
 		in.Desired = desired(t, preset(t, config.PresetLeanKanban))
 	}
+	if in.Config == nil {
+		in.Config = preset(t, config.PresetLeanKanban)
+	}
 	if in.Adapters.Tracker == nil && in.Adapters.Forge == nil {
 		in.Adapters = w.adapters()
 	}
@@ -697,4 +700,36 @@ func (t *haltingTracker) Apply(ctx context.Context, c core.Change) (core.ApplyRe
 		return core.ApplyResult{}, t.err
 	}
 	return t.FakeTracker.Apply(ctx, c)
+}
+
+// The files proposal is a pull request like any other, so flow's own gate
+// judges it, and a title that gate refuses is a red cross nobody can act on
+// (issue #152). Under a configuration that leaves flow no landable title the
+// proposal is not made at all, and the item says which key refused it.
+func TestTheFilesProposalIsNotOpenedWhenTheGateWouldRefuseIt(t *testing.T) {
+	w := githubProjectsWorld(t)
+	cfg := preset(t, config.PresetLeanKanban)
+	cfg.Commits.UnlinkedTypes = nil
+
+	applied, _ := applyTo(t, w, engine.ApplyInput{Config: cfg})
+
+	files := item(t, applied, core.ItemForgeFiles)
+	if files.Done() {
+		t.Fatalf("flow proposed the files anyway: %+v", files.Changes)
+	}
+	if !strings.Contains(fmt.Sprint(files.Err), "commits.unlinked_types") {
+		t.Errorf("the failure is %v, want it to name the key that refused the proposal", files.Err)
+	}
+
+	// Nothing was opened: the refusal is before the forge, not after it.
+	open, err := w.forge.PullRequests(context.Background(), core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := core.FileProposal{ID: engine.FilesProposal.ID}.Branch()
+	for _, pr := range open {
+		if pr.HeadRef == branch {
+			t.Errorf("flow opened #%d from %s: %q", pr.Number, branch, pr.Title)
+		}
+	}
 }
