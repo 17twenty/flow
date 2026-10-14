@@ -35,8 +35,10 @@ type gitHubFake struct {
 	fx       coretest.ForgeFixture
 	pageSize int
 	// statuses is a history, as GitHub's is: publishing a status appends to
-	// it and replaces nothing.
-	statuses map[string][]core.CommitStatus
+	// it and replaces nothing, and nextStatus is the identity the next one
+	// gets.
+	statuses   map[string][]core.CommitStatus
+	nextStatus int
 	// comments are the comments on each issue, in the order they were
 	// written, and nextID is the identity the next one gets.
 	comments map[int][]ghComment
@@ -121,7 +123,15 @@ func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *http
 		fake.protections[branch] = protection
 	}
 	for sha, statuses := range fx.Statuses {
-		fake.statuses[sha] = slices.Clone(statuses)
+		seeded := slices.Clone(statuses)
+		for i := range seeded {
+			fake.nextStatus++
+			seeded[i].ID = strconv.Itoa(fake.nextStatus)
+			if seeded[i].UpdatedAt.IsZero() {
+				seeded[i].UpdatedAt = seeded[i].CreatedAt
+			}
+		}
+		fake.statuses[sha] = seeded
 	}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
@@ -416,12 +426,13 @@ func (f *gitHubFake) commitStatuses(w http.ResponseWriter, r *http.Request, sha 
 	page := make([]any, 0, len(history))
 	for _, status := range history {
 		page = append(page, map[string]any{
+			"id":          json.Number(status.ID),
 			"context":     status.Context,
 			"state":       status.State,
 			"description": status.Description,
 			"target_url":  status.TargetURL,
 			"created_at":  status.CreatedAt,
-			"updated_at":  status.CreatedAt,
+			"updated_at":  status.UpdatedAt,
 		})
 	}
 	f.writePage(w, r, page)
@@ -452,17 +463,22 @@ func (f *gitHubFake) publishStatus(w http.ResponseWriter, r *http.Request, sha s
 		Description: body.Description,
 		TargetURL:   body.TargetURL,
 		CreatedAt:   coretest.ContractNow,
+		UpdatedAt:   coretest.ContractNow,
 	}
 	f.mu.Lock()
+	f.nextStatus++
+	status.ID = strconv.Itoa(f.nextStatus)
 	f.statuses[sha] = append(f.statuses[sha], status)
 	f.mu.Unlock()
 
 	f.writeJSON(w, r, map[string]any{
+		"id":          json.Number(status.ID),
 		"context":     status.Context,
 		"state":       status.State,
 		"description": status.Description,
 		"target_url":  status.TargetURL,
 		"created_at":  status.CreatedAt,
+		"updated_at":  status.UpdatedAt,
 	})
 }
 

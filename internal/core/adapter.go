@@ -14,6 +14,11 @@ type Forge interface {
 	Kind() string
 	// Capabilities is what this adapter can do, as declared (spec 05 §1).
 	Capabilities() CapabilitySet
+	// Slug is the repository this adapter speaks for, as owner/name. It is
+	// what the adapter was built with rather than what the provider
+	// answers, so that an error about a repository flow cannot reach can
+	// still name it.
+	Slug() string
 	// Probe reports what the credential is allowed to do.
 	Probe(ctx context.Context) (Permissions, error)
 

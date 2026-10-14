@@ -2,8 +2,6 @@ package deploys
 
 import (
 	"errors"
-	"net/http/httptest"
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -13,27 +11,15 @@ import (
 	"github.com/17twenty/flow/internal/core/coretest"
 )
 
-// newStatusSource builds a commit status source talking to srv, reading the
+// newStatusSource builds a commit status source reading forge, for the
 // contexts the fake's deployer reports production under.
-func newStatusSource(t *testing.T, srv *httptest.Server, contexts ...string) *CommitStatus {
+func newStatusSource(t *testing.T, forge core.Forge, contexts ...string) *CommitStatus {
 	t.Helper()
 	if len(contexts) == 0 {
 		contexts = []string{fakeProdContext}
 	}
-	client, err := core.NewClient(core.ClientOptions{
-		BaseURL: srv.URL,
-		Token:   "test-token",
-		Version: "v1.0.0",
-		Clock:   coretest.NewClock(coretest.ContractNow),
-		Backoff: func(int, core.RateLimit) time.Duration { return time.Millisecond },
-	})
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
 	source, err := NewCommitStatus(CommitStatusOptions{
-		Client:       client,
-		Owner:        fakeOwner,
-		Repo:         fakeRepo,
+		Forge:        forge,
 		Environment:  "production",
 		Contexts:     contexts,
 		Capabilities: deployCapabilities(t),
@@ -44,12 +30,11 @@ func newStatusSource(t *testing.T, srv *httptest.Server, contexts ...string) *Co
 	return source
 }
 
-// contractCommitStatus stands a fake GitHub up in front of the fixture and
-// reads it through commit statuses.
+// contractCommitStatus stands a forge up in front of the fixture and reads it
+// through commit statuses.
 func contractCommitStatus(t *testing.T, fx coretest.DeployFixture) core.DeploySource {
 	t.Helper()
-	_, srv := newStatusServer(t, fx)
-	return newStatusSource(t, srv)
+	return newStatusSource(t, newStatusForge(t, fx))
 }
 
 func TestCommitStatusMeetsTheDeployContract(t *testing.T) {
@@ -57,21 +42,15 @@ func TestCommitStatusMeetsTheDeployContract(t *testing.T) {
 }
 
 func TestNewCommitStatusRefusesAnIncompleteSource(t *testing.T) {
-	caps := deployCapabilities(t)
-	client, err := core.NewClient(core.ClientOptions{BaseURL: "https://api.github.com"})
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
 	full := CommitStatusOptions{
-		Client: client, Owner: "a", Repo: "b",
-		Environment: "production", Contexts: []string{"ci/deploy"}, Capabilities: caps,
+		Forge:       newStatusForge(t, coretest.ContractDeploys()),
+		Environment: "production", Contexts: []string{"ci/deploy"}, Capabilities: deployCapabilities(t),
 	}
 	cases := []struct {
 		name   string
 		change func(*CommitStatusOptions)
 	}{
-		{"no client", func(o *CommitStatusOptions) { o.Client = nil }},
-		{"no repository", func(o *CommitStatusOptions) { o.Repo = "" }},
+		{"no forge", func(o *CommitStatusOptions) { o.Forge = nil }},
 		{"no environment", func(o *CommitStatusOptions) { o.Environment = "" }},
 		{"no contexts", func(o *CommitStatusOptions) { o.Contexts = nil }},
 		{"no declaration", func(o *CommitStatusOptions) { o.Capabilities = core.CapabilitySet{} }},
@@ -88,16 +67,14 @@ func TestNewCommitStatusRefusesAnIncompleteSource(t *testing.T) {
 }
 
 func TestCommitStatusRefusesAQueryWithNoEnvironment(t *testing.T) {
-	_, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	source := newStatusSource(t, newStatusForge(t, coretest.ContractDeploys()))
 	if _, err := source.Deployments(t.Context(), core.DeployQuery{}); !errors.Is(err, core.ErrValidation) {
 		t.Fatalf("Deployments without an environment = %v, want ErrValidation", err)
 	}
 }
 
 func TestCommitStatusIsTheSourceItSaysItIs(t *testing.T) {
-	_, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	source := newStatusSource(t, newStatusForge(t, coretest.ContractDeploys()))
 	if source.Kind() != core.SourceCommitStatus {
 		t.Errorf("Kind() = %q, want %q", source.Kind(), core.SourceCommitStatus)
 	}
@@ -142,9 +119,9 @@ func TestCommitStatusMatchesAContextExactlyOrByPrefix(t *testing.T) {
 // commit's statuses answer to is two deployments, because two deployers
 // reported.
 func TestCommitStatusReadsEveryContextItWasGiven(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	fake.push(coretest.SHADeployed, "argocd/app-prod-eu", ghStatusSuccess, coretest.ContractNow.Add(-20*time.Hour))
-	source := newStatusSource(t, srv, "argocd/app-prod*")
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	forge.push(t, coretest.SHADeployed, "argocd/app-prod-eu", core.StatusSuccess, coretest.ContractNow.Add(-20*time.Hour))
+	source := newStatusSource(t, forge, "argocd/app-prod*")
 
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"})
 	if err != nil {
@@ -166,33 +143,12 @@ func TestCommitStatusReadsEveryContextItWasGiven(t *testing.T) {
 	}
 }
 
-// TestCommitStatusTakesTheNewestWordOnAContext: a deployer that said pending
-// and then success recorded one deployment, not two.
-func TestCommitStatusTakesTheNewestWordOnAContext(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	// Newest first, as GitHub serves them: the success landed after the
-	// pending it replaced.
-	fake.push(coretest.SHADeployed, fakeProdContext, ghStatusSuccess, coretest.ContractNow.Add(-10*time.Hour))
-	source := newStatusSource(t, srv)
-
-	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", SHA: coretest.SHADeployed})
-	if err != nil {
-		t.Fatalf("Deployments: %v", err)
-	}
-	if len(records) != 1 {
-		t.Fatalf("got %d records for one context's history, want 1: %+v", len(records), records)
-	}
-	if !records[0].Succeeded() || !records[0].CreatedAt.Equal(coretest.ContractNow.Add(-10*time.Hour)) {
-		t.Errorf("the record is %+v, want the newest status on the context", records[0])
-	}
-}
-
 // TestCommitStatusAnswersForOneEnvironmentOnly: a commit status carries no
 // environment, so the contexts stand for one and a question about another is
 // not this source's to answer.
 func TestCommitStatusAnswersForOneEnvironmentOnly(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	source := newStatusSource(t, forge)
 
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "staging"})
 	if err != nil {
@@ -201,8 +157,9 @@ func TestCommitStatusAnswersForOneEnvironmentOnly(t *testing.T) {
 	if len(records) != 0 {
 		t.Errorf("got %d staging records from a production source: %+v", len(records), records)
 	}
-	if asked := fake.Requests(); len(asked) != 0 {
-		t.Errorf("the provider was asked %v about an environment this source does not speak for", asked)
+	if forge.Repos() != 0 || len(forge.Walks()) != 0 || len(forge.Statuses()) != 0 {
+		t.Errorf("the forge was asked about an environment this source does not speak for: %d repositories, %v, %v",
+			forge.Repos(), forge.Walks(), forge.Statuses())
 	}
 
 	// The spelling is the configuration's, not the caller's.
@@ -215,57 +172,45 @@ func TestCommitStatusAnswersForOneEnvironmentOnly(t *testing.T) {
 	}
 }
 
-// TestCommitStatusLetsTheProviderNarrowTheWalk: the window is put to the
-// commits endpoint, because GitHub can be asked for the commits of a window
-// and never for the statuses of one.
-func TestCommitStatusLetsTheProviderNarrowTheWalk(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+// TestCommitStatusLetsTheForgeNarrowTheWalk: the window goes into the walk of
+// the trunk, because a forge can be asked for the commits of a window and
+// never for the statuses of one.
+func TestCommitStatusLetsTheForgeNarrowTheWalk(t *testing.T) {
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	source := newStatusSource(t, forge)
 	since := coretest.ContractNow.Add(-24 * time.Hour)
 	if _, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", Since: since}); err != nil {
 		t.Fatalf("Deployments: %v", err)
 	}
 
-	var listed string
-	for i, path := range fake.Requests() {
-		if path == "/repos/"+fakeOwner+"/"+fakeRepo+"/commits" {
-			listed = fake.Queries()[i]
-			break
-		}
+	walks := forge.Walks()
+	if len(walks) != 1 {
+		t.Fatalf("the trunk was walked %d times, want once", len(walks))
 	}
-	if listed == "" {
-		t.Fatal("the trunk's commits were never listed")
+	switch {
+	case walks[0].Ref != fakeTrunk:
+		t.Errorf("the walk is of %q, want the trunk %q", walks[0].Ref, fakeTrunk)
+	case !walks[0].Since.Equal(since):
+		t.Errorf("the walk starts at %v, want the window's own start %v", walks[0].Since, since)
+	case walks[0].Limit != commitStatusWalk:
+		t.Errorf("the walk is capped at %d, want %d", walks[0].Limit, commitStatusWalk)
 	}
-	for _, want := range []string{"sha=" + fakeTrunk, "since=" + url.QueryEscape(since.UTC().Format(time.RFC3339)), "per_page=100"} {
-		if !strings.Contains(listed, want) {
-			t.Errorf("the commits query is %q, want it to carry %q", listed, want)
-		}
-	}
-	for _, path := range fake.Requests() {
-		if strings.Contains(path, coretest.SHAOld) {
-			t.Errorf("the statuses of %s were read though its commit is outside the window", coretest.SHAOld)
-		}
+	if slices.Contains(forge.Statuses(), coretest.SHAOld) {
+		t.Errorf("the statuses of %s were read though its commit is outside the window", coretest.SHAOld)
 	}
 }
 
 // TestCommitStatusAsksTheRepositoryWhichBranchTheTrunkIs: configuration has no
 // key for it, so the repository is asked — once.
 func TestCommitStatusAsksTheRepositoryWhichBranchTheTrunkIs(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	source := newStatusSource(t, forge)
 	for range 2 {
 		if _, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"}); err != nil {
 			t.Fatalf("Deployments: %v", err)
 		}
 	}
-	repo := "/repos/" + fakeOwner + "/" + fakeRepo
-	asked := 0
-	for _, path := range fake.Requests() {
-		if path == repo {
-			asked++
-		}
-	}
-	if asked != 1 {
+	if asked := forge.Repos(); asked != 1 {
 		t.Errorf("the repository was asked for its default branch %d times, want 1", asked)
 	}
 }
@@ -273,9 +218,7 @@ func TestCommitStatusAsksTheRepositoryWhichBranchTheTrunkIs(t *testing.T) {
 // TestCommitStatusRefusesARepositoryWithNoTrunk: an answer with no default
 // branch is not a trunk of "", which would list the commits of nothing.
 func TestCommitStatusRefusesARepositoryWithNoTrunk(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	fake.branch = ""
-	source := newStatusSource(t, srv)
+	source := newStatusSource(t, newStatusForgeOn(t, coretest.ContractDeploys(), ""))
 	_, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"})
 	if !errors.Is(err, core.ErrUnavailable) {
 		t.Fatalf("Deployments against a repository with no trunk = %v, want ErrUnavailable", err)
@@ -285,9 +228,8 @@ func TestCommitStatusRefusesARepositoryWithNoTrunk(t *testing.T) {
 // TestCommitStatusNeedsNoTrunkToAnswerAboutOneCommit: a query naming a commit
 // is about that commit, so nothing is walked and nothing is listed.
 func TestCommitStatusNeedsNoTrunkToAnswerAboutOneCommit(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	fake.branch = ""
-	source := newStatusSource(t, srv)
+	forge := newStatusForgeOn(t, coretest.ContractDeploys(), "")
+	source := newStatusSource(t, forge)
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", SHA: coretest.SHAMerged})
 	if err != nil {
 		t.Fatalf("Deployments: %v", err)
@@ -295,16 +237,16 @@ func TestCommitStatusNeedsNoTrunkToAnswerAboutOneCommit(t *testing.T) {
 	if len(records) != 1 || records[0].SHA != coretest.SHAMerged {
 		t.Fatalf("got %+v, want the one deployment of %s", records, coretest.SHAMerged)
 	}
-	if slices.Contains(fake.Requests(), "/repos/"+fakeOwner+"/"+fakeRepo+"/commits") {
-		t.Error("the trunk was walked to answer about one commit")
+	if walks := forge.Walks(); len(walks) != 0 {
+		t.Errorf("the trunk was walked %v to answer about one commit", walks)
 	}
 }
 
 // TestCommitStatusStopsWalkingOnceItHasEnough: a limit is satisfied by the
 // newest commits, so the rest of the trunk is not read one request at a time.
 func TestCommitStatusStopsWalkingOnceItHasEnough(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	source := newStatusSource(t, forge)
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", Limit: 1})
 	if err != nil {
 		t.Fatalf("Deployments: %v", err)
@@ -312,19 +254,17 @@ func TestCommitStatusStopsWalkingOnceItHasEnough(t *testing.T) {
 	if len(records) != 1 || records[0].SHA != coretest.SHADeployed {
 		t.Fatalf("got %+v, want only the newest deployment", records)
 	}
-	for _, path := range fake.Requests() {
-		if strings.Contains(path, coretest.SHAOld) {
-			t.Errorf("the statuses of %s were read though one record was asked for", coretest.SHAOld)
-		}
+	if slices.Contains(forge.Statuses(), coretest.SHAOld) {
+		t.Errorf("the statuses of %s were read though one record was asked for", coretest.SHAOld)
 	}
 }
 
 // TestCommitStatusRefusesAStateItDoesNotUnderstand: guessing would either
 // hide a deployment or invent one.
 func TestCommitStatusRefusesAStateItDoesNotUnderstand(t *testing.T) {
-	fake, srv := newStatusServer(t, coretest.ContractDeploys())
-	fake.push(coretest.SHADeployed, fakeProdContext, "partially_deployed", coretest.ContractNow.Add(-time.Hour))
-	source := newStatusSource(t, srv)
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	forge.push(t, coretest.SHADeployed, fakeProdContext, "partially_deployed", coretest.ContractNow.Add(-time.Hour))
+	source := newStatusSource(t, forge)
 
 	_, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"})
 	if !errors.Is(err, core.ErrUnavailable) {
@@ -335,11 +275,44 @@ func TestCommitStatusRefusesAStateItDoesNotUnderstand(t *testing.T) {
 	}
 }
 
+// TestCommitStatusReadsEveryStateAForgeCanReport: core names four verdicts
+// and a deployment has three, so each of the four has to land somewhere. A
+// check that could not run failed to deploy as surely as one that ran and
+// said no.
+func TestCommitStatusReadsEveryStateAForgeCanReport(t *testing.T) {
+	cases := []struct {
+		verdict string
+		want    string
+	}{
+		{core.StatusSuccess, core.DeploySuccess},
+		{core.StatusFailure, core.DeployFailure},
+		{core.StatusError, core.DeployFailure},
+		{core.StatusPending, core.DeployPending},
+	}
+	for _, tc := range cases {
+		t.Run(tc.verdict, func(t *testing.T) {
+			forge := newStatusForge(t, coretest.ContractDeploys())
+			forge.push(t, coretest.SHADeployed, fakeProdContext, tc.verdict, coretest.ContractNow.Add(-time.Hour))
+			source := newStatusSource(t, forge)
+
+			records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", SHA: coretest.SHADeployed})
+			if err != nil {
+				t.Fatalf("Deployments: %v", err)
+			}
+			if len(records) != 1 {
+				t.Fatalf("got %d records, want the one the deployer reported", len(records))
+			}
+			if records[0].State != tc.want {
+				t.Errorf("a %q status recorded a %q deployment, want %q", tc.verdict, records[0].State, tc.want)
+			}
+		})
+	}
+}
+
 // TestCommitStatusCarriesTheEvidenceOfTheDeployment: the line the deployer
 // left and the address of the run behind it are what a report shows.
 func TestCommitStatusCarriesTheEvidenceOfTheDeployment(t *testing.T) {
-	_, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+	source := newStatusSource(t, newStatusForge(t, coretest.ContractDeploys()))
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production", SHA: coretest.SHADeployed})
 	if err != nil {
 		t.Fatalf("Deployments: %v", err)
@@ -360,16 +333,17 @@ func TestCommitStatusCarriesTheEvidenceOfTheDeployment(t *testing.T) {
 	}
 }
 
-// TestCommitStatusWalksEveryPage: the fake pages at two, and a source that
-// read only the first would miss the oldest deployment.
-func TestCommitStatusWalksEveryPage(t *testing.T) {
-	_, srv := newStatusServer(t, coretest.ContractDeploys())
-	source := newStatusSource(t, srv)
+// TestCommitStatusReadsEveryCommitTheWalkReturned: an unbounded query is
+// about the whole window, so the oldest commit's statuses are read too. How
+// many requests that took is the forge adapter's business.
+func TestCommitStatusReadsEveryCommitTheWalkReturned(t *testing.T) {
+	forge := newStatusForge(t, coretest.ContractDeploys())
+	source := newStatusSource(t, forge)
 	records, err := source.Deployments(t.Context(), core.DeployQuery{Environment: "production"})
 	if err != nil {
 		t.Fatalf("Deployments: %v", err)
 	}
 	if !slices.ContainsFunc(records, func(d core.Deployment) bool { return d.SHA == coretest.SHAOld }) {
-		t.Errorf("got %+v, want the deployment of %s from the second page of commits", records, coretest.SHAOld)
+		t.Errorf("got %+v, want the deployment of the oldest commit %s", records, coretest.SHAOld)
 	}
 }

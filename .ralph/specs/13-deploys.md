@@ -167,3 +167,22 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   report; `pending` covers both "not started" and "under way". A state flow
   does not understand is refused by name, as the deployments source already
   refuses one.
+- **§1/§3 a commit status source reads a forge, not a provider (issue
+  #129).** It needs three things — the trunk's name, the trunk's commits and
+  one commit's statuses — and `core.Forge` answers all three, so the source
+  holds a forge adapter instead of a provider's API and a credential of its
+  own. `source: commit_status` is therefore available on every forge flow
+  speaks, which is what a forge keeping no deployment records of its own
+  needs (spec 10 §3). A deployment source holding a forge is not an adapter
+  importing another adapter package (spec 01 §2): the dependency is on
+  `core.Forge`, which is core's.
+- **§3 collapsing a context's history belongs to the adapter (issue #129).**
+  `core.Forge.CommitStatuses` answers with the latest verdict per context, and
+  the forge contract proves that of every adapter, so this source filters by
+  context and does not dedupe again. Two mechanisms answering the same
+  question in different code drift apart silently.
+- **§3 the states are core's words, not GitHub's (issue #129).** What arrives
+  is a `core.CommitStatus`, whose `State` is one of core's four, so the map
+  onto deployment states is written against `core.StatusSuccess` and its
+  three companions. GitHub's spelling of them is the GitHub adapter's
+  business, and the wire types that held it have gone.

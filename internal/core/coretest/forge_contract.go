@@ -47,6 +47,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "merge settings", Run: forgeMergeSettings},
 		{Name: "where a squash takes its words from", Run: forgeSquashText},
 		{Name: "a commit status replaces the last verdict from the same context", Run: forgeCommitStatus},
+		{Name: "a commit status says who it is and when it was written", Run: forgeCommitStatusIdentity},
 		{Name: "a comment is edited in place, found by its marker, and deleted once", Run: forgeComments},
 		{Name: "files are proposed on their own branch and updated in place", Run: forgeProposeFiles},
 	}
@@ -545,6 +546,38 @@ func forgeCommitStatus(t *testing.T, newForge NewForge) {
 	}
 	if ours[0].State != core.StatusSuccess {
 		t.Errorf("the surviving status is %q, want the second verdict", ours[0].State)
+	}
+}
+
+// forgeCommitStatusIdentity: a status carries the provider's own identity for
+// it and when it was last written.
+//
+// A commit status is a deployment record wherever the forge keeps no
+// deployments of its own (spec 13 §1), and a record with no identity and no
+// date is not one: the audit would have nothing to point at and nothing to
+// measure a lag against. Both are on every forge's payload, so an adapter that
+// drops them is dropping them, not working around an absence.
+func forgeCommitStatusIdentity(t *testing.T, newForge NewForge) {
+	forge := newForge(t, ContractForge())
+	published := core.CommitStatus{Context: "flow/policy", State: core.StatusSuccess, Description: "\u2713 all rules pass"}
+	if err := forge.SetCommitStatus(t.Context(), SHAHead, published); err != nil {
+		t.Fatalf("SetCommitStatus: %v", err)
+	}
+	statuses, err := forge.CommitStatuses(t.Context(), SHAHead)
+	if err != nil {
+		t.Fatalf("CommitStatuses: %v", err)
+	}
+	for _, status := range statuses {
+		if status.ID == "" {
+			t.Errorf("the %s status has no identity of its own, so nothing built from it can point back at it", status.Context)
+		}
+		if status.UpdatedAt.IsZero() {
+			t.Errorf("the %s status does not say when it was written", status.Context)
+		}
+		if status.UpdatedAt.Before(status.CreatedAt) {
+			t.Errorf("the %s status was written at %s and created at %s, which is backwards",
+				status.Context, status.UpdatedAt, status.CreatedAt)
+		}
 	}
 }
 

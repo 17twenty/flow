@@ -319,6 +319,12 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
 - [x] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
+  - note: the source reads a `core.Forge` rather than GitHub's API (issue
+    #129), so the forge with no deployment records of its own — Gitea and
+    Forgejo, item 7.3 — can use it. Collapsing a context's history is the
+    adapter's work and the forge contract proves it, so the source no longer
+    dedupes; `core.CommitStatus` gained the `ID` and `UpdatedAt` a record
+    built out of a status needs.
 - [x] 7.6 Credential host approval — specs: 15 §1 — deps: 1.8 (#84)
   - AC: scenarios S01–S03
   - note: approval is checked before the credential is resolved, so a

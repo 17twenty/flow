@@ -1,14 +1,10 @@
 package deploys
 
 import (
-	"cmp"
 	"context"
-	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/17twenty/flow/internal/core"
 )
@@ -22,13 +18,12 @@ const commitStatusWalk = 100
 
 // CommitStatusOptions configures a [CommitStatus] deployment source.
 type CommitStatusOptions struct {
-	// Client is the HTTP client, already carrying the credential and the
-	// API root.
-	Client *core.Client
-	// Owner and Repo name the application repository whose commits carry
-	// the statuses (spec 13 §1).
-	Owner string
-	Repo  string
+	// Forge is the forge the repository lives on, already built for it.
+	// This source reads three things — the trunk's name, the trunk's
+	// commits and one commit's statuses — and every forge answers all
+	// three, so it asks the adapter rather than a provider's own API
+	// (spec 01 §2).
+	Forge core.Forge
 	// Environment is what the configured contexts stand for. A commit
 	// status has no environment of its own, so this source speaks for one.
 	Environment string
@@ -45,8 +40,13 @@ type CommitStatusOptions struct {
 
 // CommitStatus reads deployments recorded as commit statuses, for forges with
 // no deployments API and for deployers that report that way (spec 13 §1).
+//
+// It is the source a Gitea or Forgejo repository uses, because those forges
+// keep no deployment records at all (spec 10 §3). Nothing in it knows which
+// forge it is reading: what a status means is this source's business, and
+// where a status is kept is the adapter's.
 type CommitStatus struct {
-	ghRepo
+	forge       core.Forge
 	environment string
 	contexts    []string
 	branch      string
@@ -62,11 +62,11 @@ type CommitStatus struct {
 // NewCommitStatus returns a commit status deployment source for one
 // repository and one environment.
 func NewCommitStatus(o CommitStatusOptions) (*CommitStatus, error) {
-	repo := ghRepo{client: o.Client, owner: o.Owner, repo: o.Repo}
-	if err := repo.validate("commit status deployment source"); err != nil {
-		return nil, err
-	}
 	switch {
+	case o.Forge == nil:
+		return nil, core.Errorf(core.ErrValidation, "build the commit status deployment source").
+			WithWhy("no forge was given, and the statuses are kept on the forge").
+			WithFix("build the forge adapter first and pass it")
 	case o.Environment == "":
 		return nil, core.Errorf(core.ErrValidation, "build the commit status deployment source").
 			WithWhy("no environment was named, and a commit status does not carry one").
@@ -81,7 +81,7 @@ func NewCommitStatus(o CommitStatusOptions) (*CommitStatus, error) {
 			WithFix("load assets/capabilities/%s.yaml and pass the declaration", CapabilityAdapter)
 	}
 	return &CommitStatus{
-		ghRepo:      repo,
+		forge:       o.Forge,
 		environment: o.Environment,
 		contexts:    slices.Clone(o.Contexts),
 		branch:      o.Branch,
@@ -96,11 +96,11 @@ func (c *CommitStatus) Kind() string { return core.SourceCommitStatus }
 func (c *CommitStatus) Capabilities() core.CapabilitySet { return c.caps }
 
 // Slug is the repository the statuses are read from, as owner/name.
-func (c *CommitStatus) Slug() string { return c.slug() }
+func (c *CommitStatus) Slug() string { return c.forge.Slug() }
 
 // Deployments returns the records matching q, newest first.
 //
-// GitHub can be asked for the commits of a window but never for the statuses
+// A forge can be asked for the commits of a window but never for the statuses
 // of one, so the walk is over the trunk's commits and the statuses hanging on
 // them (spec 13 §3).
 func (c *CommitStatus) Deployments(ctx context.Context, q core.DeployQuery) ([]core.Deployment, error) {
@@ -153,21 +153,13 @@ func (c *CommitStatus) commits(ctx context.Context, q core.DeployQuery) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	query := url.Values{}
-	query.Set("sha", trunk)
-	query.Set("per_page", strconv.Itoa(gitHubPageSize))
-	if !q.Since.IsZero() {
-		query.Set("since", q.Since.UTC().Format(time.RFC3339))
-	}
-
-	var shas []string
-	err = core.Paginate(ctx, c.client, c.decorate(core.Request{Path: c.path("commits"), Query: query}),
-		func(commit ghTrunkCommit) bool {
-			shas = append(shas, commit.SHA)
-			return len(shas) < commitStatusWalk
-		})
+	commits, err := c.forge.Commits(ctx, core.CommitQuery{Ref: trunk, Since: q.Since, Limit: commitStatusWalk})
 	if err != nil {
 		return nil, err
+	}
+	shas := make([]string, 0, len(commits))
+	for _, commit := range commits {
+		shas = append(shas, commit.SHA)
 	}
 	return shas, nil
 }
@@ -175,48 +167,64 @@ func (c *CommitStatus) commits(ctx context.Context, q core.DeployQuery) ([]strin
 // statuses turns the statuses on one commit into the deployments they record:
 // one per context the configuration asked for, each the newest word on it.
 //
-// A context's history is one deployment's progress and not several, so the
-// pending status a deployer wrote before it finished is not a second record
-// standing beside the success that replaced it.
+// A context's history is one deployment's progress and not several, and
+// collapsing it belongs to the adapter: [core.Forge.CommitStatuses] answers
+// with the latest verdict per context, and the forge contract proves it of
+// every adapter. So the pending status a deployer wrote before it finished
+// never arrives here beside the success that replaced it.
+//
+// The dates are the adapter's to fill too: the forge contract requires every
+// status to say when it was written, so a record's lag is measured against
+// what the provider said and not against a fallback flow invented.
 func (c *CommitStatus) statuses(ctx context.Context, sha string) ([]core.Deployment, error) {
-	query := url.Values{}
-	query.Set("per_page", strconv.Itoa(gitHubPageSize))
-
-	var records []core.Deployment
-	spoken := map[string]bool{}
-	var unknown ghCommitStatus
-	err := core.Paginate(ctx, c.client, c.decorate(core.Request{Path: c.path("commits", url.PathEscape(sha), "statuses"), Query: query}),
-		func(status ghCommitStatus) bool {
-			if !matchesContext(c.contexts, status.Context) || spoken[status.Context] {
-				return true
-			}
-			spoken[status.Context] = true
-			state, ok := statusState(status.State)
-			if !ok {
-				unknown = status
-				return false
-			}
-			records = append(records, core.Deployment{
-				ID:          strconv.FormatInt(status.ID, 10),
-				Environment: c.environment,
-				SHA:         sha,
-				State:       state,
-				CreatedAt:   status.CreatedAt,
-				UpdatedAt:   cmp.Or(status.UpdatedAt, status.CreatedAt),
-				URL:         status.TargetURL,
-				Description: status.Description,
-			})
-			return true
-		})
+	statuses, err := c.forge.CommitStatuses(ctx, sha)
 	if err != nil {
 		return nil, err
 	}
-	if unknown.Context != "" {
-		return nil, core.Errorf(core.ErrUnavailable, "read the state of the %s status on %s", unknown.Context, sha).
-			WithWhy("the provider called it %q, which flow does not understand", unknown.State).
-			WithFix("this is a provider or flow bug; report it with the command you ran")
+
+	var records []core.Deployment
+	for _, status := range statuses {
+		if !matchesContext(c.contexts, status.Context) {
+			continue
+		}
+		state, ok := statusDeployState(status.State)
+		if !ok {
+			return nil, core.Errorf(core.ErrUnavailable, "read the state of the %s status on %s", status.Context, sha).
+				WithWhy("the provider called it %q, which flow does not understand", status.State).
+				WithFix("this is a provider or flow bug; report it with the command you ran")
+		}
+		records = append(records, core.Deployment{
+			ID:          status.ID,
+			Environment: c.environment,
+			SHA:         sha,
+			State:       state,
+			CreatedAt:   status.CreatedAt,
+			UpdatedAt:   status.UpdatedAt,
+			URL:         status.TargetURL,
+			Description: status.Description,
+		})
 	}
 	return records, nil
+}
+
+// statusDeployState is the deployment state a commit status's verdict stands
+// for, and whether it is one flow knows. None of core's four status states is
+// "in progress": a status says a check is pending or what it decided, so a
+// deployment reported this way never reports progress.
+//
+// An unknown state is refused for the same reason a deployment status's is:
+// guessing would either hide a deployment or invent one.
+func statusDeployState(state string) (string, bool) {
+	switch state {
+	case core.StatusSuccess:
+		return core.DeploySuccess, true
+	case core.StatusFailure, core.StatusError:
+		return core.DeployFailure, true
+	case core.StatusPending:
+		return core.DeployPending, true
+	default:
+		return "", false
+	}
 }
 
 // trunkName is the branch whose commits are walked. Configuration has no key
@@ -231,8 +239,8 @@ func (c *CommitStatus) trunkName(ctx context.Context) (string, error) {
 	if c.trunk != "" {
 		return c.trunk, nil
 	}
-	var repo ghRepository
-	if _, err := c.do(ctx, core.Request{Path: c.path(), Out: &repo}); err != nil {
+	repo, err := c.forge.Repo(ctx)
+	if err != nil {
 		return "", err
 	}
 	if repo.DefaultBranch == "" {
