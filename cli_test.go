@@ -248,17 +248,40 @@ func TestATrackerWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
 	}
 }
 
-// TestATrackerThisBuildCannotSpeakToIsRefusedBeforeTheCredential: Linear is
-// a kind the configuration accepts and this build ships no adapter for, so
-// the refusal comes before a `token_cmd` is run (spec 15 §1).
+// TestATrackerThisBuildCannotSpeakToIsRefusedBeforeTheCredential: a tracker
+// this build ships no adapter for is refused before a `token_cmd` is run
+// (spec 15 §1). Every kind the configuration accepts now has an adapter, so
+// what this guards is the arm underneath the validator: a kind that reached
+// here another way is still refused, and refused without spending a secret.
 func TestATrackerThisBuildCannotSpeakToIsRefusedBeforeTheCredential(t *testing.T) {
-	_, err := trackerEndpoint(config.TrackerLinear, "", ".flow.yaml")
+	_, err := trackerEndpoint("trello", "", ".flow.yaml")
 	if !errors.Is(err, core.ErrUnsupported) {
-		t.Fatalf("trackerEndpoint(linear) = %v, want an unsupported tracker", err)
+		t.Fatalf("trackerEndpoint(trello) = %v, want an unsupported tracker", err)
 	}
 	var user *core.UserError
 	if !errors.As(err, &user) || !strings.Contains(user.Fix, "jira-cloud") {
 		t.Errorf("the refusal does not offer the trackers this build has: %+v", err)
+	}
+}
+
+// TestEveryTrackerTheConfigurationAcceptsHasSomewhereToAnswer: a kind the
+// validator lets through and `trackerEndpoint` has no arm for would fail at
+// the first call rather than at the configuration, which is the wrong end of
+// the run to find out (spec 15 §1).
+func TestEveryTrackerTheConfigurationAcceptsHasSomewhereToAnswer(t *testing.T) {
+	for kind, url := range map[string]string{
+		config.TrackerGitHubProjects: "",
+		config.TrackerJiraCloud:      "https://acme.atlassian.net",
+		config.TrackerLinear:         "",
+	} {
+		endpoint, err := trackerEndpoint(kind, url, ".flow.yaml")
+		if err != nil {
+			t.Errorf("trackerEndpoint(%s) = %v, want an endpoint", kind, err)
+			continue
+		}
+		if endpoint.Root == "" {
+			t.Errorf("trackerEndpoint(%s) has nowhere to answer", kind)
+		}
 	}
 }
 

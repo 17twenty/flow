@@ -752,3 +752,38 @@ func readAll(t *testing.T, r *http.Request) []byte {
 		}
 	}
 }
+
+// A credential that is the whole Authorization header has no scheme in front
+// of it, and the empty string cannot mean that: the empty string means the
+// default. Linear's personal API keys are sent this way (spec 11 §4).
+func TestAClientCanSendACredentialWithNoSchemeInFrontOfIt(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		scheme string
+		want   string
+	}{
+		{name: "the default", scheme: "", want: "Bearer mine"},
+		{name: "a scheme of its own", scheme: "Basic", want: "Basic mine"},
+		{name: "no scheme at all", scheme: AuthSchemeNone, want: "mine"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var sent string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sent = r.Header.Get("Authorization")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			client, _ := newTestClient(t, srv, func(o *ClientOptions) {
+				o.Token = "mine"
+				o.AuthScheme = c.scheme
+			})
+			if _, err := client.Do(context.Background(), Request{Path: "thing"}); err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			if sent != c.want {
+				t.Errorf("Authorization = %q, want %q", sent, c.want)
+			}
+		})
+	}
+}

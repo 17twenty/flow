@@ -1,20 +1,23 @@
 adapter: linear
 kind: tracker
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-14
 sources:
+  - https://linear.app/developers/graphql
+  - https://linear.app/developers/pagination
   - https://linear.app/developers/rate-limiting
+  - https://linear.app/developers/attachments
   - https://linear.app/docs/github
 limits: { rate: "5,000 requests/h and 3,000,000 complexity points/h per API key" }
 capabilities:
-  project:            { set: false, verify: true, remediation: follow_up, notes: "Team." }
+  project:            { set: false, verify: true, remediation: follow_up, notes: "A team; tracker.project holds its key." }
   status_options:     { set: true,  verify: true, requires: [team_admin], remediation: follow_up, notes: "workflowStateCreate; states are columns." }
-  status_categories:  { set: true,  verify: true, requires: [team_admin], remediation: follow_up }
+  status_categories:  { set: false, verify: true, requires: [team_admin], remediation: follow_up, notes: "Settled when a state is created: WorkflowStateUpdateInput takes no type." }
   wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip }
   expedite_view:      { set: false, verify: false, remediation: compensate, compensated_by: policy.expedite }
-  labels:             { set: true,  verify: true, remediation: follow_up }
+  labels:             { set: true,  verify: true, remediation: follow_up, notes: "issueLabelCreate on the team; a workspace label is readable and not this board's." }
   follow_up_tickets:  { set: true,  verify: true, remediation: none }
-  ticket_move:        { set: true,  verify: true, remediation: follow_up }
+  ticket_move:        { set: true,  verify: true, remediation: follow_up, notes: "issueUpdate stateId; an archived issue takes no change." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Team PR automation (UI)." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: attest }
   native_transition_changes_requested:   { set: false, verify: false, remediation: none }

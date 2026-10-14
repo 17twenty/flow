@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"strings"
@@ -21,6 +22,23 @@ type GraphQLError struct {
 	Type string `json:"type"`
 	// Message is what it said about it.
 	Message string `json:"message"`
+	// Extensions is where a provider that does not name the failure at the
+	// top level puts it. GitHub writes `type` beside the message; Linear
+	// writes `extensions: {type, code}` (spec 11 §4). Which of the two
+	// a provider uses is not something an adapter should have to unwrap the
+	// envelope again to find out.
+	Extensions struct {
+		Type string `json:"type"`
+		Code string `json:"code"`
+	} `json:"extensions"`
+}
+
+// Kind is the provider's name for what went wrong, wherever it put it: the
+// top-level type first, then the code an extensions object carries, then its
+// coarser type. A sentinel is given this one string, because an adapter maps
+// the names its own provider uses and no other.
+func (e GraphQLError) Kind() string {
+	return cmp.Or(e.Type, e.Extensions.Code, e.Extensions.Type)
 }
 
 // GraphQLResponse is the envelope every GraphQL answer arrives in: the data
@@ -74,7 +92,7 @@ func GraphQL[T any](ctx context.Context, c *Client, req Request, q GraphQLQuery,
 func GraphQLRefusal(errs []GraphQLError, sentinel func(errType string) error) error {
 	kind := ErrUnavailable
 	if len(errs) > 0 && sentinel != nil {
-		if mapped := sentinel(errs[0].Type); mapped != nil {
+		if mapped := sentinel(errs[0].Kind()); mapped != nil {
 			kind = mapped
 		}
 	}

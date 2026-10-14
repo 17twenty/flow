@@ -47,6 +47,20 @@ func UserAgent(version string) string {
 	return "flow/" + version + " (+https://github.com/17twenty/flow)"
 }
 
+// AuthSchemeNone sends the credential on its own, with no scheme in front of
+// it. Linear's personal API keys are an Authorization header that is the key
+// and nothing else (spec 11 §4), and the empty string cannot mean it,
+// because the empty string means the default.
+const AuthSchemeNone = "none"
+
+// authorization is the Authorization header this client sends.
+func (c *Client) authorization() string {
+	if c.authScheme == AuthSchemeNone {
+		return c.token
+	}
+	return c.authScheme + " " + c.token
+}
+
 // RetryPolicy says whether one request may be tried again.
 type RetryPolicy int
 
@@ -69,7 +83,8 @@ type ClientOptions struct {
 	BaseURL string
 	// Token is the credential sent as Authorization. It is never logged.
 	Token string
-	// AuthScheme is the Authorization scheme, "Bearer" by default.
+	// AuthScheme is the Authorization scheme, "Bearer" by default and
+	// [AuthSchemeNone] for a provider whose credential is the whole header.
 	AuthScheme string
 	// Version is flow's version, used in the User-Agent.
 	Version string
@@ -386,7 +401,7 @@ func (c *Client) setHeaders(req *http.Request, r Request, contentType string, bo
 	}
 	req.Header.Set("User-Agent", c.userAgent)
 	if c.token != "" {
-		req.Header.Set("Authorization", c.authScheme+" "+c.token)
+		req.Header.Set("Authorization", c.authorization())
 	}
 	if contentType != "" && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", contentType)

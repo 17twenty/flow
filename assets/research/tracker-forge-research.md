@@ -46,6 +46,40 @@ links for the authoritative text.
   `X-RateLimit-Complexity-*`, `X-Complexity`. (Older docs show lower numbers.)
   https://linear.app/developers/rate-limiting
 - No native WIP limits found (absence not proven).
+- Verified 2026-10-14 against the published SDL
+  (raw.githubusercontent.com/linear/linear/master/packages/sdk/src/schema.graphql)
+  while writing the adapter (item 7.2):
+  - One endpoint, `POST https://api.linear.app/graphql`. A personal API key is
+    the whole `Authorization` header with no scheme; an OAuth access token is
+    sent as `Bearer`. https://linear.app/developers/graphql
+  - `issue(id:)` and `issueUpdate(id:)` both take the human identifier
+    (`ENG-123`) as well as the uuid.
+  - `Issue` carries identifier, number, title, description, url, branchName,
+    trashed, state{id,name,type,position}, team, parent, assignee, labels,
+    attachments, archivedAt, completedAt, canceledAt, createdAt, updatedAt.
+    There is no open/closed flag: completed and canceled state types are what
+    closing means, and Linear dates both itself.
+  - `WorkflowState.type` is one of triage, backlog, unstarted, started,
+    completed, canceled. `WorkflowStateCreateInput` takes a type;
+    `WorkflowStateUpdateInput` does **not**, so a state's category cannot be
+    changed after it is created. A state is removed with
+    `workflowStateArchive`, which refuses while issues still stand in it.
+  - `IssueLabel` has a nullable `team` (null = workspace-wide), `isGroup` and
+    `retiredAt`; colours are `#rrggbb`. Root `issueLabels` lists both kinds.
+  - Errors arrive HTTP 200 with `extensions: {type, code, userError,
+    userPresentableMessage}` — the name of the failure is *not* beside the
+    message as GitHub's is. Codes seen: ENTITY_NOT_FOUND, AUTHENTICATION_ERROR,
+    FEATURE_NOT_ACCESSIBLE, INVALID_INPUT, RATELIMITED.
+  - Paging is Relay: `first`/`after` with `pageInfo{hasNextPage endCursor}`.
+    Every connection excludes archived entities unless `includeArchived: true`.
+    https://linear.app/developers/pagination
+  - `attachmentsForURL(url:)` answers which issues an address is attached to,
+    and `IssueFilter.attachments` filters a listing by one — but
+    `core.Tracker.LinkedKeys` is given no context, so flow reads each issue's
+    attachments as it reads the issue.
+  - `Team.membership{owner}` and `User.admin` are the two facts that say
+    whether a credential may edit a team's workflow states; Linear publishes
+    no per-permission endpoint.
 
 ### GitHub Projects (v2)
 - Status is a single-select field; `updateProjectV2Field` reportedly REPLACES the
