@@ -374,3 +374,14 @@ Each iteration, as the agent identity:
   agent label so the rule stops applying and the check passes proving nothing.
   Both are named in the skill as things never to do, with the reason, because
   a prohibition without its reason is a puzzle.
+
+- **§6 a skill is assessed by running it, not by reading it (item 8.3).** The
+  acceptance criterion was that a harness given the skill and nothing else
+  could work a ticket; it was met by doing exactly that, and the run is the
+  item's evidence. Four defects came out of one pass, and the one that
+  mattered most — a `flow doctor --json` reading whose field names do not
+  exist, so that a repository with a failing check reports nothing failing —
+  is invisible to a reviewer and silent to the agent, which is the worst pair
+  of properties a line of documentation can have. A skill is read by something
+  with no judgement about whether what it is doing is absurd, so the standard
+  is the one for code: run it, and keep the parts that can rot under test.

@@ -10,7 +10,7 @@ rules; you do the work. Everything below is read out of the repository's own
 `.flow.yaml` — never assume the numbers in this file, ask the repository.
 
 The loop, once: **verify the repo → take a ticket → branch → commit → pull
-request → wait for the gate and a human → merge.**
+request → wait for the gate and a human → stop.**
 
 ## 0. Is this a flow repository, and which flow
 
@@ -18,21 +18,30 @@ request → wait for the gate and a human → merge.**
 test -f .flow.yaml && flow version
 ```
 
-No `.flow.yaml` means flow is not the authority here; stop and say so. No `flow`
-on `PATH` means build it (`go build -o bin/flow .` in flow's own checkout) or
-install the release binary. Every command below reads `.flow.yaml` from the git
-root, so run them anywhere inside the checkout.
+No `.flow.yaml` means flow is not the authority here; stop and say so. If `flow`
+is not on `PATH`, install the release binary — or, if this repository *is*
+flow's source, build one outside the working tree:
+
+```bash
+go build -o /tmp/flowbin . && /tmp/flowbin version
+```
+
+Build to a temporary path, never into the checkout you are about to open a pull
+request from. Every command below reads `.flow.yaml` from the git root, so run
+them anywhere inside it.
 
 ## 1. Credentials
 
 flow never stores a credential. The configuration names the environment
-variable each provider's token comes from:
+variable each provider's token comes from, and the tracker often names a
+different one from the forge:
 
 ```bash
 grep -n -A1 'auth:' .flow.yaml      # e.g. token_env: GITHUB_TOKEN
 ```
 
-Export each one named there, from wherever your secrets live:
+Export every variable named there, from wherever your secrets live, and export
+them again in each shell you run:
 
 ```bash
 export GITHUB_TOKEN="$(…your secret store…)"
@@ -52,29 +61,49 @@ Three rules that are not negotiable:
 ## 2. Verify the repository before you touch it
 
 ```bash
-flow doctor --json | jq '{exit: .summary, failing: [.checks[] | select(.outcome=="fail") | .id]}'
+flow doctor --json |
+  jq -r '.exit_code, (.checks[] | "\(.result.state)\t\(.id)\t\(.result.message)")'
 ```
 
-Exit `0` everything holds · `2` something is actionable · `1` flow could not
-find out. A `2` is not automatically yours: a drift finding or a follow-up
-addressed to a maintainer is theirs. What stops you starting is a repository
-whose *setup* is incoherent — unresolved placeholders, no board, no gate. Those
-say what to run, usually `flow doctor --fix` or `flow plan` then `flow apply`.
+The run's exit code is `0` everything holds · `2` something is actionable · `1`
+flow could not find out. Each check carries its own state, and there are more
+than two:
+
+| state | whose it is |
+|---|---|
+| `pass`, `skip` | nobody's: it holds, or this configuration never asked for it |
+| `warn` | below target, above the threshold — does not set the exit code |
+| `fail`, `error` | something is wrong, or flow could not find out |
+| `input` | flow needs a value nobody has given it |
+| `drift` | a setting flow was told to keep has been changed |
+| `external` | somebody with access has been asked, and a follow-up is open |
+| `attest` | a human's word is what settles it, and it has not been given |
+
+So **an exit of 2 is not automatically yours**. An `external` or `attest` item
+is addressed to a maintainer, and a historical `fail` about work that merged
+long before you arrived is a finding, not a blocker. What stops you starting is
+the repository's own *setup* being incoherent: `config.*` failing, no board, no
+gate. Those say what to run.
+
+Read the state, not the file. `.flow.yaml` may hold `${pending:…}` placeholders
+that `.flow.lock` has already resolved — the lock is where flow writes what it
+has discovered, so a placeholder in the configuration with a passing check
+beside it is a resolved placeholder.
 
 ```bash
 flow plan            # read-only: what flow would change, and what it cannot
-flow apply --auto-approve   # only if the plan is yours to apply
 ```
 
-Never run `flow apply` as a way of making a check pass. It changes the
-repository's settings and the board; it is the maintainer's command unless the
-ticket you are working is about those settings.
+Never run `flow apply` to make a check pass. It changes the repository's
+settings and the board; it is the maintainer's command unless the ticket you
+are working is about those settings.
 
 ## 3. Take a ticket
 
 flow has no command that lists your board, deliberately: the board belongs to
 the tracker and flow only reads it to judge it. Use the tracker's own API (see
-the recipe at the bottom for GitHub Projects).
+the recipe at the bottom for GitHub Projects — and read all of the board, not
+the first page of it).
 
 What `.flow.yaml` tells you about which ticket you may take:
 
@@ -90,14 +119,33 @@ What `.flow.yaml` tells you about which ticket you may take:
   ticket at a time is the intent.
 
 Do not move the card by hand. Opening the pull request is what moves it, and
-flow does the moving (§4 of the workflow model): a card you drag yourself makes
-the board say something nobody can verify.
+flow does the moving: a card you drag yourself makes the board say something
+nobody can verify.
 
 ## 4. Branch, work, commit
 
+Before writing anything, read how this repository works: `AGENTS.md`,
+`CONTRIBUTING.md`, `README.md`, whatever it has. flow owns the workflow, not
+the conventions — branch naming, the test command, the toolchain and the
+house style are the repository's, and they are not in this skill.
+
 ```bash
-git switch -c <short-topic-branch>
+git switch -c <branch-the-repository-would-name>
 ```
+
+**Commit as the account whose work this is.** If you are running as a machine
+account, the repository's `agents.authors` is probably that account's login,
+and `agent.human_review`, the agent label and the audit of who reviewed what
+all hang off it. A commit authored as the human whose git config you inherited
+makes every one of those say something untrue:
+
+```bash
+git -c user.name='Flow Bot' \
+    -c user.email='341252896+flow-bot-gh@users.noreply.github.com' commit -F /tmp/msg
+```
+
+The `<id>+<login>@users.noreply.github.com` form is what makes GitHub attribute
+the commit to that account; the id comes from `/users/<login>`.
 
 Commit messages are linted by the same parser the gate uses, so check each one
 before you commit rather than after:
@@ -105,15 +153,20 @@ before you commit rather than after:
 ```bash
 printf '%s\n' 'feat(engine): the plan names what it could not do' > /tmp/msg
 flow check commit /tmp/msg    # silence is a pass; exit 1 lists the rules broken
-git commit -F /tmp/msg
 ```
 
 `flow check commit --fix /tmp/msg` applies the safe repairs in place.
-`flow hook install` wires it into `git commit` for the rest of the session.
+`flow hook install` wires that into `git commit` — but the hook calls `flow`
+from `PATH`, and where there is none it says so and lets the commit through.
+The hook is a convenience; running `flow check commit` yourself is the thing
+that protects you.
 
-The allowed types, the allowed scopes and the header length are all in
-`commits:` in `.flow.yaml`. A scope is usually required and usually must come
-from the configured list — read it, do not guess.
+The allowed types, the allowed scopes and the header length are in `commits:`
+in `.flow.yaml`: `commits.types`, `commits.scopes.allowed`,
+`commits.header_max`. Read them, do not guess. One trap in choosing a type:
+`commits.unlinked_types` are the types exempt from naming a ticket, so picking
+one of those for work that *has* a ticket quietly switches off the rule that
+links them.
 
 ## 5. Open the pull request
 
@@ -121,12 +174,12 @@ Two things the gate will not forgive:
 
 - **The body must link the ticket**: `Closes #123` (`Fixes`/`Resolves` also
   work) in the pull request *body*, not only in a commit message. That is
-  `pr.ticket.linked`, and only the types in `commits.unlinked_types` are exempt.
+  `pr.ticket.linked`.
 - **The title must itself be a valid commit header** — type, scope, length —
   because the squash lands it as the commit. The forge may append to it:
-  GitHub squashes `<title> (#123)`, so a title that fits `header_max` exactly
-  still breaks it once merged. flow lints the header the forge *will write*, so
-  leave about seven characters of room.
+  GitHub squashes `<title> (#123)`, so a title that fits `commits.header_max`
+  exactly still breaks it once merged. flow lints the header the forge *will
+  write*, so leave about seven characters of room.
 
 If `agents.labels` names a label, add it: it is how the repository tells agent
 work from everyone else's, and dropping it does not dodge the review rule — it
@@ -157,13 +210,28 @@ whole diagnosis:
 | `pr.title.conventional` | the title, as it would land, is not a valid header |
 | `pr.breaking.explained` | a `!` title with no "Breaking change" section |
 | `agent.human_review` | **a human has not approved yet** |
+| `wip.in_progress`, `wip.review` | too much work in flight (warnings) |
+| `ticket.not_blocked` | a linked ticket carries the blocked label (warning) |
+
+A rule can also be skipped rather than judged — `ticket.ready` is, once the
+work has started, because the Definition of Ready was the entry gate and is not
+re-litigated. A skip is not a failure.
 
 `agent.human_review` failing is the gate working, not a fault. **Never approve
 your own pull request**, and never remove the agent label to clear it. Ask the
-human, say what is waiting, and wait.
+human and stop:
 
-A red status after an edit: the gate re-runs on `edited`, so fixing a title is
-a title change and nothing else.
+```bash
+# Request the review, then say in one comment what is outstanding.
+api -X POST ".../pulls/123/requested_reviewers" -d '{"reviewers":["their-login"]}'
+api -X POST ".../issues/123/comments" -d '{"body":"Ready for review: …"}'
+```
+
+Who to ask is in the repository: `followups.owners` names the maintainers, and
+the people who approved recent pull requests are the other answer.
+
+A red status after an edit is normal: the gate re-runs on `edited`, so fixing a
+title is a title change and nothing else.
 
 ## 7. After the merge
 
@@ -191,7 +259,7 @@ interrupted.
 ## Recipe: GitHub and GitHub Projects with a PAT
 
 A classic PAT with `repo` (and `project` if the board is a Projects v2 board)
-does all of it. `jq` is assumed; `gh` is not.
+does all of it. `jq` and `python3` are assumed; `gh` is not.
 
 ```bash
 TOK="$GITHUB_TOKEN"; REPO=owner/name
@@ -205,18 +273,49 @@ api "https://api.github.com/repos/$REPO/issues?state=open&per_page=50" |
 
 # One issue, with its body (the acceptance criteria live there)
 api "https://api.github.com/repos/$REPO/issues/123" | jq -r '.title, .body'
+```
 
-# The board, with each card's column
-cat > /tmp/q.json <<'JSON'
-{"query":"{ user(login:\"OWNER\") { projectV2(number: 2) { items(first: 100) {
-  nodes { content { ... on Issue { number title } }
-    fieldValueByName(name: \"Status\") {
-      ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }"}
-JSON
-api -d @/tmp/q.json https://api.github.com/graphql |
-  jq -r '.data.user.projectV2.items.nodes[] |
-         "\(.fieldValueByName.name)\t#\(.content.number)\t\(.content.title)"'
+The board is `tracker.owner` and `tracker.project` from `.flow.yaml`, with the
+project number possibly resolved in `.flow.lock` instead. **Page it.** A board
+is routinely larger than one page, and a query that stops at a hundred items
+reports the ticket you were sent to work as not being on the board at all —
+which looks exactly like `pr.ticket.in_project` failing:
 
+```bash
+python3 - "$GITHUB_TOKEN" 17twenty 2 <<'PY'
+import json, sys, urllib.request
+tok, owner, number = sys.argv[1], sys.argv[2], int(sys.argv[3])
+query = """query($owner:String!,$number:Int!,$after:String){
+  user(login:$owner){ projectV2(number:$number){ items(first:100, after:$after){
+    pageInfo{ hasNextPage endCursor }
+    nodes{ isArchived
+      content{ ... on Issue { number title state } }
+      fieldValueByName(name:"Status"){
+        ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }"""
+after = None
+while True:
+    body = json.dumps({"query": query,
+                       "variables": {"owner": owner, "number": number, "after": after}})
+    request = urllib.request.Request("https://api.github.com/graphql", data=body.encode())
+    request.add_header("Authorization", "Bearer " + tok)
+    with urllib.request.urlopen(request) as answer:
+        page = json.load(answer)["data"]["user"]["projectV2"]["items"]
+    for item in page["nodes"]:
+        card, status = item["content"], item["fieldValueByName"]
+        if card:
+            print(status and status["name"], card["number"], card["title"], sep="\t")
+    if not page["pageInfo"]["hasNextPage"]:
+        break
+    after = page["pageInfo"]["endCursor"]
+PY
+```
+
+An organisation-owned board is `organization(login:…)` rather than `user(…)`;
+`tracker.owner_type` says which. Send GraphQL as a request body built in a
+file or a program, never as an inline `"$(jq …)"`: the shell mangles it and the
+error points at valid syntax.
+
+```bash
 # Open the pull request (the body carries the link), then label it
 api -X POST "https://api.github.com/repos/$REPO/pulls" \
   -d '{"title":"feat(engine): …","head":"my-branch","base":"main",
@@ -232,10 +331,14 @@ api "https://api.github.com/repos/$REPO/commits/$SHA/check-runs" |
   jq -r '.check_runs[] | "\(.name)\t\(.conclusion // .status)"'
 ```
 
-Send GraphQL as `-d @file`, never as an inline `"$(jq …)"`: the shell mangles
-it and the error points at valid syntax.
-
 Pushing as a machine account needs the token in the remote, not an SSH key:
-`https://x-access-token@github.com/owner/name.git` with a credential helper, and
-commits authored as `<id>+<login>@users.noreply.github.com` so the forge
-attributes them to that account.
+
+```bash
+git remote set-url origin https://x-access-token@github.com/owner/name.git
+git -c credential.helper='!f(){ echo username=x-access-token; echo "password=$TOK"; };f' \
+  push origin HEAD
+```
+
+Check what you are actually pushing to first — `git ls-remote --get-url origin`.
+A global `url.<ssh>.insteadOf <https>` rewrites an HTTPS remote back to SSH
+without saying so, and the push then lands as whoever owns the SSH key.
