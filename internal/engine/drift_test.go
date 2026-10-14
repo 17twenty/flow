@@ -456,6 +456,47 @@ func TestNobodyHasVouchedForItYet(t *testing.T) {
 	}
 }
 
+// TestAPromiseAboutAnAutomationNamesTheAuditThatWatchesIt: a native
+// transition is the one case flow holds both halves of — nobody can ask the
+// tracker whether the automation is on, and anybody can watch whether tickets
+// moved. The person is being asked for the switch, so the steps point them at
+// the fortnight of outcome flow can already show them.
+func TestAPromiseAboutAnAutomationNamesTheAuditThatWatchesIt(t *testing.T) {
+	t.Parallel()
+
+	got := engine.Attest(engine.AttestInput{
+		Check: engine.Check{
+			ID:       core.NativeItemPrefix + "pr_merged",
+			Title:    "the tracker moves a ticket when its work merges",
+			Category: engine.CategoryTracker,
+		},
+		Result: cannotTell(), Lock: config.NewLock("v0.3.0"),
+		Inputs: "sha256:inputs", Now: coretest.ContractNow, TTL: 30 * 24 * time.Hour,
+	})
+
+	steps := strings.Join(got.Remediation.Steps, "\n")
+	if !strings.Contains(steps, engine.LiveTransitionCheck("pr_merged")) {
+		t.Errorf("steps = %q, want the live check that watches the same automation named", got.Remediation.Steps)
+	}
+}
+
+// TestAPromiseAboutSomethingNothingWatchesNamesNoAudit: every other
+// attestation is a fact flow has no second reading of, and naming a check
+// that does not exist in the report would send somebody looking for it.
+func TestAPromiseAboutSomethingNothingWatchesNamesNoAudit(t *testing.T) {
+	t.Parallel()
+
+	got := engine.Attest(engine.AttestInput{
+		Check: attestCheck, Result: cannotTell(), Lock: config.NewLock("v0.3.0"),
+		Inputs: "sha256:inputs", Now: coretest.ContractNow, TTL: 30 * 24 * time.Hour,
+	})
+
+	steps := strings.Join(got.Remediation.Steps, "\n")
+	if strings.Contains(steps, "in this report first") {
+		t.Errorf("steps = %q, want no audit named for a fact nothing audits", got.Remediation.Steps)
+	}
+}
+
 // TestAPromiseCannotOverruleSomethingFlowCanSee: if the API answers, the
 // answer is better evidence than a promise. Otherwise attesting would be a
 // way to swear away a real failure.

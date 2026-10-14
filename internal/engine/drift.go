@@ -318,11 +318,31 @@ func (in AttestInput) steps() []string {
 	if in.TTL > 0 {
 		stands = config.Duration(in.TTL).String()
 	}
-	return []string{
-		"look at it yourself: " + in.Check.Title,
+	steps := []string{"look at it yourself: " + in.Check.Title}
+	if watcher, ok := in.watched(); ok {
+		steps = append(steps, "read "+watcher+" in this report first: it watches the same automation on real tickets, "+
+			"so the promise is about the switch and the audit is about the outcome")
+	}
+	return append(steps,
 		"if it is not true, make it true first — attesting is not a way to silence it",
 		fmt.Sprintf("run flow attest %s --note \"…\"; your word stands for %s", in.Check.ID, stands),
+	)
+}
+
+// watched is the live check that sees the consequences of the thing being
+// vouched for, where there is one.
+//
+// A native transition is the case flow has both halves of: nobody can ask the
+// tracker whether the automation is switched on, and anybody can watch whether
+// tickets moved. Naming the audit in the steps is what stops the promise being
+// made from memory — the person is being asked for the switch, and flow can
+// already show them a fortnight of the outcome (spec 07 §8).
+func (in AttestInput) watched() (string, bool) {
+	event, found := strings.CutPrefix(in.Check.ID, core.NativeItemPrefix)
+	if !found {
+		return "", false
 	}
+	return LiveTransitionCheck(event), true
 }
 
 // NewAttestation is the record `flow attest` writes. The inputs hash is taken
