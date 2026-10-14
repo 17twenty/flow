@@ -274,6 +274,48 @@ func gitLabNumbers(prs []core.PullRequest) []int {
 	return out
 }
 
+// The query is where the question is asked, not the answer. GitLab filters a
+// listing itself, pages it 100 at a time at most, and orders it; an adapter
+// that left any of that out would read every merge request the project ever
+// had and filter them in flow.
+func TestGitLabAsksTheQuestionInTheQuery(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	since := coretest.ContractNow.Add(-14 * 24 * time.Hour)
+	if _, err := gitlab.PullRequests(t.Context(), core.PRQuery{
+		State:        core.PRStateMerged,
+		Base:         "main",
+		UpdatedSince: since,
+	}); err != nil {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	query, asked := fake.Query("/api/v4/projects/acme%2Fwidget/merge_requests", 0)
+	if !asked {
+		t.Fatal("the listing was never read")
+	}
+	want := map[string]string{
+		"state":         "merged",
+		"target_branch": "main",
+		"updated_after": since.UTC().Format(time.RFC3339),
+		"order_by":      "updated_at",
+		"sort":          "desc",
+		"per_page":      "100",
+	}
+	for name, value := range want {
+		if got := query.Get(name); got != value {
+			t.Errorf("the listing asked %s=%q, want %q", name, got, value)
+		}
+	}
+
+	// And one merge request is read once, not once per thing read off it.
+	const one = "/api/v4/projects/acme%2Fwidget/merge_requests/2"
+	if _, err := gitlab.PullRequest(t.Context(), 2); err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if got := countGitLabRequests(fake, one); got != 1 {
+		t.Errorf("the merge request was read %d times for one reading of it, want 1", got)
+	}
+}
+
 // The tickets a merge request closes come from GitLab's own endpoint for
 // them, and from nowhere else. A ticket in the project being spoken for is
 // written as everybody writes it; one anywhere else is qualified, because

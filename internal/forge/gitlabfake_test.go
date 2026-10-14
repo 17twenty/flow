@@ -50,6 +50,7 @@ type gitLabFake struct {
 	mu       sync.Mutex
 	requests []string
 	methods  []string
+	queries  []string
 	// anonymous counts calls refused for carrying no credential, and
 	// unacceptable those refused for asking for something other than JSON.
 	anonymous    int
@@ -282,6 +283,29 @@ func (f *gitLabFake) Methods() []string {
 	return slices.Clone(f.methods)
 }
 
+// Query returns the query the nth call to a path carried, and says whether
+// there was one.
+func (f *gitLabFake) Query(path string, nth int) (url.Values, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var seen int
+	for i, asked := range f.requests {
+		if asked != path {
+			continue
+		}
+		seen++
+		if seen <= nth {
+			continue
+		}
+		query, err := url.ParseQuery(f.queries[i])
+		if err != nil {
+			return nil, false
+		}
+		return query, true
+	}
+	return nil, false
+}
+
 // Anonymous returns how many calls were refused for carrying no credential.
 func (f *gitLabFake) Anonymous() int {
 	f.mu.Lock()
@@ -324,6 +348,7 @@ func (f *gitLabFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, escaped)
 	f.methods = append(f.methods, r.Method)
+	f.queries = append(f.queries, r.URL.RawQuery)
 	f.agents[r.Header.Get("User-Agent")]++
 	failure, failing := f.fail[escaped]
 	f.mu.Unlock()
