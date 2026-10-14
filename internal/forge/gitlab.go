@@ -347,18 +347,13 @@ func (g *GitLab) PullRequests(ctx context.Context, q core.PRQuery) ([]core.PullR
 		query.Set("updated_after", q.UpdatedSince.UTC().Format(time.RFC3339))
 	}
 
+	// The state, the branch and the window are all the query's, and GitLab
+	// answers them itself. Filtering them again here would be a second
+	// mechanism answering the same question, which is a thing that drifts
+	// (spec 10 §4).
 	var prs []core.PullRequest
 	err := paginate(ctx, g, core.Request{Path: g.path("merge_requests"), Query: query}, func(m glMergeRequest) bool {
-		pr := m.toPullRequest()
-		// The list is newest first by update, so the first one older than
-		// the window ends the walk rather than being skipped.
-		if !q.UpdatedSince.IsZero() && pr.UpdatedAt.Before(q.UpdatedSince) {
-			return false
-		}
-		if q.State != "" && pr.State != q.State {
-			return true
-		}
-		prs = append(prs, pr)
+		prs = append(prs, m.toPullRequest())
 		return q.Limit <= 0 || len(prs) < q.Limit
 	})
 	if err != nil {

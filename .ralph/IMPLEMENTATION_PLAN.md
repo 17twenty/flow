@@ -330,8 +330,22 @@ Human-only steps use ids `H.<n>` (never seeded).
     protection nobody had. `docs/cookbook.md` §7 now carries the by-hand
     recipe for both forges, which was the other half of the report behind
     #90/#91.
-- [ ] 7.4 GitLab forge — specs: 10 §4 — deps: 3.12 (#82)
+- [x] 7.4 GitLab forge — specs: 10 §4 — deps: 3.12 (#82)
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
+  - note: internal/forge/gitlab.go + gitlab_wire.go. A project is one
+    percent-encoded segment, which a fake routing on the decoded path would
+    forgive, so the fake routes on `EscapedPath()`. Both gate strategies are
+    there: external status checks where the tier has them, and the project's
+    "pipelines must succeed" as `StrictChecks`. `closes_issues` is the forge's
+    own link, so `linked_issues_read` is true — except for a project wired to
+    an external tracker, which answers the same endpoint with an id and a
+    title and no reference, and that is no key flow can write. A comparison is
+    asked `straight` and both ways round, as Gitea's is. Reviewers and
+    approvals are two endpoints and one person. The AC's "deployments read"
+    did not survive contact: GitLab has the API and flow has no source that
+    reads it, so `assets/capabilities/gitlab.yaml` now says `verify: false`
+    and points at `deploys.source: commit_status`, which item 7.5 made work
+    for any forge. A GitLab deployment source is its own item.
 - [x] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)
   - AC: context exact and prefix* matching
   - note: the source reads a `core.Forge` rather than GitHub's API (issue

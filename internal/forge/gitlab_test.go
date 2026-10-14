@@ -976,3 +976,222 @@ func TestGitLabSaysWhenTheProjectKeptItsSettings(t *testing.T) {
 		t.Errorf("the refusal does not name the project: %v", err)
 	}
 }
+
+// Approval rules and external status checks are paid features, and a project
+// on the tier most people have answers neither. Asking for them behind a
+// branch nobody protected buys a refusal per plan item for a credential that
+// was never going to be allowed, and tells flow nothing: there is no rule
+// without a protected branch to hang it on.
+func TestGitLabDoesNotLookBehindAnUnprotectedBranch(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	if _, err := gitlab.Protection(t.Context(), "some-branch"); err != nil {
+		t.Fatalf("Protection(some-branch): %v", err)
+	}
+	for _, path := range []string{
+		"/api/v4/projects/acme%2Fwidget/approval_rules",
+		"/api/v4/projects/acme%2Fwidget/external_status_checks",
+	} {
+		if got := countGitLabRequests(fake, path); got != 0 {
+			t.Errorf("%s was read %d times behind a branch nobody protected, want 0", path, got)
+		}
+	}
+}
+
+// A project's rules and checks are the project's, and each says which
+// branches it covers. The trunk's protection is the strictest of the ones
+// that cover the trunk, and none of the ones that do not: counting a rule
+// written for a release branch would report an approval nobody will be asked
+// for, and taking the last rule read rather than the strictest would report
+// fewer than GitLab will insist on.
+func TestGitLabTakesTheStrictestRuleThatCoversTheBranch(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	fake.mu.Lock()
+	fake.rules = append(fake.rules,
+		// A rule that names a branch and applies to every protected one
+		// anyway. GitLab's flag wins over its own list.
+		glApprovalRule{ID: 90, Name: "every protected branch", RuleType: gitLabAnyApprover, ApprovalsRequired: 5,
+			AppliesToAllProtectedBranches: true, ProtectedBranches: gitLabBranchNames("release")},
+		glApprovalRule{ID: 91, Name: "the trunk", RuleType: gitLabAnyApprover, ApprovalsRequired: 3,
+			ProtectedBranches: gitLabBranchNames("main")},
+		glApprovalRule{ID: 92, Name: "the release train", RuleType: gitLabAnyApprover, ApprovalsRequired: 9,
+			ProtectedBranches: gitLabBranchNames("release")},
+	)
+	fake.checks = append(fake.checks,
+		glExternalCheck{ID: 93, Name: "release/sign-off", ExternalURL: "https://gitlab.test",
+			ProtectedBranches: gitLabBranchNames("release")},
+		// A check belonging to no branch in particular belongs to every
+		// merge request the project has.
+		glExternalCheck{ID: 94, Name: "pipeline/green", ExternalURL: "https://gitlab.test"},
+	)
+	fake.mu.Unlock()
+
+	main, err := gitlab.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection(main): %v", err)
+	}
+	if main.RequiredApprovals != 5 {
+		t.Errorf("RequiredApprovals = %d, want 5: the strictest rule covering main", main.RequiredApprovals)
+	}
+	want := []string{"ci/test", "pipeline/green"}
+	if !slices.Equal(main.RequiredChecks, want) {
+		t.Errorf("RequiredChecks = %v, want %v: the release branch's check is not main's", main.RequiredChecks, want)
+	}
+}
+
+// gitLabBranchNames builds the `protected_branches` of a rule or a check.
+func gitLabBranchNames(names ...string) []struct {
+	Name string `json:"name"`
+} {
+	out := make([]struct {
+		Name string `json:"name"`
+	}, 0, len(names))
+	for _, name := range names {
+		out = append(out, struct {
+			Name string `json:"name"`
+		}{Name: name})
+	}
+	return out
+}
+
+// A squashed merge request has two commits and only one of them is on the
+// trunk. `flow check deploy` proves a deployment contains what landed, and
+// the merge commit of a squashed merge request is not what landed.
+func TestGitLabLandsTheCommitTheSquashMade(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	squashed, err := gitlab.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if squashed.MergeSHA != coretest.SHAMerged {
+		t.Errorf("MergeSHA = %q, want the squash commit %q", squashed.MergeSHA, coretest.SHAMerged)
+	}
+
+	// A merge request that was not squashed has only the merge commit,
+	// and that is the one that landed.
+	fake.mu.Lock()
+	fake.squashCommit = false
+	fake.mu.Unlock()
+	merged, err := gitlab.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2) unsquashed: %v", err)
+	}
+	if merged.MergeSHA != coretest.SHAMerged {
+		t.Errorf("MergeSHA = %q, want the merge commit %q", merged.MergeSHA, coretest.SHAMerged)
+	}
+}
+
+// GitLab caps `changes_count` at a thousand and writes the cap as "1000+".
+// A summary that says a thousand files is not improved by saying none, which
+// is what reading the text as a number gives.
+func TestGitLabReadsACappedChangeCountAsTheNumberItCaps(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Files.Changed = 4000
+	fake, srv := newGitLabServer(t, fx)
+	gitlab := newGitLabAdapter(t, srv, fx, nil)
+	fake.mu.Lock()
+	fake.paths[1] = nil
+	fake.mu.Unlock()
+
+	pr, err := gitlab.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest(1): %v", err)
+	}
+	if pr.Files.Changed != 1000 {
+		t.Errorf("Files.Changed = %d, want 1000: the cap is the number it qualifies", pr.Files.Changed)
+	}
+}
+
+// The files of a merge request are a summary somebody reads, and GitLab sends
+// them in the order the diff was built. Flow sorts them so that two readings
+// of the same merge request say the same thing.
+func TestGitLabSortsTheFilesOfAMergeRequest(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitLabServer(t, fx)
+	gitlab := newGitLabAdapter(t, srv, fx, nil)
+	fake.mu.Lock()
+	fake.paths[1] = []string{"ui/zoom.go", "core/events.go"}
+	fake.mu.Unlock()
+
+	pr, err := gitlab.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest(1): %v", err)
+	}
+	want := []string{"core/events.go", "ui/zoom.go"}
+	if !slices.Equal(pr.Files.Paths, want) {
+		t.Errorf("Files.Paths = %v, want %v", pr.Files.Paths, want)
+	}
+}
+
+// A project wired to an external issue tracker answers closes_issues with an
+// id and a title and no reference of any kind. There is no key in that, and
+// inventing one would send the tracker looking for a ticket called nothing;
+// leaving the link empty is what lets the tracker fallback do its work.
+func TestGitLabNamesNoTicketAnExternalTrackerKeeps(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	fake.mu.Lock()
+	fake.external[2] = true
+	fake.mu.Unlock()
+
+	pr, err := gitlab.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if len(pr.ClosingIssues) != 0 {
+		t.Errorf("ClosingIssues = %v, want none: an external issue has no key flow can write", pr.ClosingIssues)
+	}
+}
+
+// Where a squash commit takes its words from is one template, and settings
+// that do not say leave it alone. Writing flow's own default over a template
+// somebody chose would make the next plan propose putting it back.
+func TestGitLabLeavesASquashTemplateItCannotSay(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	fake.mu.Lock()
+	before := fake.project.SquashCommitTemplate
+	fake.mu.Unlock()
+	if before != gitLabTemplateFirstCommit {
+		t.Fatalf("the project starts with %q, want %q", before, gitLabTemplateFirstCommit)
+	}
+
+	if err := gitlab.SetMergeSettings(t.Context(), core.MergeSettings{AllowSquash: true, AllowMerge: true}); err != nil {
+		t.Fatalf("SetMergeSettings: %v", err)
+	}
+	fake.mu.Lock()
+	after := fake.project.SquashCommitTemplate
+	fake.mu.Unlock()
+	if after != before {
+		t.Errorf("squash_commit_template = %q, want %q: the settings said nothing about it", after, before)
+	}
+}
+
+// Each of flow's three states is a state GitLab's listing understands, and
+// the mapping is the whole of the filtering: flow asks GitLab the question
+// rather than reading every merge request and judging them itself.
+func TestGitLabAsksForTheStateItWasAskedFor(t *testing.T) {
+	for _, row := range []struct{ state, want string }{
+		{core.PRStateOpen, "opened"},
+		{core.PRStateMerged, "merged"},
+		{core.PRStateClosed, "closed"},
+		{"", "all"},
+	} {
+		t.Run(row.want, func(t *testing.T) {
+			fake, gitlab := gitLabFixture(t)
+			prs, err := gitlab.PullRequests(t.Context(), core.PRQuery{State: row.state})
+			if err != nil {
+				t.Fatalf("PullRequests(%q): %v", row.state, err)
+			}
+			query, asked := fake.Query("/api/v4/projects/acme%2Fwidget/merge_requests", 0)
+			if !asked {
+				t.Fatal("the listing was never read")
+			}
+			if got := query.Get("state"); got != row.want {
+				t.Fatalf("the listing asked state=%q, want %q", got, row.want)
+			}
+			for _, pr := range prs {
+				if row.state != "" && pr.State != row.state {
+					t.Errorf("merge request !%d is %s in a listing of %s", pr.Number, pr.State, row.state)
+				}
+			}
+		})
+	}
+}

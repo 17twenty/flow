@@ -75,6 +75,14 @@ type gitLabFake struct {
 	// closes are the issues each merge request closes, which GitLab serves
 	// from an endpoint of its own and never from the merge request.
 	closes map[int][]string
+	// external marks the merge requests whose closing issues live in an
+	// external tracker. GitLab answers those with an id and a title and
+	// nothing else — no `references`, so no name flow can use.
+	external map[int]bool
+	// squashCommit says whether a merged merge request was squashed. A
+	// squashed one carries both commits and an unsquashed one only the
+	// merge commit.
+	squashCommit bool
 	// approvers are logins that approved a merge request without ever
 	// being one of its reviewers, which GitLab allows and reports only
 	// from the approvals endpoint.
@@ -136,6 +144,8 @@ func newGitLabServer(t *testing.T, fx coretest.ForgeFixture) (*gitLabFake, *http
 		fail:         map[string]int{},
 		reviews:      map[int][]core.Review{},
 		closes:       map[int][]string{},
+		external:     map[int]bool{},
+		squashCommit: true,
 		approvers:    map[int][]string{},
 		paths:        map[int][]string{},
 		statuses:     map[string][]glStatus{},
@@ -1069,24 +1079,40 @@ func (f *gitLabFake) mergeRequest(pr core.PullRequest) glMergeRequest {
 		SHA:          pr.HeadSHA,
 		SourceBranch: pr.HeadRef,
 		TargetBranch: pr.BaseRef,
-		ChangesCount: strconv.Itoa(pr.Files.Changed),
+		ChangesCount: gitLabChangesCount(pr.Files.Changed),
 		WebURL:       pr.URL,
 		CreatedAt:    pr.CreatedAt,
 		UpdatedAt:    pr.UpdatedAt,
 	}
-	if pr.Files.Changed == 0 {
-		out.ChangesCount = ""
-	}
 	if !pr.MergedAt.IsZero() {
 		at := pr.MergedAt
 		out.MergedAt = &at
+		// A squashed merge request carries two commits: the merge commit
+		// GitLab made and the one commit the change was squashed into.
+		// The squash is the one that is on the trunk.
 		out.MergeCommitSHA = pr.MergeSHA
+		if f.squashCommit {
+			out.SquashCommitSHA = pr.MergeSHA
+			out.MergeCommitSHA = "merge-" + pr.MergeSHA
+		}
 	}
 	if !pr.ClosedAt.IsZero() {
 		at := pr.ClosedAt
 		out.ClosedAt = &at
 	}
 	return out
+}
+
+// gitLabChangesCount is `changes_count`, which GitLab sends as text and caps
+// at a thousand: a merge request touching more than that reads "1000+".
+func gitLabChangesCount(changed int) string {
+	switch {
+	case changed <= 0:
+		return ""
+	case changed >= 1000:
+		return "1000+"
+	}
+	return strconv.Itoa(changed)
 }
 
 // reviewers is GET /merge_requests/:iid/reviewers: one row per reviewer
@@ -1138,6 +1164,11 @@ func (f *gitLabFake) approvals(iid int) glApprovals {
 func (f *gitLabFake) closesIssues(iid int) []glIssue {
 	slug := f.project.PathWithNamespace
 	var out []glIssue
+	if f.external[iid] {
+		// What an external tracker's issue looks like here: an id and a
+		// title, and no reference of any kind.
+		return []glIssue{{IID: 0}}
+	}
 	for _, key := range f.closes[iid] {
 		project, number, found := strings.Cut(key, "#")
 		if !found {
