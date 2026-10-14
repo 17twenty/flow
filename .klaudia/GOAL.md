@@ -973,3 +973,82 @@ The thing only `@17twenty` can do is unchanged, and it is now the only part of
 the fourteen-day clock waiting on a decision rather than on the calendar: run
 the four `flow attest` commands in `docs/cookbook.md` §6.1 and land the
 resulting `.flow.lock` through a pull request.
+
+### A skill, and the harness that proved it wrong (item 8.3, issue #134)
+
+`@17twenty` asked for a skill a Claude-compatible harness could pick up and
+work a ticket with: how to use flow, the bash, the credential. The interesting
+half of that request is the second acceptance criterion — that another harness,
+given the skill and no other context, can take a ticket and drive it to In
+review. That is not a thing you can assert in a test, so it was run.
+
+**What the skill is.** `skills/flow/SKILL.md` is spec 17 §6's loop with this
+repository taken out of it: verify, take a ticket that meets the Definition of
+Ready, branch, write commit messages the gate will accept, open a pull request
+that links its ticket, wait for the gate and for a person. It states no
+defaults of flow's as facts. Which column is takeable, what makes a ticket
+ready, which commit types and scopes are allowed, what the status is called —
+each is read out of the `.flow.yaml` in front of it, because a skill carrying
+flow's own answers would be confidently wrong in every repository that
+configured something else. What `.ralph/` knows about *this* repository stays
+in `.ralph/`.
+
+**What keeps it true.** The same thing that keeps the shipped templates true
+(spec 02 §2): tests. Every `flow …` the skill writes in code must name a
+command that answers `--help`; every flag beside one must appear in that
+command's help; every dotted name in its prose must be a rule
+`engine.PolicyRuleIDs()` publishes or a key the configuration schema has. The
+first draft passed a mutant — a skill saying `flow release` — because it
+reused the template test's filter, which skips a word that is no command of
+flow's rather than failing on it.
+
+**Then it was run.** A sub-agent got the skill, a path and a credential, and
+was sent to issue #135 with nothing else: no plan, no `AGENTS.md`, no specs. It
+came back with pull request [#137](https://github.com/17twenty/flow/pull/137) —
+branched, fixed, tested, committed as the machine account with a conventional
+message, `Closes #135` in the body, the `agent` label on it, every check green
+but `agent.human_review`, and the card moved to In review by flow rather than
+by hand. It did not approve its own work. The criterion is met.
+
+**And it found four things wrong with the skill**, which is the point of
+running one:
+
+- The `flow doctor --json` reading asked for `.summary` and `.outcome`. Neither
+  is a field of that document. It does not error — it prints
+  `{"exit": null, "failing": []}` for a run that exited 2 with a real failing
+  check, so an agent trusting the skill would have called a sick repository
+  healthy. This one now has a test behind it: `skill_flowtest_test.go` runs
+  `flow doctor --json` and resolves every field path the skill's jq takes
+  against the document flow actually produced.
+- The board query stopped at the first hundred items. This board holds a
+  hundred and three, and #135 was on the second page — so the recipe reported
+  the ticket it had just been sent to work as not being on the board, which
+  reads exactly like `pr.ticket.in_project` failing. It pages now.
+- The skill named an unresolved placeholder in `.flow.yaml` as a reason to stop
+  work, without knowing that `.flow.lock` is where flow writes what it has
+  since discovered. By the letter of it, the agent should have downed tools on
+  a healthy repository.
+- Committing as the account whose work it is was the last line of an appendix.
+  It is not a nicety: `agents.authors` is a list of logins, and a commit
+  authored as the human whose git config you inherited makes `agent.human_review`,
+  the agent label and the whole review audit say something untrue.
+
+It also reported, correctly, that the skill says nothing about *how to do the
+work* — so §4 now tells an agent to go and read the repository's own
+conventions first, which is the honest division: flow owns the workflow and
+the repository owns everything else.
+
+**Single best next step:** the GitLab forge
+([#82](https://github.com/17twenty/flow/issues/82)) — the last Phase 7 forge,
+and the one that reuses everything the Gitea adapter generalised. The two
+trackers, Jira ([#79](https://github.com/17twenty/flow/issues/79)) and Linear
+([#80](https://github.com/17twenty/flow/issues/80)), depend on nothing and can
+go up beside it. Two pull requests are waiting on `@17twenty` now:
+[#136](https://github.com/17twenty/flow/pull/136) (this skill) and
+[#137](https://github.com/17twenty/flow/pull/137) (the dogfood gate, by the
+harness).
+
+The thing only `@17twenty` can do is unchanged, and it is still the only part
+of the fourteen-day clock waiting on a decision rather than on the calendar:
+run the four `flow attest` commands in `docs/cookbook.md` §6.1 and land the
+resulting `.flow.lock` through a pull request.

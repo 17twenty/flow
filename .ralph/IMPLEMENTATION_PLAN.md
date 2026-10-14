@@ -385,6 +385,44 @@ Human-only steps use ids `H.<n>` (never seeded).
     another repository breaks the demo that claims to be of it, and one
     requires the streak and its date to still be there.
 
+- [x] 8.3 An agent skill any harness can work a ticket with — specs: 17 §6 — deps: 8.1 (#134)
+  - AC: `skills/flow/SKILL.md` exists and is usable as it stands; a harness
+    given it and nothing else picks up a ticket and drives it to In review
+  - note: the skill names no repository and no numbers of its own — every rule
+    it follows is read out of the `.flow.yaml` in front of it, so it is the
+    same skill here and in a repository flow has never seen. What `.ralph/`
+    holds about this repository stays here: the skill is the workflow, not the
+    dogfood. Four tests keep it true the way the shipped templates are kept
+    true (spec 02 §2): every `flow …` it writes in code must name a real
+    command, every flag beside one must be in that command's help, and every
+    dotted name in its prose must be either a rule `engine.PolicyRuleIDs()`
+    publishes or a key the configuration schema has. The first draft passed a
+    mutant — `flow release` — because it reused the template test's filter,
+    which skips a word that is no command of flow's; scoping the walk to code
+    spans and failing on an unknown command is what caught it, and prose like
+    "flow plan" the noun is why the scoping is needed at all.
+  - note: the second criterion was run, not asserted. A sub-agent was given the
+    skill, a path and a credential — no plan, no `AGENTS.md`, no spec — and
+    sent to work #135. It did: branch, fix, test, conventional commit as the
+    machine account, pull request #137 with `Closes #135`, the `agent` label,
+    the gate green but for `agent.human_review`, and the card in In review
+    without anybody dragging it. It also found four things in the skill that
+    were wrong, the worst of which no reader would have caught: the
+    `flow doctor --json` reading asked for `.summary` and `.outcome`, which
+    are not fields of that document, so a run that exited 2 with a real
+    failing check printed a confident "nothing is failing". The board query
+    stopped at the first hundred items on a board of a hundred and three and
+    reported the ticket it was sent to work as not on the board at all. The
+    skill said a placeholder in `.flow.yaml` was a reason to stop, without
+    knowing that `.flow.lock` is where flow resolves one. And it buried the
+    one thing that makes `agents.authors` mean anything — commit as the
+    account whose work it is — in the last line of an appendix. All four are
+    fixed, and the first has a test behind it now (`skill_flowtest_test.go`)
+    which reads every field path the skill's jq takes out of a document flow
+    actually produced. A skill is documentation that a machine executes
+    without the judgement to notice it is nonsense, which is the argument for
+    running one rather than reviewing it.
+
 - [ ] H.2 HUMAN: confirm 14 consecutive green daily doctor runs → tag v1.0.0
 
 ---
