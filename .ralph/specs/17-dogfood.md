@@ -343,3 +343,34 @@ Each iteration, as the agent identity:
   `forge.required_checks: [test]` is what asks for the build. Naming the UI's
   label would have required a check nothing publishes — a trunk nobody could
   merge to.
+
+- **§6 the loop's knowledge ships as a skill, and the skill knows no
+  repository (item 8.3).** §6 is written as flow's own loop — `gh`, the agent
+  label, this Project — and an agent arriving at somebody else's flow
+  repository needs the same seven steps without any of those particulars.
+  `skills/flow/SKILL.md` is that: verify, take a ticket, branch, commit, open a
+  pull request that links its ticket, wait for the gate and for a person. It
+  asserts nothing about a board it has not read. Every rule it follows — which
+  column is takeable, what makes a ticket ready, which commit types and scopes
+  are allowed, what the status is called — it reads out of the `.flow.yaml` in
+  front of it, because a skill carrying flow's defaults as facts would be
+  wrong in every repository that configured something else.
+
+- **§6 the skill is held to flow's surface by tests, not by review (item
+  8.3).** It is documentation that tells a machine what to run, which is the
+  same promise spec 02 §2 makes about the shipped templates and the same way
+  of breaking it: a command that was renamed, a flag that was never added, a
+  configuration key that does not exist. So each `flow …` the skill writes in
+  code must name a command that answers `--help`, each flag beside it must
+  appear in that command's help, and each dotted name in its prose must be a
+  rule `PolicyRuleIDs()` publishes or a key in the configuration schema. A
+  skill nobody tests rots silently, and it rots into an agent confidently
+  running nothing.
+
+- **§6 the skill tells an agent to wait, and never how to clear
+  `agent.human_review` (item 8.3).** It is the one rule in spec 09 §2 whose
+  subject is the reader, and an agent that treats a red gate as an obstacle
+  will find two ways past it — approving its own pull request, or dropping the
+  agent label so the rule stops applying and the check passes proving nothing.
+  Both are named in the skill as things never to do, with the reason, because
+  a prohibition without its reason is a puzzle.

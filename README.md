@@ -26,9 +26,29 @@ deployment records against the app SHA, live-health audit in doctor,
 | `assets/` | Embedded: capabilities, presets, templates, schema. Reference: docs, research, examples, testdata |
 | `.flow.yaml`, `.github/` | flow's own workflow config, CI, issue forms, PR template (spec 17) |
 | `.ralph/` | Build loop memory: `PROMPT.md`, `PROMPT_plan.md`, `AGENTS.md`, `IMPLEMENTATION_PLAN.md`, `specs/` |
+| `skills/flow/SKILL.md` | Agent skill: how a harness works a ticket to a reviewed pull request |
 | `loop.sh` | Loop runner (direct and PR modes) |
 | `bootstrap/seed-issues.sh` | Creates phase + item issues and adds them to the Project |
 | `dogfood/.github/workflows/flow.yml` | The gate workflow; added to `.github/` in bootstrap Stage B |
+
+## Working it with an agent
+
+[`skills/flow/SKILL.md`](skills/flow/SKILL.md) is a skill for Claude-compatible
+harnesses: verify the repository, take a ticket that meets the Definition of
+Ready, commit messages the gate will accept, open a pull request that links its
+ticket, and then wait for a person — because `agent.human_review` is not a
+check an agent may clear for itself. Copy it where your client looks for
+skills:
+
+```sh
+mkdir -p .claude/skills/flow && curl -fsSLo .claude/skills/flow/SKILL.md \
+  https://raw.githubusercontent.com/17twenty/flow/main/skills/flow/SKILL.md
+```
+
+It names no repository of its own: every rule it follows is read out of the
+`.flow.yaml` in front of it. Tests hold it to flow's actual surface — each
+command and flag it tells an agent to run, and each configuration key and
+policy rule it names, has to exist.
 
 ## Bootstrap (summary — full detail in specs/17-dogfood.md §5)
 1. **Stage A (human, ~30 min):** repo, user Project (Kanban template), built-in
