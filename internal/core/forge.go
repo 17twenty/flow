@@ -159,6 +159,11 @@ const (
 // gate's verdict as a commit status, and reads them back to prove a merged
 // pull request was gated (spec 09 §2, spec 07 §6).
 type CommitStatus struct {
+	// ID is the provider's own identity for this status, as text. It is
+	// what a record built out of a status is identified by, so a source
+	// reading statuses as deployments has something to point at that the
+	// provider would recognise (spec 13 §1).
+	ID string
 	// Context names the check, e.g. flow/policy.
 	Context string
 	// State is one of the status states above.
@@ -167,8 +172,11 @@ type CommitStatus struct {
 	Description string
 	// TargetURL points at the run that produced the verdict.
 	TargetURL string
-	// CreatedAt is when the status was published.
+	// CreatedAt is when the status was published, and UpdatedAt when it was
+	// last written. A context's history is one verdict's progress, so the
+	// two differ whenever a check reported pending before it finished.
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Commit is one commit on a branch, as the forge or git reports it.

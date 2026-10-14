@@ -368,3 +368,16 @@ duplicate-pipeline hazards). MR closing issues: `GET
   succeed" each need the nearest thing their forge has to currency, or they
   must observe `StrictChecks` as false and let flow report it as unsupported
   rather than quietly true.
+- **§2 a commit status says who it is and when it was written (issue #129).**
+  `core.CommitStatus` gained `ID` and `UpdatedAt`. A deployment record built
+  out of a status is identified by the first and measured for lag by the
+  second (spec 13 §1), and every researched forge carries both on the
+  payload, so an adapter that drops them is dropping them rather than working
+  around an absence. An identity the provider did not give stays absent
+  rather than becoming "0": a link to status zero is worse than no link at
+  all.
+- **§1 an adapter says which repository it speaks for (issue #129).**
+  `core.Forge.Slug()` reports it as the adapter was built, not as the
+  provider answers, so an error about a repository flow cannot reach can
+  still name it, and anything composed on top of a forge — the commit status
+  deployment source — can say where it was reading.

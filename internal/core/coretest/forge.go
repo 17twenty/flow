@@ -63,6 +63,7 @@ type FakeForge struct {
 	comments    map[int][]core.Comment
 	nextPR      int
 	nextID      int
+	nextStatus  int
 }
 
 // NewFakeForge builds a forge holding the fixture's world.
@@ -91,7 +92,11 @@ func NewFakeForge(fx ForgeFixture) *FakeForge {
 		comments:    map[int][]core.Comment{},
 	}
 	for sha, statuses := range fx.Statuses {
-		f.statuses[sha] = slices.Clone(statuses)
+		stamped := slices.Clone(statuses)
+		for i := range stamped {
+			stamped[i] = f.stampStatus(stamped[i])
+		}
+		f.statuses[sha] = stamped
 	}
 	for branch, protection := range fx.Protections {
 		protection.Branch = branch
@@ -108,6 +113,13 @@ func (f *FakeForge) Kind() string { return f.kind }
 
 // Capabilities is what the fake declares it can do.
 func (f *FakeForge) Capabilities() core.CapabilitySet { return f.caps }
+
+// Slug is the repository the fake speaks for.
+func (f *FakeForge) Slug() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.repo.Slug()
+}
 
 // Probe reports the permissions the fixture granted.
 func (f *FakeForge) Probe(ctx context.Context) (core.Permissions, error) {
@@ -340,14 +352,28 @@ func (f *FakeForge) SetCommitStatus(ctx context.Context, sha string, s core.Comm
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if s.CreatedAt.IsZero() {
-		s.CreatedAt = f.clock.Now()
-	}
+	s = f.stampStatus(s)
 	statuses := slices.DeleteFunc(f.statuses[sha], func(have core.CommitStatus) bool {
 		return have.Context == s.Context
 	})
 	f.statuses[sha] = append(statuses, s)
 	return nil
+}
+
+// stampStatus gives a status the two things a provider writes rather than a
+// caller: its own identity for the verdict, and when it last wrote it. A
+// status published twice gets a new identity both times, because the provider
+// records a history and the adapter is what shows only the latest word.
+func (f *FakeForge) stampStatus(s core.CommitStatus) core.CommitStatus {
+	if s.CreatedAt.IsZero() {
+		s.CreatedAt = f.clock.Now()
+	}
+	if s.UpdatedAt.IsZero() {
+		s.UpdatedAt = s.CreatedAt
+	}
+	f.nextStatus++
+	s.ID = "status-" + strconv.Itoa(f.nextStatus)
+	return s
 }
 
 // UpsertComment writes flow's comment, editing the one carrying that marker.

@@ -1012,6 +1012,19 @@ func TestGitHubRefusesAProposalThatCouldNotBeOffered(t *testing.T) {
 	}
 }
 
+// TestGitHubLeavesAStatusWithNoIdentityWithout: a deployment record built out
+// of a commit status points at it by its identity (spec 13 §1), and an
+// identity of "0" points at nothing. A provider that did not give one has to
+// read as not having given one.
+func TestGitHubLeavesAStatusWithNoIdentityWithout(t *testing.T) {
+	if got := (ghStatus{ID: 4321, Context: "ci/deploy"}).toCommitStatus().ID; got != "4321" {
+		t.Errorf("the identity is %q, want the provider's own", got)
+	}
+	if got := (ghStatus{Context: "ci/deploy"}).toCommitStatus().ID; got != "" {
+		t.Errorf("a status the provider did not identify came back as %q, want nothing", got)
+	}
+}
+
 func TestGitHubDoesNotPublishAVerdictTheCommitAlreadyCarries(t *testing.T) {
 	fx := coretest.ContractForge()
 	fake, srv := newGitHubServer(t, fx)

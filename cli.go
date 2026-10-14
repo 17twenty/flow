@@ -711,9 +711,7 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		}
 		if s.Config.Deploys.Source == config.DeploySourceCommitStatus {
 			adapters.Deploys, err = deploys.NewCommitStatus(deploys.CommitStatusOptions{
-				Client:       forgeClient,
-				Owner:        owner,
-				Repo:         name,
+				Forge:        adapters.Forge,
 				Environment:  s.Config.Deploys.Environment,
 				Contexts:     s.Config.Deploys.Contexts,
 				Capabilities: declaration,

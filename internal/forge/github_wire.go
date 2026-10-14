@@ -258,6 +258,7 @@ func (c ghCompare) known() bool { return slices.Contains(ghCompareStatuses, c.St
 // ghStatus is GET /repos/{owner}/{repo}/commits/{sha}/statuses, which GitHub
 // serves newest first.
 type ghStatus struct {
+	ID          int64     `json:"id"`
 	Context     string    `json:"context"`
 	State       string    `json:"state"`
 	Description string    `json:"description"`
@@ -267,13 +268,25 @@ type ghStatus struct {
 }
 
 // toCommitStatus converts the payload.
+//
+// An absent identity stays absent rather than becoming "0": a record built
+// out of a status points at it by this, and a link to status zero is worse
+// than no link at all. The dates are taken as given — GitHub writes both on
+// every status — so a status with no date reads as one, which the forge
+// contract refuses rather than papering over.
 func (s ghStatus) toCommitStatus() core.CommitStatus {
+	id := ""
+	if s.ID != 0 {
+		id = strconv.FormatInt(s.ID, 10)
+	}
 	return core.CommitStatus{
+		ID:          id,
 		Context:     s.Context,
 		State:       s.State,
 		Description: s.Description,
 		TargetURL:   s.TargetURL,
 		CreatedAt:   s.CreatedAt,
+		UpdatedAt:   s.UpdatedAt,
 	}
 }
 
