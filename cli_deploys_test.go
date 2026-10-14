@@ -2,9 +2,13 @@ package main
 
 import (
 	"cmp"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +169,116 @@ func TestTheConfiguredContextsAreTheOnesRead(t *testing.T) {
 	}
 	if records[0].SHA != sha || !records[0].Succeeded() {
 		t.Errorf("record = %+v, want the successful argocd/app-prod status on %s", records[0], sha)
+	}
+}
+
+// trackerFor builds the live adapters for a configuration whose tracker is
+// the one named, and returns the tracker it chose.
+func trackerFor(t *testing.T, block config.Tracker) (core.Tracker, error) {
+	t.Helper()
+	t.Setenv("FLOW_TEST_FORGE_TOKEN", "test-token")
+
+	declarations, err := assets.Capabilities()
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	registry, err := core.LoadRegistry(declarations)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	auth := config.Auth{TokenEnv: "FLOW_TEST_FORGE_TOKEN"}
+	settings := approving("")
+	settings.Auth = map[string]config.AuthSource{
+		forge.GitHubKind:           {Hosts: []string{"api.github.com"}},
+		tracker.GitHubProjectsKind: {Hosts: []string{"api.github.com"}},
+		tracker.JiraCloudKind:      {Hosts: []string{hostOf(block.URL)}},
+	}
+	block.Auth = config.Auth{TokenEnv: auth.TokenEnv, EmailEnv: block.Auth.EmailEnv}
+	s := &session{
+		ConfigPath: ".flow.yaml",
+		Registry:   registry,
+		Config: &config.Config{
+			Forge:   config.Forge{Type: "github", Repo: "acme/widget", Auth: auth},
+			Tracker: block,
+			Deploys: config.Deploys{Source: config.DeploySourceNone},
+		},
+		Settings: settings,
+	}
+	adapters, err := liveAdapters(hostContext(t, CLI{}), s)
+	if err != nil {
+		return nil, err
+	}
+	return adapters.Tracker, nil
+}
+
+// TestTheConfiguredTrackerIsTheOneThatGetsBuilt: `tracker.type` chooses the
+// adapter, and what the configuration names reaches the wire — the site it
+// is sent to, the project key it asks about, and the credential paired with
+// the email that Jira Cloud's Basic authentication is.
+func TestTheConfiguredTrackerIsTheOneThatGetsBuilt(t *testing.T) {
+	t.Setenv("JIRA_EMAIL", "dev@acme.test")
+	var sent *http.Request
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = r
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"errorMessages":["nothing here"],"errors":{}}`))
+	}))
+	defer server.Close()
+
+	built, err := trackerFor(t, config.Tracker{
+		Type:    config.TrackerJiraCloud,
+		URL:     server.URL,
+		Project: config.Pending{Text: "FLOW"},
+		Auth:    config.Auth{EmailEnv: "JIRA_EMAIL"},
+	})
+	if err != nil {
+		t.Fatalf("liveAdapters: %v", err)
+	}
+	if built == nil {
+		t.Fatal("no tracker was built")
+	}
+	if built.Kind() != tracker.JiraCloudKind {
+		t.Fatalf("Kind() = %q, want %q", built.Kind(), tracker.JiraCloudKind)
+	}
+
+	if _, err := built.Tickets(t.Context(), core.TicketQuery{}); err == nil {
+		t.Fatal("the server refused and the adapter did not say so")
+	}
+	if sent == nil {
+		t.Fatal("nothing was asked of the site the configuration named")
+	}
+	if want := tracker.JiraAPIPath + "/search/jql"; sent.URL.Path != want {
+		t.Errorf("the adapter asked %q, want %q", sent.URL.Path, want)
+	}
+	if !strings.Contains(string(body), "FLOW") {
+		t.Errorf("the query is %q, want the project the configuration named", body)
+	}
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("dev@acme.test:test-token"))
+	if got := sent.Header.Get("Authorization"); got != want {
+		t.Errorf("Authorization = %q, want the email and the token encoded together", got)
+	}
+}
+
+// TestAJiraBuildWantsTheEmailTheTokenBelongsTo: the pairing that makes Jira's
+// Basic authentication happens while the adapters are being built, so a
+// configuration naming an email variable nobody exported stops there — rather
+// than at the first call, authenticated as half an account.
+func TestAJiraBuildWantsTheEmailTheTokenBelongsTo(t *testing.T) {
+	t.Setenv("JIRA_EMAIL", "")
+	_, err := trackerFor(t, config.Tracker{
+		Type:    config.TrackerJiraCloud,
+		URL:     "https://acme.atlassian.net",
+		Project: config.Pending{Text: "FLOW"},
+		Auth:    config.Auth{EmailEnv: "JIRA_EMAIL"},
+	})
+	if err == nil {
+		t.Fatal("the adapters were built without the email the token belongs to")
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, "JIRA_EMAIL") {
+		t.Errorf("the refusal does not name the variable to export: %+v", err)
 	}
 }

@@ -31,6 +31,77 @@ type TrackerFixture struct {
 	Columns map[core.ColumnID]string
 	// Clock decides what "now" is for anything the tracker writes.
 	Clock core.Clock
+
+	// KeyPrefix is how the tracker under test spells a ticket key: a
+	// GitHub issue is #12 and a Jira issue is FLOW-12. The wiring that
+	// stands the adapter up fills it in, because a contract that can only
+	// say #12 is a contract only one tracker can pass (spec 14).
+	KeyPrefix string
+	// Writes is the desired item the contract applies changes to. A
+	// tracker that keeps no registry of labels is held to the registry it
+	// does keep, rather than to GitHub's.
+	Writes TrackerWrite
+	// ReadOnly says the tracker under test writes no desired state at
+	// all: its board is the team's to configure and flow's to verify. The
+	// contract then holds it to refusing every change and to declaring
+	// that it does, because silence is not a finding (spec 05 §1).
+	ReadOnly bool
+	// LinkedPR is the pull request the linkage case reads. A tracker whose
+	// forge carries no structured link to it is given one that names its
+	// ticket the way its own convention does.
+	LinkedPR *core.PullRequest
+}
+
+// TrackerWrite is the desired item a tracker contract creates, updates and
+// deletes, in the vocabulary of the tracker under test (spec 14).
+type TrackerWrite struct {
+	// What is the desired item's id, such as tracker.labels.
+	What string
+	// Create is the thing the contract creates, which the fixture must not
+	// already hold.
+	Create core.Item
+	// Existing is the name of something the fixture does hold, which the
+	// contract updates and then deletes.
+	Existing string
+	// Field is the field an update changes, and Value what it changes it to.
+	Field, Value string
+}
+
+// defaultWrite is the registry a tracker is held to when its fixture names
+// none: GitHub's labels, which is where the contract started.
+func defaultWrite() TrackerWrite {
+	return TrackerWrite{
+		What:     core.ItemTrackerLabels,
+		Create:   core.Item{Name: "incident", Fields: map[string]string{"color": "d93f0b"}},
+		Existing: "blocked",
+		Field:    "color",
+		Value:    "000000",
+	}
+}
+
+// Key spells one of the contract's ticket keys the way the tracker under test
+// does.
+func (fx TrackerFixture) Key(key string) string {
+	if fx.KeyPrefix == "" {
+		return key
+	}
+	return fx.KeyPrefix + strings.TrimPrefix(key, "#")
+}
+
+// Write is the desired item the contract exercises Apply with.
+func (fx TrackerFixture) Write() TrackerWrite {
+	if fx.Writes.What == "" {
+		return defaultWrite()
+	}
+	return fx.Writes
+}
+
+// Linked is the pull request the linkage case reads.
+func (fx TrackerFixture) Linked() core.PullRequest {
+	if fx.LinkedPR == nil {
+		return ContractForge().PullRequests[1]
+	}
+	return *fx.LinkedPR
 }
 
 // FakeTracker is an in-memory tracker that behaves: the reference every real

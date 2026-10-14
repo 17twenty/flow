@@ -186,3 +186,14 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   only where `linked_issues_read` is declared, exactly as the case about the
   linkage itself already did. A capability the contract ignores is a
   capability the declaration cannot mean anything by.
+- **A contract case must be written in the vocabulary of the adapter under
+  test (item 7.1).** The tracker contract said `#10` and `tracker.labels`,
+  which are GitHub's words for a ticket and for a registry flow can write to.
+  A Jira issue is `FLOW-10` and a Jira project has no registry flow can write
+  to at all, so a contract spelling either one its own way tests the fixture
+  rather than the product. The fixture now carries both: a key prefix every
+  case spells its keys through, and the desired item the adapter writes — or
+  the declaration that it writes none, which is held to refusing every change
+  with `ErrUnsupported` and to saying `set: false` in its capabilities, since
+  an adapter silently refusing what it declares it can do would make a plan
+  propose work that never lands (spec 05 §1).

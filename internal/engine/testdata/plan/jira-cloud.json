@@ -29,10 +29,7 @@
       ],
       "outcome": "follow_up",
       "owner": "${pending:owners.tracker_admin}",
-      "missing": [
-        "project_admin"
-      ],
-      "why": "the credential is missing project_admin, so a person with those permissions has to do it",
+      "why": "the provider has no API for this, so a person has to do it",
       "exists": true,
       "desired_hash": "sha256:00472242fef65d15a608959283a4ad9c110ebc7f43bf67346a9cfb2c8085085c",
       "observed_hash": "sha256:57311442b4209aea202992618052a4e477af30fd009068be596934d155bb4ec5",
@@ -74,8 +71,8 @@
       "depends_on": [
         "tracker.project"
       ],
-      "outcome": "native",
-      "why": "flow can set it through the provider's API",
+      "outcome": "attest",
+      "why": "flow cannot see this through the API, so a person has to confirm it",
       "exists": true,
       "desired_hash": "sha256:f5595b7c4e7d497174161026c5f274aa027fa8baa2506da2df929ae44bc9b53f",
       "observed_hash": "sha256:37a29ce98ecdf625267e2af6ccb9c4f43e8b1d313fc82bf4ca42f258056dcf1b",

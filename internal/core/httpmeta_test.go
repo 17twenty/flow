@@ -116,6 +116,13 @@ func TestAPIMessageReadsTheProvidersOwnWords(t *testing.T) {
 		{"message and field errors", `{"message":"Validation Failed","errors":[{"resource":"Status","field":"state","code":"invalid"}]}`, "Validation Failed: Status.state invalid"},
 		{"message on several lines", "{\"message\":\"one\\ntwo\"}", "one two"},
 		{"message is not a string", `{"message":{"text":"x"}}`, ""},
+		// Jira says it the other way round: a list of messages under its
+		// own name, and "errors" holding a map of field to message rather
+		// than a list of objects. A reader that declares one shape makes
+		// the other body unreadable altogether, so both are tried.
+		{"jira messages", `{"errorMessages":["Issue does not exist"],"errors":{}}`, "Issue does not exist"},
+		{"jira field errors", `{"errorMessages":[],"errors":{"summary":"must not be empty","resolution":"cannot be set"}}`, "resolution: cannot be set; summary: must not be empty"},
+		{"jira says both", `{"errorMessages":["cannot transition"],"errors":{"status":"not in the workflow"}}`, "cannot transition; status: not in the workflow"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

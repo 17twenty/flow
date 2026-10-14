@@ -64,9 +64,9 @@ func newGitHubProjectsAdapter(t *testing.T, srv *httptest.Server, adjust func(*G
 // contractGitHubProjects stands a fake GitHub up in front of the fixture, with
 // the board belonging to an owner of that kind.
 func contractGitHubProjects(ownerType string) coretest.NewTracker {
-	return func(t *testing.T, fx coretest.TrackerFixture) core.Tracker {
+	return func(t *testing.T, fx *coretest.TrackerFixture) core.Tracker {
 		t.Helper()
-		fake, srv := newGitHubProjectsServer(t, fx)
+		fake, srv := newGitHubProjectsServer(t, *fx)
 		fake.ownerType = ownerType
 		return newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.OwnerType = ownerType })
 	}

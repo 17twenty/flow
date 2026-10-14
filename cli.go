@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -646,11 +647,11 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 	credentials := config.NewCredentials(os.Getenv, s.Settings.Auth)
 
 	var adapters engine.Adapters
-	forgeRoot, forgeHeader, err := forgeEndpoint(s.Config.Forge.Type, s.Config.Forge.URL, s.ConfigPath)
+	forgeAt, err := forgeEndpoint(s.Config.Forge.Type, s.Config.Forge.URL, s.ConfigPath)
 	if err != nil {
 		return engine.Adapters{}, err
 	}
-	forgeClient, err := a.client(s, credentials, s.Config.Forge.Type, s.Config.Forge.Auth, forgeRoot, forgeHeader)
+	forgeClient, err := a.client(s, credentials, s.Config.Forge.Type, s.Config.Forge.Auth, forgeAt)
 	if err != nil {
 		return engine.Adapters{}, err
 	}
@@ -680,14 +681,25 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		return engine.Adapters{}, err
 	}
 
+	trackerAt, err := trackerEndpoint(s.Config.Tracker.Type, s.Config.Tracker.URL, s.ConfigPath)
+	if err != nil {
+		return engine.Adapters{}, err
+	}
+	if s.Config.Tracker.Type == tracker.JiraCloudKind {
+		// Basic is a pair, and only half of it is the secret: Jira Cloud
+		// authenticates an API token against the email of the account that
+		// made it (spec 11 §3). The pairing happens here, after the
+		// credential has been resolved, so the HTTP client still knows one
+		// way to authenticate and the email never becomes a second secret.
+		trackerAt.Encode = jiraBasic(credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth)
+	}
 	switch s.Config.Tracker.Type {
 	case tracker.GitHubProjectsKind:
 		declaration, err := s.Registry.Of(tracker.GitHubProjectsKind)
 		if err != nil {
 			return engine.Adapters{}, err
 		}
-		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth,
-			forgeAPI(s.Config.Tracker.URL), forge.GitHubHeader())
+		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth, trackerAt)
 		if err != nil {
 			return engine.Adapters{}, err
 		}
@@ -702,10 +714,27 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		if err != nil {
 			return engine.Adapters{}, err
 		}
-	default:
-		return engine.Adapters{}, core.Errorf(core.ErrUnsupported, "talk to the %s tracker", s.Config.Tracker.Type).
-			WithWhy("this build ships no adapter for it").
-			WithFix("set tracker.type to github-projects in %s", s.ConfigPath)
+	case tracker.JiraCloudKind:
+		declaration, err := s.Registry.Of(tracker.JiraCloudKind)
+		if err != nil {
+			return engine.Adapters{}, err
+		}
+		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth, trackerAt)
+		if err != nil {
+			return engine.Adapters{}, err
+		}
+		adapters.Tracker, err = tracker.NewJiraCloud(tracker.JiraCloudOptions{
+			Client: trackerClient,
+			// The site is where people read the issues, which is what
+			// tracker.url names; the API root underneath it is the
+			// endpoint's business.
+			Site:         strings.TrimSuffix(s.Config.Tracker.URL, "/"),
+			Project:      projectKey(s.Config, s.Lock),
+			Capabilities: declaration,
+		})
+		if err != nil {
+			return engine.Adapters{}, err
+		}
 	}
 
 	switch s.Config.Deploys.Source {
@@ -745,8 +774,8 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 // `token_cmd` that unlocks a vault or asks for a fingerprint should not be
 // run to produce a secret flow has already decided it will not send
 // (spec 15 §1).
-func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, base string, header http.Header) (*core.Client, error) {
-	host, err := a.approveHost(s, credentials, provider, base, a.hostApprover(terminalCheck(a.Stdout)))
+func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, endpoint apiEndpoint) (*core.Client, error) {
+	host, err := a.approveHost(s, credentials, provider, endpoint.Root, a.hostApprover(terminalCheck(a.Stdout)))
 	if err != nil {
 		return nil, err
 	}
@@ -754,12 +783,19 @@ func (a *Context) client(s *session, credentials *config.Credentials, provider s
 	if err != nil {
 		return nil, err
 	}
+	token := credential.Secret()
+	if endpoint.Encode != nil {
+		if token, err = endpoint.Encode(token); err != nil {
+			return nil, err
+		}
+	}
 	return core.NewClient(core.ClientOptions{
-		BaseURL: base,
-		Token:   credential.Secret(),
-		Version: version,
-		Header:  header,
-		Logger:  a.Log,
+		BaseURL:    endpoint.Root,
+		Token:      token,
+		Version:    version,
+		Header:     endpoint.Header,
+		AuthScheme: endpoint.Scheme,
+		Logger:     a.Log,
 		// What was approved is a host, not one request to it: a redirect
 		// off it would take the credential along, so the guard holds every
 		// request this client makes to the host the approval was about.
@@ -841,6 +877,24 @@ func hostOf(raw string) string {
 	return parsed.Hostname()
 }
 
+// apiEndpoint is where one provider answers and how flow authenticates to
+// it: a named type because two providers describing themselves the same way
+// is the usual case rather than the exception.
+type apiEndpoint struct {
+	// Root is the API base URL every request is resolved against.
+	Root string
+	// Header is what every call to it carries.
+	Header http.Header
+	// Scheme is the Authorization scheme, empty for Bearer.
+	Scheme string
+	// Encode turns the resolved credential into the value that scheme
+	// carries, and is nil where the credential is sent as it stands. It
+	// runs after the credential has been resolved, so a provider whose
+	// Authorization is built from more than the token says so here rather
+	// than teaching the HTTP client a second way to authenticate.
+	Encode func(token string) (string, error)
+}
+
 // forgeEndpoint is the API root one kind of forge answers at, and the headers
 // every call to it carries.
 //
@@ -848,24 +902,24 @@ func hostOf(raw string) string {
 // this is the last moment before the credential is asked for. Spec 15 §1 does
 // not want a `token_cmd` that unlocks a vault run to produce a secret for a
 // provider flow was never going to speak to.
-func forgeEndpoint(kind, configured, configPath string) (string, http.Header, error) {
+func forgeEndpoint(kind, configured, configPath string) (apiEndpoint, error) {
 	switch kind {
 	case forge.GitHubKind:
-		return forgeAPI(configured), forge.GitHubHeader(), nil
+		return apiEndpoint{Root: forgeAPI(configured), Header: forge.GitHubHeader()}, nil
 	case forge.GiteaKind:
 		// A Gitea lives wherever somebody put it. There is no host flow
 		// could assume, so an empty forge.url is a question rather than a
 		// default (spec 10 §3).
 		root := strings.TrimSuffix(configured, "/")
 		if root == "" {
-			return "", nil, core.Errorf(core.ErrValidation, "talk to the gitea forge").
+			return apiEndpoint{}, core.Errorf(core.ErrValidation, "talk to the gitea forge").
 				WithWhy("forge.url is empty, and a Gitea answers wherever it was installed").
 				WithFix("set forge.url to the instance, such as https://codeberg.org, in %s", configPath)
 		}
 		if !strings.HasSuffix(root, forge.GiteaAPIPath) {
 			root += forge.GiteaAPIPath
 		}
-		return root, forge.GiteaHeader(), nil
+		return apiEndpoint{Root: root, Header: forge.GiteaHeader()}, nil
 	case forge.GitLabKind:
 		// GitLab is both: one host everybody means by the name, and an
 		// instance somebody installed. An empty forge.url is therefore
@@ -877,11 +931,61 @@ func forgeEndpoint(kind, configured, configPath string) (string, http.Header, er
 		if !strings.HasSuffix(root, forge.GitLabAPIPath) {
 			root += forge.GitLabAPIPath
 		}
-		return root, forge.GitLabHeader(), nil
+		return apiEndpoint{Root: root, Header: forge.GitLabHeader()}, nil
 	default:
-		return "", nil, core.Errorf(core.ErrUnsupported, "talk to the %s forge", kind).
+		return apiEndpoint{}, core.Errorf(core.ErrUnsupported, "talk to the %s forge", kind).
 			WithWhy("this build ships no adapter for it").
 			WithFix("set forge.type to github, gitea or gitlab in %s", configPath)
+	}
+}
+
+// trackerEndpoint is the API root one kind of tracker answers at, the headers
+// every call to it carries, and the Authorization scheme it authenticates
+// with.
+//
+// It refuses a kind flow ships no adapter for, for the reason
+// [forgeEndpoint] does: this is the last moment before a `token_cmd` that
+// might unlock a vault is run (spec 15 §1).
+func trackerEndpoint(kind, configured, configPath string) (apiEndpoint, error) {
+	switch kind {
+	case tracker.GitHubProjectsKind:
+		return apiEndpoint{Root: forgeAPI(configured), Header: forge.GitHubHeader()}, nil
+	case tracker.JiraCloudKind:
+		// Every Jira Cloud site is somebody's own address, so there is no
+		// host flow could assume and an empty tracker.url is a question
+		// (spec 11 §3). The configuration validator asks it too; this is
+		// the answer for a lock or a flag that got past it.
+		site := strings.TrimSuffix(configured, "/")
+		if site == "" {
+			return apiEndpoint{}, core.Errorf(core.ErrValidation, "talk to the jira-cloud tracker").
+				WithWhy("tracker.url is empty, and every Jira Cloud site has its own address").
+				WithFix("set tracker.url to your site, such as https://acme.atlassian.net, in %s", configPath)
+		}
+		root := site
+		if !strings.HasSuffix(root, tracker.JiraAPIPath) {
+			root += tracker.JiraAPIPath
+		}
+		return apiEndpoint{Root: root, Header: tracker.JiraHeader(), Scheme: "Basic"}, nil
+	default:
+		return apiEndpoint{}, core.Errorf(core.ErrUnsupported, "talk to the %s tracker", kind).
+			WithWhy("this build ships no adapter for it").
+			WithFix("set tracker.type to github-projects or jira-cloud in %s", configPath)
+	}
+}
+
+// jiraBasic pairs the resolved API token with the email of the account that
+// made it, which is the whole of what Jira Cloud's Basic authentication is.
+//
+// The email is not a secret and the token is, so the pair is built here and
+// nowhere else: the encoded value is the credential from this point on, and
+// nothing but [core.Client] ever sees it.
+func jiraBasic(credentials *config.Credentials, provider string, auth config.Auth) func(string) (string, error) {
+	return func(token string) (string, error) {
+		email, err := credentials.Email(provider, auth)
+		if err != nil {
+			return "", err
+		}
+		return base64.StdEncoding.EncodeToString([]byte(email + ":" + token)), nil
 	}
 }
 
@@ -925,4 +1029,19 @@ func projectNumber(cfg *config.Config, lock *config.Lock) int {
 		return 0
 	}
 	return number
+}
+
+// projectKey is the board's key for a tracker whose projects are named
+// rather than numbered, read from the same two places [projectNumber] reads.
+// An empty key means nobody has found the project yet, which is discovery's
+// business rather than an error.
+func projectKey(cfg *config.Config, lock *config.Lock) string {
+	if text := cfg.Tracker.Project.Text; text != "" {
+		return text
+	}
+	if lock != nil {
+		text, _ := lock.Lookup("tracker.project")
+		return text
+	}
+	return ""
 }

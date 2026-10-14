@@ -431,3 +431,128 @@ reopen, pagination, error mapping.
   write, the adapter refuses it from the flag it already read — the contract
   is about what flow does, and flow must not report a move that it cannot
   know landed.
+
+- **§3 flow does not translate its markdown into Jira's formatting (item
+  7.1).** Jira Cloud keeps every body as an Atlassian Document Format tree,
+  and the obvious reading of that is to render flow's headings, lists and
+  fenced blocks as heading, list and code nodes. The obvious reading is
+  wrong, and it is wrong because of what flow does with a body afterwards: a
+  follow-up that already says the right thing must not be rewritten (§4,
+  spec 07 §4), and the pinned health report parses its own table back out of
+  the issue it wrote (spec 07 §10). Both rest on the body coming back as what
+  went in, and a translation flow cannot reverse makes every run find the
+  ticket changed. So the heading stays `## What to do`: ugly on the screen,
+  and true.
+
+- **§3 a line is a paragraph and a blank line is an empty one (item 7.1).**
+  The one thing text has that an ADF document does not come by honestly is
+  line structure. One line becomes one paragraph; a blank line becomes a
+  paragraph with no content, which is valid ADF and the only node that reads
+  back as a blank line. A text node holding an empty string, which is the
+  other way to write it, Jira rejects. The rendering is exact in both
+  directions and `FuzzADFRoundTrip` is what keeps it that way.
+
+- **§3 reading a body is not the same job as writing one (item 7.1).** Flow
+  writes two kinds of node and has to read every kind there is: an issue
+  somebody wrote by hand is full of headings, lists, tables and panels, and
+  the marker flow is looking for is in the text of them. The reading walks
+  whatever it is given — a node whose children are blocks contributes each
+  child's lines, one whose children are inline contributes a line — so a
+  bulleted list reads as its items rather than as nothing. The v2 API's plain
+  string is read as the text it is for the same reason: a body flow cannot
+  parse is a ticket flow cannot read.
+
+- **§3 a column is a status, and a board column is not one (item 7.1).**
+  Jira has two things a person would call a column: the status an issue is
+  in, which belongs to the project's workflow, and the column of a board,
+  which is a grouping of statuses that somebody arranged. `workflow.columns`
+  names one thing per column and `Move` takes one target, so the adapter
+  reads statuses — `GET /project/{key}/statuses`, deduplicated across the
+  issue types that share them, in the order Jira gave them. A board column is
+  several statuses and a project may have several boards, so a board column
+  is not a thing flow could move a ticket to without choosing which board it
+  meant.
+
+- **§3 flow sets no desired state in a Jira project (item 7.1).** The
+  capability file as first researched said `status_options` and `labels` were
+  settable and `wip_limits` verifiable. None of the three survived contact.
+  A status can be created through the status API and a created status is
+  still not a column: which statuses a project's workflow offers is the
+  workflow's business and which column shows one is the board's, and neither
+  is writable in the public Cloud API — so a flow that created one would
+  report a column the team cannot see. A label has no registry at all: it
+  exists the moment an issue carries one, so there is nothing to create and
+  nothing to read back. A WIP limit is on a board, and a project may have
+  several, so flow cannot say which one a limit is on. `Apply` therefore
+  refuses every change with `ErrUnsupported` and the declaration says
+  `set: false` everywhere, which is what makes the plan file a follow-up for
+  somebody who administers the project instead of proposing work that can
+  never land (spec 05 §4).
+
+- **§3 the AC's board-configuration reading is not a verification (item
+  7.1).** `GET /rest/agile/1.0/board/{id}/configuration` is real and flow
+  does not call it. It answers for one board, and nothing in `.flow.yaml`
+  names a board; picking one would make flow's reading of the team's limits
+  depend on which board it happened to choose. `wip_limits` is therefore
+  `verify: false` and compensated by `policy.wip`, which is a rule flow can
+  enforce from the tickets themselves.
+
+- **§3 an archived issue is the two readings disagreeing (item 7.1).**
+  Jira Cloud publishes no archived flag anywhere — not on the issue, not in
+  a field, not as an expansion (JRACLOUD-94071 is the open request for one).
+  An archived issue is read-only, keeps its status, answers by key in full,
+  and is in no search. That disagreement is the whole of the evidence, so the
+  adapter derives `Archived` from it. The listing it derives it from is the
+  whole project and nothing narrower: absence from a windowed or filtered
+  search means the filter. It is read once a run, because archiving is not
+  something that happens while flow is looking and a search per ticket would
+  double the cost of an audit that walks a fortnight of them.
+
+- **§3 a move is a workflow transition, so an unreachable column is refused
+  (item 7.1).** GitHub Projects takes any option id for any item; Jira will
+  only make the moves the workflow offers from where the issue is now. The
+  adapter asks `GET /issue/{key}/transitions` and performs the one that lands
+  on the wanted status, and when there is none it refuses with the two status
+  names in the message and the remediation pointed at whoever administers the
+  workflow. Closing is the same mechanism: a resolution is set on the way
+  through only where the transition's own screen offers the field, because
+  sending a field the screen does not have is how Jira answers 400.
+
+- **§3 linkage is flow's convention and not the forge's (item 7.1).** Jira
+  learns about a pull request through its own GitHub integration, and nothing
+  flow can read tells it which issue a pull request closes. `LinkedKeys`
+  therefore reads the project's key out of the branch name, the title and the
+  header a squash would land — the convention every Jira team already has.
+  It is the same fallback spec 09 §3 defines for a forge that publishes no
+  link, written in the tracker rather than guessed at by the engine.
+
+- **§3 Basic is a pair, and only half of it is the secret (item 7.1).**
+  Jira Cloud authenticates an API token against the email of the account that
+  made it. The email is not a secret and the token is, so they are paired in
+  the root, after the credential has been resolved and before the client is
+  built: `tracker.auth.email_env` names where the email comes from, the
+  encoded value is the credential from that point on, and the HTTP client
+  still knows one way to authenticate. A Jira site has its own address, so
+  an empty `tracker.url` is a question rather than a default, asked — as a
+  forge's is — before any `token_cmd` runs (spec 15 §1).
+
+- **§3 a refusal is read in `core`, not in the adapter (item 7.1).** Jira
+  writes a refusal the other way round from GitHub: a list of sentences under
+  `errorMessages`, and `errors` holding a map of field to message rather than
+  a list of objects. A reader that declares one shape cannot decode the other
+  body at all, so `core.APIMessage` tries both and the adapter keeps no error
+  path of its own — `core.Client` has already written the error by the time
+  the adapter sees it, and a second reader would only disagree with the
+  first.
+
+- **§3 a reading is revalidated, never skipped (item 7.1).** What an issue
+  may do next changes with every move it makes, and the three readings that
+  move with the work — the transitions, the comments, the search — were first
+  written with the ETag store switched off for fear of acting on yesterday's
+  answer. The fear was misplaced: `core.Client` revalidates every cached GET
+  conditionally, so a stored body is only ever reused when the provider says
+  it is still the answer, and a cache the provider has agreed with is not a
+  stale reading. The flags are gone — on the search it was doing nothing at
+  all, since only a GET is cached and a JQL search is a POST — and a test
+  moves an issue twice through one client with a warm store to prove the
+  second move was decided on the issue as it then stood.
