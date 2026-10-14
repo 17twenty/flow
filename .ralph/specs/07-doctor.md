@@ -880,3 +880,14 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   flow's own workflow hand the scheduled job a personal access token and say
   in the file why. A reader who finds a `403` in a job log should find the
   answer beside the token, not in a spec.
+- **§2 the lock proposal keeps to the team's convention (issue #152).** The
+  refreshed lock is offered as a pull request because a lock written on a
+  runner is thrown away with the checkout, and that pull request is then
+  judged by the gate like anybody else's. Its title is composed by
+  `engine.LockProposal.Title` against `commits.types`,
+  `commits.unlinked_types`, `commits.scopes` and `commits.header_max` rather
+  than being a constant, and when the configuration leaves no landable title
+  flow proposes nothing and logs which key refused it. This stays outside the
+  grading: §2 already settled that failing to propose the lock is not a
+  finding about the workflow, and a configuration flow cannot write
+  bookkeeping under is the team's to change, not a fault in their delivery.

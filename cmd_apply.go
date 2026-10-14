@@ -52,6 +52,7 @@ func (c *ApplyCmd) Run(app *Context) error {
 
 	applied, err := engine.Apply(app.Ctx, engine.ApplyInput{
 		Plan:     plan,
+		Config:   s.Config,
 		Desired:  s.Desired,
 		Adapters: s.Adapters,
 		Lock:     s.Lock,
