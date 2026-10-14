@@ -75,7 +75,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [x] Phase 9 — TUI (plan Phase 6): the init wizard, the picker, the apply confirmation and doctor's display with `--watch`
-- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo done; Jira, Linear, GitLab, credential approval to go
+- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo and GitLab done; Jira, Linear, credential approval to go
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios and the README demo are done; 14 green doctor days to go
 
 ### Status notes
@@ -1038,15 +1038,72 @@ work* — so §4 now tells an agent to go and read the repository's own
 conventions first, which is the honest division: flow owns the workflow and
 the repository owns everything else.
 
-**Single best next step:** the GitLab forge
-([#82](https://github.com/17twenty/flow/issues/82)) — the last Phase 7 forge,
-and the one that reuses everything the Gitea adapter generalised. The two
-trackers, Jira ([#79](https://github.com/17twenty/flow/issues/79)) and Linear
-([#80](https://github.com/17twenty/flow/issues/80)), depend on nothing and can
-go up beside it. Two pull requests are waiting on `@17twenty` now:
-[#136](https://github.com/17twenty/flow/pull/136) (this skill) and
-[#137](https://github.com/17twenty/flow/pull/137) (the dogfood gate, by the
-harness).
+### The third forge, and the ten mutants it survived (item 7.4)
+
+GitLab is the last forge of Phase 7 and the third thing `core.Forge` has had
+to be true of. Almost nothing about it is shaped like the other two: a project
+is one percent-encoded path segment rather than two, a merge request's
+reviewers and its approvals are separate endpoints and one person, the tickets
+it closes are a third endpoint, a branch's protection is in one place and the
+approvals and named checks that gate it are in two others, and a commit status
+is a row in an append-only history rather than a verdict that can be replaced.
+`internal/forge/gitlab.go` and `gitlab_wire.go` speak all of it, and the whole
+forge contract passes against a fake GitLab serving GitLab's own shapes.
+
+Both of GitLab's gate strategies are there, because it has two where GitHub
+has one: an external status check where the tier has them, and the project's
+own "pipelines must succeed". A tier flow cannot read is no rule — failing
+every reading of a protected branch on the tier most people have would be
+worse than useless — but a check flow cannot *write* is a refusal that names
+it. The read is an answer; the write is not allowed to pretend.
+
+**Then it was mutated, and that is where the item actually was.** Fifteen
+mutations, ten of which nothing failed on: an approval rule written for a
+release branch counted against the trunk, the strictest rule not being the one
+that counts, a check belonging to no branch in particular belonging to none,
+the merge commit of a squashed merge request standing in for the squash that
+actually landed, GitLab's thousand-file cap read as no files at all, the order
+of the files, the state each listing asks for, and two paid endpoints read
+behind a branch nobody had protected. Each is now a test.
+
+Three of them could not be written against the fake as it stood, which is the
+more useful finding: the fake was *tidier than GitLab*. It sent one commit for
+a merged merge request where GitLab sends two, counted changes where GitLab
+caps and writes `"1000+"`, and knew only one of the two documented shapes of
+`closes_issues` — a project wired to an external tracker gets an id and a
+title and no reference of any kind, which is no key flow can write. A fake
+that is tidier than the provider hides the branch that handles the mess.
+
+And one mutant survived because the line could not run. GitLab filters a
+listing by state, target branch and window itself, and flow filtered the
+answer by the same three again; no merge request GitLab excluded could ever
+arrive for flow to exclude. It is gone. Two mechanisms answering one question
+drift apart silently, and the one that cannot be reached drifts unobserved.
+
+The AC's "deployments read" did not survive contact either. GitLab has an
+environments API; what flow does not have is a source that reads it. The
+capability file now says `verify: false` and points at
+`deploys.source: commit_status`, which item 7.5 made work for any forge.
+
+**A sub-agent could not be given the next one.** Phase 7's two trackers were
+put to a sub-agent with the skill, the worktree and a full brief, and it spent
+its whole budget reading and committed nothing. The skill's loop is the right
+size for a defect; a four-thousand-line adapter is not, and the lesson is
+about the size of the task rather than the quality of the brief.
+
+**Single best next step:** the Jira Cloud tracker
+([#79](https://github.com/17twenty/flow/issues/79)), then Linear
+([#80](https://github.com/17twenty/flow/issues/80)). They are the last code
+Phase 7 has, they depend on nothing, and the hard part of Jira is decided
+before any of it is written: a body is an Atlassian Document Format tree
+rather than text, and `UpdateFollowUp` rests on being able to read back what
+flow wrote and find it unchanged. Worktrees `.worktrees/jira` and
+`.worktrees/linear` are branched and waiting.
+
+One pull request is waiting on `@17twenty`:
+[#139](https://github.com/17twenty/flow/pull/139), this GitLab forge — green
+on `test`, `setup checks` and the policy job, red on `agent.human_review`
+alone, which is the gate working.
 
 The thing only `@17twenty` can do is unchanged, and it is still the only part
 of the fourteen-day clock waiting on a decision rather than on the calendar:
