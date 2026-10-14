@@ -27,6 +27,8 @@ deployment records against the app SHA, live-health audit in doctor,
 | `.flow.yaml`, `.github/` | flow's own workflow config, CI, issue forms, PR template (spec 17) |
 | `.ralph/` | Build loop memory: `PROMPT.md`, `PROMPT_plan.md`, `AGENTS.md`, `IMPLEMENTATION_PLAN.md`, `specs/` |
 | `skills/flow/SKILL.md` | Agent skill: how a harness works a ticket to a reviewed pull request |
+| `docs/delivery-board.md` | The proposal flow was built from, verified line by line against what it does |
+| `docs/cookbook.md` | The steps a person has to do by hand, per forge and tracker |
 | `loop.sh` | Loop runner (direct and PR modes) |
 | `bootstrap/seed-issues.sh` | Creates phase + item issues and adds them to the Project |
 | `dogfood/.github/workflows/flow.yml` | The gate workflow; added to `.github/` in bootstrap Stage B |
