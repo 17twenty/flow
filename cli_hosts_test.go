@@ -261,7 +261,7 @@ func TestTheApprovalBindsTheClientAndNotOneRequest(t *testing.T) {
 		map[string]config.AuthSource{forge.GitHubKind: {Hosts: []string{"127.0.0.1"}}},
 	)
 
-	client, err := app.client(hostSession(), credentials, forge.GitHubKind, config.Auth{}, "http://127.0.0.1:"+port)
+	client, err := app.client(hostSession(), credentials, forge.GitHubKind, config.Auth{}, "http://127.0.0.1:"+port, forge.GitHubHeader())
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}

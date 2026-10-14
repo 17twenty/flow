@@ -339,9 +339,14 @@ func forgePullRequestListIsSummary(t *testing.T, newForge NewForge) {
 	if err != nil {
 		t.Fatalf("PullRequest(2): %v", err)
 	}
-	if len(full.Reviews) == 0 || len(full.ClosingIssues) == 0 {
-		t.Errorf("reading #2 on its own gave %d reviews and %v closing issues; both are what the listing left out",
-			len(full.Reviews), full.ClosingIssues)
+	if len(full.Reviews) == 0 {
+		t.Error("reading #2 on its own gave no reviews, which is what the listing left out")
+	}
+	// What a forge cannot read at all it must not report from either
+	// endpoint, so for those the reviews are the whole of the difference
+	// between a summary and a reading (spec 05 §2).
+	if forge.Capabilities().CanVerify(core.CapLinkedIssuesRead) && len(full.ClosingIssues) == 0 {
+		t.Error("reading #2 on its own gave no closing issues, and the forge declares it can read the link")
 	}
 }
 

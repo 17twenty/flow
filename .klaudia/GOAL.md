@@ -75,7 +75,7 @@ Final proof (Stage C, not reproducible locally): the pinned `flow:health` issue 
 - [x] Phase 7 — Stage B activation: the ruleset is on, the gate is on `main`, the first agent PR was human-approved and merged green, `CURRENT MODE: pr`
 - [x] Phase 8 — Live health (plan Phase 5): 5.1–5.8 all landed
 - [x] Phase 9 — TUI (plan Phase 6): the init wizard, the picker, the apply confirmation and doctor's display with `--watch`
-- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Jira, Linear, Gitea, GitLab, credential approval
+- [ ] Phase 10 — More adapters and hardening (plan Phase 7): Gitea/Forgejo done; Jira, Linear, GitLab, credential approval to go
 - [ ] Phase 11 — Proof (plan Phase 8 + Stage C): the acceptance scenarios and the README demo are done; 14 green doctor days to go
 
 ### Status notes
@@ -870,3 +870,106 @@ panel (the **…** menu on <https://github.com/users/17twenty/projects/2>; it is
 an overlay with no URL of its own), and land the resulting `.flow.lock`
 through a pull request. Until then the scheduled daily
 run cannot exit 0, and the streak cannot begin.
+
+### A second forge, and the things it would not say (item 7.3)
+
+Everything flow had ever read, it had read from GitHub. The interfaces said
+otherwise and the contract suite said otherwise, but a suite that only one
+adapter has ever passed is a description of that adapter. Item 7.3 is the
+first time something else answered the same questions, and what it proved is
+mostly about flow rather than about Gitea.
+
+**One adapter, two forges.** Forgejo is Gitea's fork and serves the same API
+under the same path, so the kind is `gitea` for both and the flavour is a
+detail of detection rather than of configuration. A second kind would have
+doubled every declaration, every capability row and every recipe in the
+cookbook to say the same things twice.
+
+**`forge.url` is a question, not a default.** GitHub has one host; a Gitea
+lives wherever somebody installed it. An empty `forge.url` is therefore
+refused in the root — before the credential is resolved, because spec 15 §1
+does not want a `token_cmd` that unlocks a vault run to produce a secret for a
+provider flow was never going to speak to. That refusal is where the root also
+stopped assuming: `client()` now takes the headers its provider wants instead
+of GitHub's, and the switch that chooses an adapter has a kind it does not
+know as its last arm rather than its default.
+
+**Four answers the API made flow say out loud.** Spec 10 §3 had asked for one
+of them to be confirmed at build time, and the other three were only visible
+once something was actually written:
+
+- `linked_issues_read` is **false**. Gitea makes the links from a body's
+  closing keywords and publishes none of them — no field of the pull request
+  names an issue, and no endpoint lists them — so the branch and title
+  fallback stands. A pattern of flow's own here would have been a guess
+  dressed as the forge's answer, which is worse than the fallback it silences.
+- Protection is two readings, and only one needs an administrator. The branch
+  carries what its rules come to and any credential may see that; the rule
+  carries the settings the branch does not mention and only an administrator
+  may read it. A refusal on the rule reads the same as its absence, because
+  the alternative is that every read of a protected branch fails for the kind
+  of bot account flow is ordinarily given. The rule is read under the name the
+  branch gives for it, never the branch's own: a glob rule governs branches
+  whose names it does not share.
+- A comparison is asked twice. Gitea counts the commits one side has that the
+  other does not and never names the relation; one count cannot tell
+  `identical` from `behind`, so the question goes both ways round and flow
+  names the relation itself — which is what the containment proofs behind
+  `flow check deploy` depend on.
+- A commit's statuses are a history, walked by `highestindex` and folded to
+  the latest per context. Ordering by time would tie: two runs of the same
+  workflow second finish in the same second, and the walk would keep whichever
+  row the database happened to answer with.
+
+**Checking the wire against the instance.** Two field names taken from the
+documentation do not exist in the API, and Gitea answers an unknown key with a
+200 and ignores it. Reading an instance's own schema is what found them; had
+it not, `flow apply` would have reported protection nobody had. That is the
+worst kind of bug this program can have, because flow's entire claim is that
+what it says is true.
+
+**The mutation pass, and the three that lived.** Fifteen mutants, twelve
+killed. Each survivor was worth more than the twelve:
+
+- The test for "a failed read does not become the answer for the rest of the
+  run" asked a repository whose reference character is `#` — which is also
+  what an unread repository falls to. The fixture could not tell the mutant
+  apart. It now uses a repository whose issues live elsewhere, where the kept
+  failure and the right answer differ.
+- Nothing had ever asked flow *not* to look for a rule behind a branch that
+  says it has none. Only an administrator may read one, so the question costs
+  a refusal on every item of every plan.
+- The third was not a gap but a redundancy: the read that decides whether to
+  publish a status marked itself "do not cache", which `core.Client`
+  guarantees already — it sends the tag it holds and takes a 304 as
+  permission to reuse the body, never as permission to skip asking. Two
+  mechanisms answering one question drift apart silently, so the line is gone
+  and a test says why that is safe.
+
+**The cookbook owes less than it did.** `docs/cookbook.md` §7 now carries the
+by-hand recipe for requiring a status check on both GitHub and Gitea, which
+was the other half of `@17twenty`'s original report — the half that is this
+repository's own situation, and the reason
+[#90](https://github.com/17twenty/flow/issues/90) and
+[#91](https://github.com/17twenty/flow/issues/91) are open. Each recipe is
+written against the adapter that implements it rather than from the API
+documentation, which is exactly how the two non-existent field names were
+caught.
+
+[#131](https://github.com/17twenty/flow/pull/131) is open with it:
+`test`, `policy` and `setup checks` green, `flow/policy` red on
+`agent.human_review` alone, which is the gate working.
+
+**Single best next step:** the GitLab forge
+([#82](https://github.com/17twenty/flow/issues/82)), which is the last of the
+three remaining Phase 7 adapters that is a forge and so reuses everything item
+7.3 just generalised — the shared REST walk, the per-provider headers, and a
+contract suite that has now been passed by two adapters rather than one. The
+two trackers, Jira ([#79](https://github.com/17twenty/flow/issues/79)) and
+Linear ([#80](https://github.com/17twenty/flow/issues/80)), depend on nothing
+and can go up beside it.
+
+The thing only `@17twenty` can do is unchanged, and it is now the only part of
+the fourteen-day clock waiting on a decision rather than on the calendar: run
+the four `flow attest` commands in `docs/cookbook.md` §6.1 and land the
+resulting `.flow.lock` through a pull request.

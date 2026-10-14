@@ -313,8 +313,23 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: contract suite; key fallback linkage; board configuration verify; archived issues (spec 11 §1: derived from the full JQL listing, never from a narrowed one)
 - [ ] 7.2 Linear tracker — specs: 11 §4 — deps: 3.12 (#80)
   - AC: contract suite; attachment-first linkage; archived issues (spec 11 §1: `includeArchived` off for the board, on for a key — Linear auto-archives closed work)
-- [ ] 7.3 Gitea/Forgejo forge — specs: 10 §3 — deps: 3.12 (#81)
+- [x] 7.3 Gitea/Forgejo forge — specs: 10 §3 — deps: 3.12 (#81)
   - AC: contract suite; commit_status deploy source; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — Gitea appends the number (spec 10 §2, #106)
+  - note: internal/forge/gitea.go + gitea_wire.go, one adapter for both
+    forks. `forge.url` is required — a Gitea lives wherever somebody put it —
+    and is refused in the root before the credential is resolved (spec 15
+    §1). `linked_issues_read` is `false`, confirmed against the API as spec
+    10 §3 asked: Gitea publishes no link, so the tracker fallback stands.
+    Protection is two readings, the branch and the rule, and the rule is read
+    under the name the branch gives for it. A comparison is asked both ways
+    round because Gitea counts and never names the relation. Statuses are a
+    history ordered by `highestindex`, folded to the latest per context.
+    Checking the wire names against an instance's own schema found two that
+    did not exist (`block_admin_merge_override`, `enable_force_push`) and
+    Gitea ignores an unknown key with a 200, so the plan would have claimed
+    protection nobody had. `docs/cookbook.md` §7 now carries the by-hand
+    recipe for both forges, which was the other half of the report behind
+    #90/#91.
 - [ ] 7.4 GitLab forge — specs: 10 §4 — deps: 3.12 (#82)
   - AC: both gate strategies; closes_issues linkage; deployments read; `core.Repository.Archived` reported (spec 10 §2, #102); `core.PullRequest.SquashHeader` reported — GitLab appends nothing, so it is the title (spec 10 §2, #106)
 - [x] 7.5 commit_status deploy source — specs: 13 — deps: 3.2 (#83)

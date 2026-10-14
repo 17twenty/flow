@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/17twenty/flow/internal/config"
+	"github.com/17twenty/flow/internal/forge"
 	"github.com/17twenty/flow/internal/ui"
 )
 
@@ -136,5 +138,58 @@ func TestTheWindowIsAFortnightUnlessAsked(t *testing.T) {
 	}
 	if got := cli.Doctor.Window.Std(); got != 14*24*time.Hour {
 		t.Errorf("--window defaults to %s, want 14d", got)
+	}
+}
+
+func TestTheAPIRootIsTheOneTheForgeAnswersAt(t *testing.T) {
+	cases := []struct {
+		name       string
+		kind       string
+		configured string
+		want       string
+		accept     string
+	}{
+		{"github.com", forge.GitHubKind, "https://github.com", forge.GitHubAPI, "application/vnd.github+json"},
+		{"an enterprise server", forge.GitHubKind, "https://git.acme.test/api/v3", "https://git.acme.test/api/v3", "application/vnd.github+json"},
+		{"a gitea somebody installed", forge.GiteaKind, "https://codeberg.org", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
+		{"a gitea named with its path already", forge.GiteaKind, "https://codeberg.org/api/v1", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
+		{"a gitea named with a trailing slash", forge.GiteaKind, "https://codeberg.org/", "https://codeberg.org" + forge.GiteaAPIPath, "application/json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, header, err := forgeEndpoint(tc.kind, tc.configured, ".flow.yaml")
+			if err != nil {
+				t.Fatalf("forgeEndpoint: %v", err)
+			}
+			if root != tc.want {
+				t.Errorf("root = %q, want %q", root, tc.want)
+			}
+			if got := header.Get("Accept"); got != tc.accept {
+				t.Errorf("Accept = %q, want %q", got, tc.accept)
+			}
+		})
+	}
+}
+
+func TestAForgeWithNowhereToAnswerIsAQuestionAndNotADefault(t *testing.T) {
+	// GitHub has one host and a Gitea has whichever one it was installed
+	// on, so silence means different things to the two of them.
+	if _, _, err := forgeEndpoint(forge.GitHubKind, "", ".flow.yaml"); err != nil {
+		t.Errorf("forgeEndpoint(github, no url) = %v, want the one host GitHub has", err)
+	}
+	_, _, err := forgeEndpoint(forge.GiteaKind, "", ".flow.yaml")
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("forgeEndpoint(gitea, no url) = %v, want a question", err)
+	}
+	var user *core.UserError
+	if !errors.As(err, &user) || !strings.Contains(user.Fix, "forge.url") {
+		t.Errorf("the refusal does not say to set forge.url: %+v", err)
+	}
+}
+
+func TestAForgeThisBuildCannotSpeakToIsRefusedBeforeTheCredential(t *testing.T) {
+	_, _, err := forgeEndpoint("gitlab", "https://gitlab.com", ".flow.yaml")
+	if !errors.Is(err, core.ErrUnsupported) {
+		t.Fatalf("forgeEndpoint(gitlab) = %v, want an unsupported forge", err)
 	}
 }

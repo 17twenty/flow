@@ -177,3 +177,12 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   same answer after being asked as before. A skipped case would let either
   adapter quietly answer from a pattern of its own, which is the one thing
   the suite exists to catch.
+- **A contract case must ask only what the adapter declares it can do (item
+  7.3).** "A listing is a summary and says so" proved the point by requiring
+  both the reviews and the closing issues a reading adds, and Gitea publishes
+  no link between a pull request and a ticket at all — so the second adapter
+  to take the contract failed a case the first had written in its own image.
+  The reviews stand for every forge; the closing issues are now asked for
+  only where `linked_issues_read` is declared, exactly as the case about the
+  linkage itself already did. A capability the contract ignores is a
+  capability the declaration cannot mean anything by.
