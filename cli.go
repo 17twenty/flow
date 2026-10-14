@@ -671,6 +671,10 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		adapters.Forge, err = forge.NewGitea(forge.GiteaOptions{
 			Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
 		})
+	case forge.GitLabKind:
+		adapters.Forge, err = forge.NewGitLab(forge.GitLabOptions{
+			Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
+		})
 	}
 	if err != nil {
 		return engine.Adapters{}, err
@@ -862,10 +866,22 @@ func forgeEndpoint(kind, configured, configPath string) (string, http.Header, er
 			root += forge.GiteaAPIPath
 		}
 		return root, forge.GiteaHeader(), nil
+	case forge.GitLabKind:
+		// GitLab is both: one host everybody means by the name, and an
+		// instance somebody installed. An empty forge.url is therefore
+		// gitlab.com rather than a question (spec 10 §4).
+		root := strings.TrimSuffix(configured, "/")
+		if root == "" {
+			root = forge.GitLabHost
+		}
+		if !strings.HasSuffix(root, forge.GitLabAPIPath) {
+			root += forge.GitLabAPIPath
+		}
+		return root, forge.GitLabHeader(), nil
 	default:
 		return "", nil, core.Errorf(core.ErrUnsupported, "talk to the %s forge", kind).
 			WithWhy("this build ships no adapter for it").
-			WithFix("set forge.type to github or gitea in %s", configPath)
+			WithFix("set forge.type to github, gitea or gitlab in %s", configPath)
 	}
 }
 

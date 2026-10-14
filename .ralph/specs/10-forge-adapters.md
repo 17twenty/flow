@@ -459,3 +459,96 @@ duplicate-pipeline hazards). MR closing issues: `GET
   it sends the tag it holds and takes a 304 as permission to reuse the body,
   so the reading is of the commit as it stands either way. A second way of
   saying the same thing would be a second thing to keep true (spec 01 §5).
+
+- **§4 one host is what "gitlab" means, and the rest must say (item 7.4).**
+  Gitea was given no default because a Gitea is wherever somebody put it, and
+  `forge.url` is mandatory for it. GitLab is the other case: `gitlab.com` is
+  what the name means when nobody says otherwise, so an empty `forge.url`
+  resolves there and a self-managed instance names itself. The API root is
+  `/api/v4` on both, and the version is in the path rather than in a header —
+  GitLab has no dated API version and no vendor media type to ask for.
+
+- **§4 a project is one path segment, percent-encoded (item 7.4).** GitLab
+  addresses `acme/widget` as `acme%2Fwidget`, which is a thing a fake can
+  silently forgive: a test server that routes on the decoded path would never
+  notice the adapter failing to encode. The fake routes on
+  `URL.EscapedPath()`, so the encoding is part of what the contract proves.
+
+- **§4 a review and an approval are two readings of one person (item 7.4).**
+  GitLab keeps reviewers and approvals in separate endpoints, and an approver
+  need never have been a reviewer. Flow wants one answer to "did a human
+  approve this", so the adapter reads both and unions them; a person who
+  approved without being asked counts, which is what `agent.human_review`
+  means by an approval.
+
+- **§4 a tier flow cannot see is a refusal to write, never a failure to read
+  (item 7.4).** Approval rules and external status checks belong to tiers not
+  every project has, and the answer to both on the tier most people have is a
+  403 or a 404. Failing the read would make every reading of a protected
+  branch fail on an ordinary GitLab, so a refused endpoint reads as no rule
+  and no check — which is true of what GitLab will enforce. The distinction is
+  kept where it changes an outcome: `SetProtection` asked to require a named
+  check on an instance that has no external status checks refuses with
+  `ErrUnavailable` naming the check, rather than writing nothing and reporting
+  success. A read that cannot see a paid feature is still an answer; a write
+  that cannot happen is not.
+
+- **§4 GitLab answers the query, so flow does not answer it again (item
+  7.4).** The listing's state, target branch and window are all parameters
+  GitLab's own endpoint takes, and the first draft filtered the answer by the
+  same three in flow. Two mechanisms answering one question drift apart
+  silently, and the second one here was unreachable: no merge request GitLab
+  excluded could arrive for flow to exclude. The callback now collects and
+  counts, and `TestGitLabAsksTheQuestionInTheQuery` is what holds the query
+  to its job. Gitea keeps its filtering because Gitea's listing has no window
+  to ask for.
+
+- **§4 an issue flow cannot name is not a link (item 7.4).** A project wired
+  to an external issue tracker answers `closes_issues` with an `id` and a
+  `title` and no `references` of any kind — a documented second shape of the
+  same endpoint. There is no key in that: the number is the external
+  tracker's, not GitLab's, and flow has no project to qualify it with. The
+  adapter drops it, so `ClosingIssues` is empty and the tracker fallback does
+  the work, which is the same answer flow gives for a forge that publishes no
+  link at all.
+
+- **§4 a squashed merge request has two commits and one of them landed (item
+  7.4).** GitLab keeps `merge_commit_sha` and `squash_commit_sha` side by
+  side. `flow check deploy` proves a deployment contains what landed, and what
+  landed on the trunk of a squashing project is the squash. The adapter
+  prefers it and falls back to the merge commit, which is what a project that
+  does not squash has.
+
+- **§4 containment is asked straight, and only straight (item 7.4).** GitLab's
+  compare takes `straight`, and with it off the answer is against the merge
+  base — a different question, and one that says a commit is contained when it
+  is merely related. `flow check deploy` rests on the containment proof, so the
+  adapter sends `straight=true` and the fake refuses anything else rather than
+  answering a question nobody asked.
+
+- **§4 GitLab appends nothing to a squash, so the header is the title (item
+  7.4).** GitHub lands `<title> (#123)` and Gitea `<title> (#N)`; GitLab's
+  default squash template is the title alone, and the gate lints the header
+  the forge will write (spec 09). `core.PullRequest.SquashHeader` is therefore
+  the title, and the room GitHub's suffix costs an author is room a GitLab
+  author keeps.
+
+- **§4 an error lands as a failure, because GitLab has no other word (item
+  7.4).** Flow publishes four verdicts and GitLab's commit statuses know three:
+  a check that could not run has failed as far as the forge is concerned. Both
+  are writable rather than one being refused — the distinction is flow's and
+  the forge's reader only needs to know the tick is not green.
+
+- **§4 GitLab's deployments are a capability flow does not have yet (item
+  7.4).** `assets/capabilities/gitlab.yaml` was written from research and
+  claimed `deployments_read`, and nothing contradicted it because a capability
+  file is a declaration rather than a test. GitLab does have an environments
+  and deployments API; what flow does not have is a source that reads it —
+  `internal/deploys` implements `forge_deployments` for GitHub alone. A
+  repository configuring `deploys.source: forge_deployments` against GitLab
+  would therefore have been told the capability was there and then found
+  nothing reading it, which is the failure mode capability files exist to
+  prevent. The entry now says `verify: false` and points at
+  `deploys.source: commit_status`, which item 7.5 made work for any forge by
+  reading statuses through `core.Forge`. A GitLab deployment source is worth
+  having and is its own item.
