@@ -647,11 +647,15 @@ func (g *Gitea) SetCommitStatus(ctx context.Context, sha string, s core.CommitSt
 }
 
 // latestStatus returns the newest status from one context, or nil.
+//
+// It reads through the ordinary cache rather than around it. A cached answer
+// is never believed without asking — [core.Client] sends the tag it holds and
+// takes a 304 as permission to reuse the body — so the reading is of the
+// commit as it stands either way, and a second way of saying "do not use the
+// cache" would be a second thing to keep true.
 func (g *Gitea) latestStatus(ctx context.Context, sha, want string) (*core.CommitStatus, error) {
 	var found *core.CommitStatus
-	req := g.statusRequest(sha)
-	req.NoCache = true
-	err := paginate(ctx, g, req, func(s gtStatus) bool {
+	err := paginate(ctx, g, g.statusRequest(sha), func(s gtStatus) bool {
 		if s.Context != want {
 			return true
 		}

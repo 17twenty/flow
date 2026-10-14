@@ -172,6 +172,18 @@ func (f *giteaFake) statusHistory(sha string) []core.CommitStatus {
 	return slices.Clone(f.statuses[sha])
 }
 
+// publish appends a status to a commit as somebody other than the adapter
+// under test, which is how a reading taken earlier is made out of date.
+func (f *giteaFake) publish(sha string, status core.CommitStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextStatus++
+	status.ID = strconv.FormatInt(f.nextStatus, 10)
+	status.CreatedAt = coretest.ContractNow
+	status.UpdatedAt = coretest.ContractNow
+	f.statuses[sha] = append(f.statuses[sha], status)
+}
+
 // commentsOn returns the comments on a pull request as the fake holds them.
 func (f *giteaFake) commentsOn(number int) []gtComment {
 	f.mu.Lock()

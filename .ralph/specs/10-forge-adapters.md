@@ -451,3 +451,11 @@ duplicate-pipeline hazards). MR closing issues: `GET
   Gitea keeps them at `/raw/{path}` rather than behind a media type on the
   contents endpoint, and the contents endpoint is read only for the blob
   identity an update must quote.
+- **§3 the read that decides whether to write goes through the cache like
+  any other (item 7.3).** Publishing a status is skipped when the context
+  already says exactly this, and that decision is made on a reading of the
+  commit — which made it tempting to mark the read "do not cache". It is not
+  marked: [core.Client] never believes a stored answer without asking, since
+  it sends the tag it holds and takes a 304 as permission to reuse the body,
+  so the reading is of the commit as it stands either way. A second way of
+  saying the same thing would be a second thing to keep true (spec 01 §5).

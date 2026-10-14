@@ -174,6 +174,12 @@ func (g *refusingGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func TestGiteaDoesNotKeepAnAnswerItNeverGot(t *testing.T) {
 	fx := coretest.ContractForge()
 	fake, _ := newGiteaServer(t, fx)
+	// The repository sends its issues elsewhere, so the answer flow could
+	// not read is `!` and the one an unread repository would fall to is
+	// `#`. Without that difference the test would pass against an adapter
+	// that kept the failure, because a zero repository reads as the
+	// ordinary one.
+	fake.external = "https://tracker.example/acme/widget/issues/{index}"
 	gate := &refusingGitea{inner: fake, refuse: true}
 	srv := httptest.NewServer(gate)
 	t.Cleanup(srv.Close)
@@ -188,7 +194,7 @@ func TestGiteaDoesNotKeepAnAnswerItNeverGot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PullRequest after the refusal lifted: %v", err)
 	}
-	if want := pr.Title + " (#2)"; pr.MergeHeader() != want {
+	if want := pr.Title + " (!2)"; pr.MergeHeader() != want {
 		t.Errorf("MergeHeader() = %q, want %q: a failed read became the answer for the rest of the run", pr.MergeHeader(), want)
 	}
 }
@@ -316,6 +322,37 @@ func TestGiteaDoesNotRepeatAVerdictTheCommitAlreadyCarries(t *testing.T) {
 	}
 	if got := len(fake.statusHistory(coretest.SHAMerged)); got != before {
 		t.Errorf("the history grew from %d to %d for a sentence the commit already carried", before, got)
+	}
+}
+
+func TestGiteaAsksTheCommitAgainBeforeItDecidesNotToWrite(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, func(o *core.ClientOptions) {
+		o.Cache = core.NewMemoryCache()
+	})
+
+	// A run reads the statuses, which fills flow's own store with the
+	// answer and the tag it came with.
+	if _, err := adapter.CommitStatuses(t.Context(), coretest.SHAMerged); err != nil {
+		t.Fatalf("CommitStatuses: %v", err)
+	}
+	// Somebody else publishes in the meantime — another workflow, or the
+	// same one from another branch.
+	fake.publish(coretest.SHAMerged, core.CommitStatus{
+		Context: "flow/policy", State: core.StatusFailure, Description: "cc.header.length",
+	})
+	before := len(fake.statusHistory(coretest.SHAMerged))
+
+	// Writing exactly what the commit now says must write nothing. The
+	// decision is made on the commit as it stands, so a store flow keeps
+	// between reads has to be revalidated rather than believed.
+	same := core.CommitStatus{Context: "flow/policy", State: core.StatusFailure, Description: "cc.header.length"}
+	if err := adapter.SetCommitStatus(t.Context(), coretest.SHAMerged, same); err != nil {
+		t.Fatalf("SetCommitStatus: %v", err)
+	}
+	if got := len(fake.statusHistory(coretest.SHAMerged)); got != before {
+		t.Errorf("the history grew from %d to %d: the skip was decided on a reading older than the commit", before, got)
 	}
 }
 
@@ -619,6 +656,27 @@ func TestGiteaReadsTheRuleThatGovernsABranchAndNotOneOfItsName(t *testing.T) {
 	// a glob is escaped on the way out and means itself on the way in.
 	if !slices.Contains(fake.Requests(), fake.prefix()+"/branch_protections/release/%2A") {
 		t.Errorf("requests = %v, want the rule read under the name the branch gave for it", fake.Requests())
+	}
+}
+
+func TestGiteaDoesNotLookForARuleBehindAnUnprotectedBranch(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+	fake.refs["topic"] = coretest.SHADeployed
+
+	protection, err := adapter.Protection(t.Context(), "topic")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if protection.Enabled {
+		t.Error("a branch nothing protects reads as protected")
+	}
+	// Only an administrator may read a rule, so asking after a branch that
+	// said it has none costs a refusal on every item of every plan — for
+	// the one credential flow is ordinarily given.
+	if got := countRequests(fake, fake.prefix()+"/branch_protections/topic"); got != 0 {
+		t.Errorf("the rule behind an unprotected branch was asked for %d times, want 0", got)
 	}
 }
 
