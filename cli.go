@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -645,7 +646,11 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 	credentials := config.NewCredentials(os.Getenv, s.Settings.Auth)
 
 	var adapters engine.Adapters
-	forgeClient, err := a.client(s, credentials, s.Config.Forge.Type, s.Config.Forge.Auth, forgeAPI(s.Config.Forge.URL))
+	forgeRoot, forgeHeader, err := forgeEndpoint(s.Config.Forge.Type, s.Config.Forge.URL, s.ConfigPath)
+	if err != nil {
+		return engine.Adapters{}, err
+	}
+	forgeClient, err := a.client(s, credentials, s.Config.Forge.Type, s.Config.Forge.Auth, forgeRoot, forgeHeader)
 	if err != nil {
 		return engine.Adapters{}, err
 	}
@@ -653,22 +658,22 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 	if err != nil {
 		return engine.Adapters{}, err
 	}
+	declaration, err := s.Registry.Of(s.Config.Forge.Type)
+	if err != nil {
+		return engine.Adapters{}, err
+	}
 	switch s.Config.Forge.Type {
 	case forge.GitHubKind:
-		declaration, err := s.Registry.Of(forge.GitHubKind)
-		if err != nil {
-			return engine.Adapters{}, err
-		}
 		adapters.Forge, err = forge.NewGitHub(forge.GitHubOptions{
 			Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
 		})
-		if err != nil {
-			return engine.Adapters{}, err
-		}
-	default:
-		return engine.Adapters{}, core.Errorf(core.ErrUnsupported, "talk to the %s forge", s.Config.Forge.Type).
-			WithWhy("this build ships no adapter for it").
-			WithFix("set forge.type to github in %s", s.ConfigPath)
+	case forge.GiteaKind:
+		adapters.Forge, err = forge.NewGitea(forge.GiteaOptions{
+			Client: forgeClient, Owner: owner, Repo: name, Capabilities: declaration,
+		})
+	}
+	if err != nil {
+		return engine.Adapters{}, err
 	}
 
 	switch s.Config.Tracker.Type {
@@ -677,7 +682,8 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		if err != nil {
 			return engine.Adapters{}, err
 		}
-		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth, forgeAPI(s.Config.Tracker.URL))
+		trackerClient, err := a.client(s, credentials, s.Config.Tracker.Type, s.Config.Tracker.Auth,
+			forgeAPI(s.Config.Tracker.URL), forge.GitHubHeader())
 		if err != nil {
 			return engine.Adapters{}, err
 		}
@@ -735,7 +741,7 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 // `token_cmd` that unlocks a vault or asks for a fingerprint should not be
 // run to produce a secret flow has already decided it will not send
 // (spec 15 §1).
-func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, base string) (*core.Client, error) {
+func (a *Context) client(s *session, credentials *config.Credentials, provider string, auth config.Auth, base string, header http.Header) (*core.Client, error) {
 	host, err := a.approveHost(s, credentials, provider, base, a.hostApprover(terminalCheck(a.Stdout)))
 	if err != nil {
 		return nil, err
@@ -748,7 +754,7 @@ func (a *Context) client(s *session, credentials *config.Credentials, provider s
 		BaseURL: base,
 		Token:   credential.Secret(),
 		Version: version,
-		Header:  forge.GitHubHeader(),
+		Header:  header,
 		Logger:  a.Log,
 		// What was approved is a host, not one request to it: a redirect
 		// off it would take the credential along, so the guard holds every
@@ -829,6 +835,38 @@ func hostOf(raw string) string {
 		return ""
 	}
 	return parsed.Hostname()
+}
+
+// forgeEndpoint is the API root one kind of forge answers at, and the headers
+// every call to it carries.
+//
+// A kind flow ships no adapter for is refused here rather than later, because
+// this is the last moment before the credential is asked for. Spec 15 §1 does
+// not want a `token_cmd` that unlocks a vault run to produce a secret for a
+// provider flow was never going to speak to.
+func forgeEndpoint(kind, configured, configPath string) (string, http.Header, error) {
+	switch kind {
+	case forge.GitHubKind:
+		return forgeAPI(configured), forge.GitHubHeader(), nil
+	case forge.GiteaKind:
+		// A Gitea lives wherever somebody put it. There is no host flow
+		// could assume, so an empty forge.url is a question rather than a
+		// default (spec 10 §3).
+		root := strings.TrimSuffix(configured, "/")
+		if root == "" {
+			return "", nil, core.Errorf(core.ErrValidation, "talk to the gitea forge").
+				WithWhy("forge.url is empty, and a Gitea answers wherever it was installed").
+				WithFix("set forge.url to the instance, such as https://codeberg.org, in %s", configPath)
+		}
+		if !strings.HasSuffix(root, forge.GiteaAPIPath) {
+			root += forge.GiteaAPIPath
+		}
+		return root, forge.GiteaHeader(), nil
+	default:
+		return "", nil, core.Errorf(core.ErrUnsupported, "talk to the %s forge", kind).
+			WithWhy("this build ships no adapter for it").
+			WithFix("set forge.type to github or gitea in %s", configPath)
+	}
 }
 
 // forgeAPI turns a configured base URL into an API root: github.com answers

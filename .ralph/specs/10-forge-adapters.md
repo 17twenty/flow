@@ -381,3 +381,73 @@ duplicate-pipeline hazards). MR closing issues: `GET
   provider answers, so an error about a repository flow cannot reach can
   still name it, and anything composed on top of a forge — the commit status
   deployment source — can say where it was reading.
+- **§3 one adapter speaks for Gitea and Forgejo (item 7.3).** Forgejo is
+  Gitea's fork and serves the same API under the same path, so the kind is
+  `gitea` for both and the flavour is a detail of detection rather than of
+  configuration. A second kind would double every declaration, every
+  capability row and every recipe in the cookbook to say the same things
+  twice.
+- **§3 `forge.url` is not optional, and silence is a question (item 7.3).**
+  GitHub has one host and a Gitea has whichever host somebody installed it
+  on, so an empty `forge.url` cannot be defaulted. It is refused in the root
+  before the credential is resolved, because spec 15 §1 does not want a
+  `token_cmd` that unlocks a vault run to produce a secret for a provider
+  flow was never going to speak to. The API root is the instance with
+  `/api/v1` appended, and an instance already named with that path is left
+  as it is.
+- **§3 the link between a pull request and a ticket is unsupported, as §3
+  said to confirm at build time (item 7.3).** Gitea stores the links it makes
+  from the closing keywords in a body and publishes none of them: no field of
+  the pull request payload names an issue and no endpoint lists them. So
+  `linked_issues_read` is declared `false` and the engine falls back to the
+  branch and the title (spec 05 §2). A pattern of flow's own here would be a
+  guess dressed as the forge's answer, which is worse than the fallback it
+  would silence.
+- **§3 protection is two readings, and only one of them needs an
+  administrator (item 7.3).** The branch carries what its protection comes to
+  once every rule that covers it has been applied, and any credential that can
+  see the branch can see that; the rule carries the settings the branch does
+  not mention, and only an administrator may read it. A refusal on the rule is
+  therefore read the same way as its absence — what the branch said about
+  itself stands — because reporting it would make every read of a protected
+  branch fail for a bot account that can do everything else flow asks of it.
+  The rule is read under the name the branch gives for it
+  (`effective_branch_protection_name`), never under the branch's own: a glob
+  rule governs branches whose names it does not share.
+- **§3 the same rule is kept at two addresses (item 7.3).** Gitea creates a
+  branch protection at the collection and edits it at its own name. Flow
+  tries the edit first because it is the ordinary case, and takes the 404 as
+  the signal to create. Both carry the whole merged state, so a retry cannot
+  do anything the first attempt did not.
+- **§3 a comparison is asked twice and named by flow (item 7.3).** Gitea
+  answers a comparison with the commits the head has that the base does not,
+  and counts them; it never names the relation. One count cannot tell
+  `identical` from `behind`, or `ahead` from `diverged`, so the question is
+  put both ways round and flow names the relation itself — which is what
+  containment proofs in spec 13 §3 depend on.
+- **§3 a commit's statuses are a history, and the history is ordered by an
+  index (item 7.3).** Gitea replaces nothing: publishing a status appends to
+  the commit's history. The walk asks for `sort=highestindex` rather than for
+  a time, because two runs of the same workflow second finish in the same
+  second and a tie would leave the answer to whichever row the database
+  happened to return; the index is assigned on receipt and cannot tie. The
+  latest from each context is what `CommitStatuses` returns, since a history
+  is not what a caller asking "what do the checks say" means (spec 09 §2).
+  Publishing is skipped when that context already says exactly this, with the
+  three strings trimmed on flow's side first — Gitea trims them before
+  storing, so a description written with a trailing space would otherwise
+  differ from the one read back, every run, for ever.
+- **§3 what a squash will say is read from the repository once a run (item
+  7.3).** Gitea composes the squash commit itself and offers no setting for
+  it, so `squash_text.set` is `false` while `verify` stays true: flow can see
+  where the words come from and cannot choose. The header is the pull
+  request's title with its number appended, and the character in front of the
+  number is `#` unless the repository sends its issues to an external
+  tracker, when it is `!`. Where the issues of a repository live is a setting
+  and a setting does not change halfway through a run, so it is read once and
+  kept — but only when it was an answer, since a failed read must never
+  become the one the adapter gives for the rest of the run.
+- **§3 a file's bytes come from the endpoint that serves bytes (item 7.3).**
+  Gitea keeps them at `/raw/{path}` rather than behind a media type on the
+  contents endpoint, and the contents endpoint is read only for the blob
+  identity an update must quote.

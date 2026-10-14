@@ -105,6 +105,24 @@ links for the authoritative text.
   via API; merges (UI + API) are refused until required contexts succeed.
   https://docs.rs/gitea-client/latest/src/gitea_client/models/branch_protection.rs.html ·
   https://git.fb1.uni-bremen.de/davrot/forgejo-aneksajo/commit/04ca7f004710de2b408f558f6f148894aa61ba57
+- Verified 2026-10-14 against an instance's own schema (`GET
+  /swagger.v1.json` from codeberg.org, Gitea 1.22). `BranchProtection`,
+  `CreateBranchProtectionOption` and `EditBranchProtectionOption` name
+  `enable_status_check`, `status_check_contexts`, `required_approvals`,
+  `dismiss_stale_approvals`, `block_on_outdated_branch` and
+  `apply_to_admins`. **There is no force-push setting of any kind**, and the
+  create takes `rule_name`/`branch_name` where the edit takes neither. The
+  earlier reading above had guessed `block_admin_merge_override` and
+  `enable_force_push`; neither exists, and Gitea ignores a key it does not
+  know, so a plan would have claimed protection nobody had. Read the
+  instance's schema, not a client library generated from an older one.
+- `Branch` carries `effective_branch_protection_name`, which is how a branch
+  says which rule governs it — a glob rule is kept under its own name and not
+  the branch's.
+- `Repository` carries `external_tracker`, `archived`, and the four merge
+  strategies `allow_squash_merge`, `allow_merge_commits`, `allow_rebase`,
+  `default_delete_branch_after_merge`. There is no squash title or message
+  setting: Gitea composes the squash commit itself.
 
 ## Go ecosystem (verified for the build)
 - Charm v2 libraries use vanity paths `charm.land/bubbletea/v2`,

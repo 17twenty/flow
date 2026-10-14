@@ -317,3 +317,97 @@ A note on what this costs: `live.transitions.native` already watches these
 same workflows behave on real tickets, so the attestation is the setup half of
 a fact the live half re-checks every day. That is the design — flow is allowed
 to take your word for the switch, and never for the outcome.
+
+---
+
+## 7. Requiring a status check by hand
+
+Flow writes required checks itself — `forge.required_status` is a planned
+item like any other, and `flow apply` is how it lands. This section is for the
+case where it cannot: the credential has push and not admin, which is the
+ordinary state of a bot account and the reason
+[#90](https://github.com/17twenty/flow/issues/90) and
+[#91](https://github.com/17twenty/flow/issues/91) are open on this very
+repository. `flow doctor` then files a follow-up saying what it would have
+written; this is how a person writes it.
+
+What you are requiring is `policy.status_context` (flow's own gate, by
+default `flow/policy`) plus everything in `forge.required_checks`. **Name each
+one as the forge reports it, not as the web interface composes it** — see
+§5.
+
+### 7.1 GitHub
+
+A repository ruleset is the current mechanism, and what `flow apply` writes:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/$REPO/rulesets \
+  -d '{"name":"Flow","target":"branch","enforcement":"active",
+       "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
+       "rules":[{"type":"required_status_checks","parameters":{
+         "strict_required_status_checks_policy":true,
+         "required_status_checks":[{"context":"flow/policy"},{"context":"test"}]}}]}'
+```
+
+GitHub creates every ruleset **disabled**, and a disabled ruleset is in no
+branch's effective rules — so both protection endpoints stay silent and the
+trunk is not protected at all. Send `"enforcement":"active"` as above, or
+switch it on afterwards at `https://github.com/$REPO/rules/<id>`. Flow reports
+a rule written and never switched on as a note on `forge.protection`, which is
+the finding that led to this paragraph.
+
+The older classic branch protection is still accepted and still read:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" \
+  https://api.github.com/repos/$REPO/branches/main/protection/required_status_checks/contexts \
+  -d '["flow/policy"]'
+```
+
+### 7.2 Gitea and Forgejo
+
+One rule, at two addresses: the create takes the branch, the edit takes the
+rule's name. Only an administrator may call either, and only an administrator
+may *read* one — which is why flow reads the branch as well, and why a bot
+account still knows what the trunk requires.
+
+```sh
+# Create: the rule does not exist yet.
+curl -s -X POST -H "Authorization: Bearer $GITEA_TOKEN" \
+  -H "Content-Type: application/json" \
+  $GITEA/api/v1/repos/$REPO/branch_protections \
+  -d '{"branch_name":"main","enable_status_check":true,
+       "status_check_contexts":["flow/policy","test"],
+       "required_approvals":1,"block_on_outdated_branch":true,
+       "dismiss_stale_approvals":true,"apply_to_admins":true}'
+
+# Edit: it does. Note the name in the path and not in the body.
+curl -s -X PATCH -H "Authorization: Bearer $GITEA_TOKEN" \
+  -H "Content-Type: application/json" \
+  $GITEA/api/v1/repos/$REPO/branch_protections/main \
+  -d '{"enable_status_check":true,"status_check_contexts":["flow/policy","test"]}'
+```
+
+`$GITEA` is the instance — a Gitea lives wherever somebody put it, which is
+why `forge.url` is not optional for this adapter. Two things to know:
+
+- **Gitea ignores a key it does not recognise**, silently and with a 200. If
+  you mistype a field you will get a success and no protection. Check the
+  answer rather than the status code.
+- `status_check_contexts` is read as "require exactly these". Send the whole
+  list, including the contexts that were already there, or you will remove
+  them.
+
+Confirm it took, as any credential may:
+
+```sh
+curl -s -H "Authorization: Bearer $GITEA_TOKEN" \
+  $GITEA/api/v1/repos/$REPO/branches/main
+```
+
+`protected`, `enable_status_check` and `status_check_contexts` are what flow
+reads there, and `effective_branch_protection_name` names the rule that
+governs the branch — which is not the branch's own name when a glob rule
+covers it.

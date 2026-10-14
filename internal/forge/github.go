@@ -1065,6 +1065,9 @@ func (g *GitHub) pullFromBranch(ctx context.Context, branch string) (int, error)
 	return found, nil
 }
 
+// sender is the client this adapter speaks through.
+func (g *GitHub) sender() *core.Client { return g.client }
+
 // do sends one request with GitHub's media type and API version.
 func (g *GitHub) do(ctx context.Context, r core.Request) (*core.Response, error) {
 	return g.client.Do(ctx, g.decorate(r))
@@ -1108,11 +1111,20 @@ func escapePath(segment string) string {
 	return strings.Join(parts, "/")
 }
 
-// paginate walks a paginated collection. The request is given GitHub's media
-// type and API version once, up front, because the walk follows the Link
-// header's absolute URLs and carries the same header to each of them.
-func paginate[T any](ctx context.Context, g *GitHub, req core.Request, visit func(T) bool) error {
-	return core.Paginate(ctx, g.client, g.decorate(req), visit)
+// restAdapter is what a paginated walk needs of an adapter: the client to send
+// through, and the decoration every request to that provider carries. Both
+// forges in this package answer a listing the same way — a page of JSON and a
+// Link header pointing at the next — so the walk is written once.
+type restAdapter interface {
+	sender() *core.Client
+	decorate(core.Request) core.Request
+}
+
+// paginate walks a paginated collection. The request is decorated once, up
+// front, because the walk follows the Link header's absolute URLs and carries
+// the same header to each of them.
+func paginate[T any](ctx context.Context, a restAdapter, req core.Request, visit func(T) bool) error {
+	return core.Paginate(ctx, a.sender(), a.decorate(req), visit)
 }
 
 // graphQL sends one GraphQL query and returns its data, through the shared
