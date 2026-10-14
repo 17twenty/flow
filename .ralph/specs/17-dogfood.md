@@ -385,3 +385,13 @@ Each iteration, as the agent identity:
   of properties a line of documentation can have. A skill is read by something
   with no judgement about whether what it is doing is absurd, so the standard
   is the one for code: run it, and keep the parts that can rot under test.
+
+- **§5 the scheduled audit runs as the bot, not as the workflow (Stage C,
+  revisited).** Step 5 stores the machine user's PAT as `FLOW_PROJECT_TOKEN`
+  for the Project, and the daily `flow doctor` job hands it to the forge as
+  well. Not for the writing — `--fix` never touches the forge — but for the
+  reading: `secrets.GITHUB_TOKEN` may not be granted `administration`, so it
+  cannot see the ruleset that Stage B switched on, and an audit of the gate
+  that cannot see the gate is the one thing §7's fourteen green runs must not
+  be able to mean. The first scheduled runs failed this way and said so
+  loudly, which is the behaviour to keep.

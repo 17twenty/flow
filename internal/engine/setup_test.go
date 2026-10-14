@@ -377,6 +377,26 @@ func TestLocalHook(t *testing.T) {
 	}
 }
 
+// A runner's checkout is thrown away when the job ends and nobody commits
+// from it, so the one check about a working copy's convenience has nothing to
+// ask for there. Spec 07 §2 already read the same fact about the lock.
+func TestTheHookIsNotAskedOfAThrowawayCheckout(t *testing.T) {
+	missing := setupLocal()
+	missing.HookInstalled = false
+
+	cfg := setupConfig()
+	in := engine.SetupInput{Config: cfg, Local: missing, CI: true}
+	result := setupResult(t, in, setupEnv(t, cfg), engine.CheckLocalHook)
+
+	wantState(t, result, engine.StateSkip)
+	if !strings.Contains(result.Message, "thrown away") {
+		t.Errorf("the skip says %q, which does not say why a runner needs no hook", result.Message)
+	}
+	if result.Remediation.Kind != "" {
+		t.Errorf("the skip offers %q, and there is nothing for anybody to do", result.Remediation.Kind)
+	}
+}
+
 // probeFails is an adapter whose credential is refused. It wraps a working
 // fake rather than reimplementing one, so the test says only what it is about.
 type probeFails struct {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/17twenty/flow/assets"
 	"github.com/17twenty/flow/internal/core"
+	"go.yaml.in/yaml/v3"
 )
 
 // hookRepo creates a throwaway repository, isolated from the machine's git
@@ -417,5 +418,41 @@ func TestShippedTemplatesInvokeRealCommands(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("no template invokes flow; this test is not testing anything")
+	}
+}
+
+// A shipped workflow is copied into somebody's repository by `flow init` and
+// then run by a provider flow never sees the answer from, so the only reader
+// that can catch a mangled one is this test. YAML is well able to accept an
+// edit and mean something else by it.
+func TestShippedTemplatesAreWellFormedYAML(t *testing.T) {
+	templates, err := assets.Templates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	err = fs.WalkDir(templates, ".", func(path string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil || d.IsDir():
+			return err
+		case filepath.Ext(path) != ".yml" && filepath.Ext(path) != ".yaml":
+			return nil
+		}
+		content, err := fs.ReadFile(templates, path)
+		if err != nil {
+			return err
+		}
+		var document yaml.Node
+		if err := yaml.Unmarshal(content, &document); err != nil {
+			t.Errorf("%s is not YAML: %v", path, err)
+		}
+		checked++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checked == 0 {
+		t.Error("no template is YAML; this test is not testing anything")
 	}
 }

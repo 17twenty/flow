@@ -955,3 +955,28 @@ func onTrunk(sha, header string, paragraphs ...string) core.Commit {
 		URL:         "https://github.test/acme/api/commit/" + sha,
 	}
 }
+
+// TestDoctorDoesNotAskARunnerForAGitHook: the hook is a thing in a working
+// copy, and a runner's working copy lasts as long as the job. The scheduled
+// audit of spec 07 §10 is what makes it matter — a check that cannot hold in
+// CI is a check that keeps every daily run from ever being green — so the
+// same repository has to answer differently to the two runs.
+func TestDoctorDoesNotAskARunnerForAGitHook(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
+	if err := os.Remove(filepath.Join(dir, ".git", "hooks", "commit-msg")); err != nil {
+		t.Fatalf("this repository had no hook to take away: %v", err)
+	}
+
+	local, _ := doctorJSON(t, dir, owners()...)
+	if got := local.checkState(t, engine.CheckLocalHook); got != "fail" {
+		t.Fatalf("a working copy with no hook answered %q, want fail", got)
+	}
+
+	ci, _ := doctorJSON(t, dir, append([]string{"--ci"}, owners()...)...)
+	if got := ci.checkState(t, engine.CheckLocalHook); got != "skip" {
+		t.Errorf("the same checkout in CI answered %q, want skip", got)
+	}
+	if message := ci.check(t, engine.CheckLocalHook).Result.Message; !strings.Contains(message, "thrown away") {
+		t.Errorf("the skip says %q, which does not say why a runner needs no hook", message)
+	}
+}
