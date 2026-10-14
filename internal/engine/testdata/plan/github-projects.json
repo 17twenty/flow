@@ -267,7 +267,11 @@
               "require_linear_history": "true",
               "strict_checks": "true"
             }
-          }
+          },
+          "differs": [
+            "require_linear_history",
+            "strict_checks"
+          ]
         }
       ]
     },
@@ -313,7 +317,10 @@
               "allow_rebase": "false",
               "allow_squash": "true"
             }
-          }
+          },
+          "differs": [
+            "allow_merge"
+          ]
         }
       ]
     },
@@ -339,7 +346,11 @@
               "squash_message": "pr_body",
               "squash_title": "pr_title"
             }
-          }
+          },
+          "differs": [
+            "squash_message",
+            "squash_title"
+          ]
         }
       ]
     },

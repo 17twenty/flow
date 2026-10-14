@@ -187,12 +187,32 @@ func (i Item) Matches(want Item) bool {
 	if i.ID != "" && want.ID != "" && i.ID != want.ID {
 		return false
 	}
+	return len(i.Differences(want)) == 0
+}
+
+// Differences names the fields of want that i does not already agree with,
+// sorted. It is the reason [Item.Matches] said no, and the two are one
+// mechanism so that they cannot come to disagree.
+//
+// Something has to say which fields these are, because an instruction to a
+// person has to be about the part that is wrong. "Protect the trunk, with
+// allow_deletions=false, allow_force_push=false, enabled=true,
+// require_linear_history=true, strict_checks=true" sends somebody to check
+// five settings, four of which were already as flow asked — and buries the
+// one that was not (spec 06 §2).
+//
+// The name and the id are not fields and are not answered here: an item with
+// another name is not this item at all, which is a question Matches asks
+// before it asks this one.
+func (i Item) Differences(want Item) []string {
+	var differs []string
 	for field, value := range want.Fields {
 		if i.Fields[field] != value {
-			return false
+			differs = append(differs, field)
 		}
 	}
-	return true
+	slices.Sort(differs)
+	return differs
 }
 
 // Observation is what an adapter found when it looked, in a canonical form:
@@ -267,7 +287,34 @@ type Change struct {
 	Op string `json:"op"`
 	// Item is the thing to create, the new value to update to, or the thing
 	// to delete. Its ID is set for an update or a delete.
+	//
+	// It is whole, even for an update: an adapter writing one of these
+	// settings writes them all, so sending only the part that moved would
+	// clear the rest.
 	Item Item `json:"item"`
+	// Differs names the fields of Item the provider does not already agree
+	// with. It is empty unless there is something there to disagree with,
+	// which is to say for an update; a create differs in all of itself and
+	// a delete in none of it.
+	//
+	// What it is for is the telling. The adapter is handed the whole item
+	// either way, but a plan and a follow-up ticket are read by somebody
+	// deciding what to go and do, and a list that includes four settings
+	// already as asked is a list that wastes their time and hides the
+	// fifth (spec 06 §2).
+	Differs []string `json:"differs,omitempty"`
+}
+
+// Fields names the fields worth telling somebody about, sorted: the ones
+// that differ when the provider has something to differ from, and all of
+// them when it does not. An adapter never calls this — it is handed
+// [Change.Item] whole — and every rendering of a change does, so that a plan
+// and the follow-up ticket made from it cannot describe it differently.
+func (c Change) Fields() []string {
+	if len(c.Differs) > 0 {
+		return c.Differs
+	}
+	return slices.Sorted(maps.Keys(c.Item.Fields))
 }
 
 // ApplyResult is what became of a [Change].

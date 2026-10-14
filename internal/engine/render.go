@@ -2,8 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -108,7 +106,7 @@ func (p Plan) Text() string {
 			out.WriteString(change.Op)
 			out.WriteString(" ")
 			out.WriteString(strconv.Quote(change.Item.Name))
-			for _, field := range slices.Sorted(maps.Keys(change.Item.Fields)) {
+			for _, field := range change.Fields() {
 				fmt.Fprintf(&out, " %s=%s", field, strconv.Quote(change.Item.Fields[field]))
 			}
 			out.WriteString("\n")

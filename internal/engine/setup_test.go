@@ -844,6 +844,43 @@ func TestARefusedItemHandsOverEverythingFlowKnows(t *testing.T) {
 	}
 }
 
+// The whole of a change is what an adapter is given; the part that is not
+// already true is what a person is told. Flow filed a ticket against its own
+// trunk naming five settings, four of which the repository already had, and
+// the reader checked all five before finding the one that mattered.
+func TestARefusedUpdateAsksOnlyForWhatIsNotAlreadySo(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Missing: []string{"admin"},
+		Changes: []core.Change{{
+			Op:   core.ChangeUpdate,
+			What: "forge.protection",
+			Item: core.Item{
+				Name: "protection",
+				Fields: map[string]string{
+					"enabled":       "true",
+					"strict_checks": "true",
+				},
+			},
+			Differs: []string{"strict_checks"},
+		}},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	steps := strings.Join(result.Remediation.Steps, "\n")
+	if !strings.Contains(steps, "with strict_checks=true") {
+		t.Errorf("the steps do not ask for the setting that is wrong:\n%s", steps)
+	}
+	if strings.Contains(steps, "enabled=true") {
+		t.Errorf("the steps ask for a setting the provider already has:\n%s", steps)
+	}
+}
+
 // A refused item with nothing to show is still a ticket somebody has to be
 // able to tell apart, so the summary names the work even when flow has no
 // permission token and no change to offer.

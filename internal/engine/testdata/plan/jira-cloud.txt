@@ -47,7 +47,7 @@ deploys  forge_deployments
 
 ✓ native  forge.protection (branch_protection)
     flow can set it through the provider's API
-    update "protection" allow_deletions="false" allow_force_push="false" enabled="true" require_linear_history="true" strict_checks="true"
+    update "protection" require_linear_history="true" strict_checks="true"
 
 ✓ native  forge.required_status (required_status_checks)
     flow can set it through the provider's API
@@ -55,7 +55,7 @@ deploys  forge_deployments
 
 ✓ native  forge.merge_settings (merge_settings)
     flow can set it through the provider's API
-    update "merge" allow_merge="false" allow_rebase="false" allow_squash="true"
+    update "merge" allow_merge="false"
 
 ✓ native  forge.squash_text (squash_text)
     flow can set it through the provider's API
