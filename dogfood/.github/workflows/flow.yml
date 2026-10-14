@@ -1,4 +1,8 @@
-# flow's own gate + health. Added in bootstrap Stage B (needs a working flow binary).
+# flow gates flow. Adapted by hand from assets/templates/ci/github-flow.yml
+# (spec 17 §5 Stage B): flow is what is in the checkout, so every job builds
+# the binary from the commit it is judging rather than installing a release.
+# A pull request is therefore gated by the flow it contains, which is the
+# whole of what dogfooding is for.
 name: flow
 on:
   pull_request:
@@ -6,7 +10,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   schedule:
-    - cron: '17 6 * * *'          # daily doctor
+    - cron: '17 6 * * *'          # daily doctor; the 14-day streak is read from the health issue
   workflow_dispatch: {}
 
 permissions:
@@ -26,39 +30,51 @@ env:
 
 jobs:
   gate:
+    name: policy
     if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      # Dogfood: the gate runs the flow built from main (not from the PR — untrusted).
-      - run: go install github.com/17twenty/flow@main
-      - run: flow check pr
+        with: { go-version-file: go.mod }
+      - run: go build -o bin/flow .
+      - run: ./bin/flow check pr
 
   config:
+    name: setup checks
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: f
-        with: { filters: "flow: ['.flow.yaml', '.flow.lock']" }
+        with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
-        if: steps.f.outputs.flow == 'true'
-        with: { go-version: stable }
-      - if: steps.f.outputs.flow == 'true'
-        run: go install github.com/17twenty/flow@main && flow doctor --ci --check 'config.*' --check 'lock.*'
+        with: { go-version-file: go.mod }
+      # Only when the pull request touches what flow is configured by: the
+      # setup checks read the providers, and running them on every change to
+      # every file would spend an API budget to learn nothing (spec 07 §4).
+      - id: touched
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          if git diff --name-only "$base"...HEAD | grep -qE '^\.flow\.(yaml|lock)$'; then
+            echo "flow=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.touched.outputs.flow == 'true'
+        run: go build -o bin/flow . && ./bin/flow doctor --ci --check 'config.*' --check 'lock.*'
 
   health:
+    name: daily health
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/17twenty/flow@main
-      - run: flow doctor --ci --fix --report doctor.md || [ $? -eq 2 ]
+        with: { go-version-file: go.mod }
+      - run: go build -o bin/flow .
+      # Exit 2 is "flow found something somebody must do", which is a report,
+      # not a broken job. Anything else fails the run.
+      - run: ./bin/flow doctor --ci --fix --report doctor.md || [ $? -eq 2 ]
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: doctor-report, path: doctor.md }
