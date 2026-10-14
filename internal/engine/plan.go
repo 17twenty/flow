@@ -247,7 +247,12 @@ func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []
 			changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeCreate, Item: want})
 		case !found.Matches(want):
 			want.ID = found.ID
-			changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeUpdate, Item: want})
+			changes = append(changes, core.Change{
+				What:    wanted.ID,
+				Op:      core.ChangeUpdate,
+				Item:    want,
+				Differs: found.Differences(want),
+			})
 		}
 	}
 	return append(changes, in.deletions(wanted, observation)...)

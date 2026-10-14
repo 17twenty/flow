@@ -13,7 +13,7 @@ forge `github` · tracker `github-projects` · deploys `github-deployments`
 
 **`forge.branch_protection`**
 
-- `update` "main" required_checks="flow/policy" reviews="1"
+- `update` "main" reviews="1"
 - hazard: rewriting protection clears any rule flow does not send
 
 6 items · 1 up to date · 1 native · 1 compensated · 1 follow-up · 1 attest · 1 unsupported
