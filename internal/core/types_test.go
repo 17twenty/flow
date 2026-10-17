@@ -376,3 +376,72 @@ func TestCandidateRef(t *testing.T) {
 		t.Errorf("Ref() = %+v, want %+v", got, want)
 	}
 }
+
+// Flow knows which fields disagree, because deciding that they do is how it
+// found the change in the first place. The two readings are one mechanism so
+// that they cannot come apart (spec 06 §2).
+func TestItemDifferences(t *testing.T) {
+	observed := core.Item{
+		ID:     "lbl-1",
+		Name:   "blocked",
+		Fields: map[string]string{"colour": "b60205", "description": "cannot move"},
+	}
+	tests := []struct {
+		name string
+		want core.Item
+		got  []string
+	}{
+		{name: "everything it asks for is already so", want: core.Item{Name: "blocked", Fields: map[string]string{"colour": "b60205"}}},
+		{name: "one field moved", want: core.Item{Name: "blocked", Fields: map[string]string{"colour": "ffffff"}}, got: []string{"colour"}},
+		{
+			name: "named in field order, not in the order they were asked for",
+			want: core.Item{Name: "blocked", Fields: map[string]string{"colour": "ffffff", "description": "cannot move", "limit": "3"}},
+			got:  []string{"colour", "limit"},
+		},
+		{name: "the provider knowing more is not a difference", want: core.Item{Name: "blocked"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := observed.Differences(test.want); !slices.Equal(got, test.got) {
+				t.Errorf("Differences = %v, want %v", got, test.got)
+			}
+			if match := observed.Matches(test.want); match != (len(test.got) == 0) {
+				t.Errorf("Matches = %v beside differences %v", match, test.got)
+			}
+		})
+	}
+}
+
+// A change is handed to an adapter whole and described to a person in part.
+// What a person is told about is the part that is not already true, and what
+// a provider is given is all of it, because writing one of these settings
+// writes them all.
+func TestChangeFields(t *testing.T) {
+	protection := core.Item{
+		Name: "protection",
+		Fields: map[string]string{
+			"enabled":                "true",
+			"allow_deletions":        "false",
+			"require_linear_history": "true",
+			"strict_checks":          "true",
+		},
+	}
+	update := core.Change{
+		What:    "forge.protection",
+		Op:      core.ChangeUpdate,
+		Item:    protection,
+		Differs: []string{"strict_checks"},
+	}
+	if got := update.Fields(); !slices.Equal(got, []string{"strict_checks"}) {
+		t.Errorf("Fields() = %v, want only the setting that is not already as asked", got)
+	}
+	if len(update.Item.Fields) != 4 {
+		t.Errorf("the item carries %d fields, want all four: the adapter is given the whole of it", len(update.Item.Fields))
+	}
+
+	create := core.Change{What: "forge.protection", Op: core.ChangeCreate, Item: protection}
+	want := []string{"allow_deletions", "enabled", "require_linear_history", "strict_checks"}
+	if got := create.Fields(); !slices.Equal(got, want) {
+		t.Errorf("Fields() = %v, want all of them: nothing exists yet, so none of it is already true", got)
+	}
+}

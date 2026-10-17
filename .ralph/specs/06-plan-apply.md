@@ -288,3 +288,12 @@ each successful mutation (atomic) and at the end. Summary.
   call, exactly as `forge.protection` and `forge.required_status` already do,
   and the squash text depends on the strategies so that the order a person
   reads the plan in is the order the call is made in.
+- **§2 a change is applied whole and described in part (issue #153).** An
+  adapter is given every field of a desired item, because writing one of these
+  settings writes them all and a field flow leaves out is a field the provider
+  clears. A person is given the fields the provider does not already agree
+  with. `core.Change.Differs` carries them and `core.Item.Differences` derives
+  them — the same reading `core.Item.Matches` uses to decide there is a change
+  at all, so the two can never come to disagree. Flow's own follow-up for
+  `forge.protection` named five settings, four of which the trunk already had,
+  and the one that mattered was buried among them.

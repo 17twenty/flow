@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -82,12 +80,13 @@ func (r Renderer) writeItemDetail(out *strings.Builder, item engine.PlanItem) {
 }
 
 // changeLine is one mutation in a line: what would be done, to what, with
-// what. The fields are in name order, as everywhere else flow prints them,
-// so that two renderings of the same change are the same text.
+// what. The fields are the ones [core.Change.Fields] names, in name order, as
+// everywhere else flow prints them, so that two renderings of the same change
+// are the same text.
 func changeLine(change core.Change) string {
 	var line strings.Builder
 	fmt.Fprintf(&line, "`%s` %s", change.Op, strconv.Quote(change.Item.Name))
-	for _, field := range slices.Sorted(maps.Keys(change.Item.Fields)) {
+	for _, field := range change.Fields() {
 		fmt.Fprintf(&line, " %s=%s", field, strconv.Quote(change.Item.Fields[field]))
 	}
 	return line.String()
