@@ -8,7 +8,7 @@
     "tracker": "github-projects"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:dd57ad078323897ceb0280726214346274def799e0edd0645f08853aa7bb3192",
+  "desired_hash": "sha256:9cd024bdfb9ab54e45df41fa95ae975a36f49cd392f76e478ce1ad2a6a69ea94",
   "lock_hash": "sha256:d70da70a5b8fe24a26da985e89fc41ba3c5efc1dec5393d4ac790b7b70b9c34f",
   "items": [
     {
@@ -350,7 +350,7 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:a58de6e4f8fdbee931575dee9eac1c2aac15e942ff6be9bdf4bfc0a7b5bee2e2",
+      "desired_hash": "sha256:f82f7f6ca8a8d7f7b87e32b3a693dce4ad640c95dae7f29cf1341f804753d6f1",
       "observed_hash": "sha256:c0aa4dce547733f8d460a1f80b58cad2d2edd843345605d9ad04c194304bbba6",
       "changes": [
         {

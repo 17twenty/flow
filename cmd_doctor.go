@@ -271,6 +271,7 @@ func (c *DoctorCmd) world(app *Context, s *session) (engine.SetupInput, error) {
 		Source:       s.Source,
 		ConfigErr:    s.ConfigErr,
 		SemanticsErr: s.SemanticsErr,
+		CI:           app.CI,
 		Unavailable:  map[string]error{},
 	}
 	if s.ConfigErr != nil || s.SemanticsErr != nil {

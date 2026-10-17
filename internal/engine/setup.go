@@ -110,6 +110,10 @@ type SetupInput struct {
 	SemanticsErr error
 	// Local is the working copy.
 	Local Local
+	// CI reports that the run is inside a CI job, which is what makes the
+	// working copy a throwaway: a runner's checkout is gone when the job
+	// ends, so anything flow would put in it is gone too (spec 07 §2).
+	CI bool
 	// Unavailable is why a target has no adapter, keyed by target. A target
 	// missing from the map and missing from Env.Adapters was simply not
 	// asked for.
@@ -379,6 +383,11 @@ func (in SetupInput) localGit() Check {
 // a bad commit message before it is written rather than after it is pushed,
 // and the only thing that makes it worth a check is that an uninstalled hook
 // is silent: nothing goes wrong until CI says so.
+//
+// Which is also why CI is the one place the check has nothing to say. The
+// hook is a thing in a working copy, a runner's working copy lasts as long as
+// the job, and nobody commits from it — so a scheduled audit that reported a
+// missing hook every morning would be reporting the weather.
 func (in SetupInput) localHook() Check {
 	return Check{
 		ID:        CheckLocalHook,
@@ -388,6 +397,9 @@ func (in SetupInput) localHook() Check {
 		Run: func(_ context.Context, env *Env) Result {
 			if env.Config.Commits.Convention == "" || env.Config.Commits.Convention == "none" {
 				return Skip("this workflow does not lint commit messages")
+			}
+			if in.CI {
+				return Skip("a CI checkout is thrown away when the job ends, and nobody commits from one")
 			}
 			switch {
 			case len(in.Local.HookManagers) > 0:
