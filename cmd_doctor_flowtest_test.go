@@ -803,10 +803,75 @@ func TestDoctorInCIProposesTheLockItWouldHaveWritten(t *testing.T) {
 	if broken := commits.Errors(commits.Lint(title, commits.LintOptions{Settings: commits.DefaultSettings()})); len(broken) > 0 {
 		t.Errorf("the pull request's title breaks the convention it asks of everybody else: %v", broken)
 	}
+	// And the convention this repository asks of everybody else, which is the
+	// one its own gate will judge the proposal by (issue #152).
+	if _, unlinked := engine.LockProposal.Title(configIn(t, dir)); unlinked != nil {
+		t.Errorf("flow proposed a lock its own gate refuses: %v", unlinked)
+	}
 
 	execAt(t, dir, args...)
 	if got := proposals(t, world()); len(got) != 1 {
 		t.Errorf("a second morning opened another pull request: %d in all", len(got))
+	}
+}
+
+// TestDoctorProposesNothingItsOwnGateWouldRefuse: the lock proposal is judged
+// by flow's own gate, so a configuration that leaves flow no landable title
+// gets no pull request at all. One that nobody can merge is a red cross on
+// the trunk's gate every morning, on the one change nobody can act on, and
+// the only useful thing flow can say about it is which key said no (issue
+// #152).
+func TestDoctorProposesNothingItsOwnGateWouldRefuse(t *testing.T) {
+	dir, world := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(adminAccess) })
+	// Nothing flow could honestly call its own bookkeeping may merge here
+	// without a ticket, and flow has no ticket for keeping its own lock.
+	rewriteConfig(t, dir, "unlinked_types: [ci, build, chore, docs]", "unlinked_types: [feat]")
+
+	args := append([]string{"doctor", "--ci", "--fix"}, owners()...)
+	code, _, stderr := execAt(t, dir, args...)
+	if code == core.ExitFail {
+		t.Fatalf("doctor failed: %s", stderr)
+	}
+	if got := proposals(t, world()); len(got) != 0 {
+		t.Errorf("flow opened a pull request its own gate refuses: %q", got[0].Title)
+	}
+	if !strings.Contains(stderr, "commits.unlinked_types") {
+		t.Errorf("nothing said which key refused the proposal:\n%s", stderr)
+	}
+}
+
+// configIn reads a repository's own configuration, so that a test can ask
+// what flow's gate would make of what flow wrote.
+func configIn(t *testing.T, dir string) *config.Config {
+	t.Helper()
+	path := filepath.Join(dir, config.DefaultPath)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(raw, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// rewriteConfig edits one line of a repository's configuration, failing when
+// the line it was told to replace is not there: a fixture that silently stops
+// shaping anything is a test that silently stops testing.
+func rewriteConfig(t *testing.T, dir, from, to string) {
+	t.Helper()
+	path := filepath.Join(dir, config.DefaultPath)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), from) {
+		t.Fatalf("%s does not hold %q", path, from)
+	}
+	edited := strings.Replace(string(raw), from, to, 1)
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -953,5 +1018,30 @@ func onTrunk(sha, header string, paragraphs ...string) core.Commit {
 		AuthoredAt:  at,
 		CommittedAt: at,
 		URL:         "https://github.test/acme/api/commit/" + sha,
+	}
+}
+
+// TestDoctorDoesNotAskARunnerForAGitHook: the hook is a thing in a working
+// copy, and a runner's working copy lasts as long as the job. The scheduled
+// audit of spec 07 §10 is what makes it matter — a check that cannot hold in
+// CI is a check that keeps every daily run from ever being green — so the
+// same repository has to answer differently to the two runs.
+func TestDoctorDoesNotAskARunnerForAGitHook(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) { w.forge.SetPermissions(writeAccess) })
+	if err := os.Remove(filepath.Join(dir, ".git", "hooks", "commit-msg")); err != nil {
+		t.Fatalf("this repository had no hook to take away: %v", err)
+	}
+
+	local, _ := doctorJSON(t, dir, owners()...)
+	if got := local.checkState(t, engine.CheckLocalHook); got != "fail" {
+		t.Fatalf("a working copy with no hook answered %q, want fail", got)
+	}
+
+	ci, _ := doctorJSON(t, dir, append([]string{"--ci"}, owners()...)...)
+	if got := ci.checkState(t, engine.CheckLocalHook); got != "skip" {
+		t.Errorf("the same checkout in CI answered %q, want skip", got)
+	}
+	if message := ci.check(t, engine.CheckLocalHook).Result.Message; !strings.Contains(message, "thrown away") {
+		t.Errorf("the skip says %q, which does not say why a runner needs no hook", message)
 	}
 }

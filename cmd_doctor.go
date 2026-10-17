@@ -271,6 +271,7 @@ func (c *DoctorCmd) world(app *Context, s *session) (engine.SetupInput, error) {
 		Source:       s.Source,
 		ConfigErr:    s.ConfigErr,
 		SemanticsErr: s.SemanticsErr,
+		CI:           app.CI,
 		Unavailable:  map[string]error{},
 	}
 	if s.ConfigErr != nil || s.SemanticsErr != nil {
@@ -498,9 +499,26 @@ func (c *DoctorCmd) proposeLock(app *Context, s *session) error {
 		app.Log.Warn("doctor has no forge to propose the refreshed lock to")
 		return nil
 	}
+	// The title is composed against this team's own convention and judged by
+	// the linter the gate will judge it with. A pull request flow's own gate
+	// refuses is worse than no pull request: it is a red cross on the trunk
+	// every morning, on the one change nobody can do anything about.
+	title, err := engine.LockProposal.Title(s.Config)
+	if err != nil {
+		// The fix is the whole value of the message, and it is not in
+		// Error(): it is the key somebody has to change.
+		var user *core.UserError
+		fix := ""
+		if errors.As(err, &user) {
+			fix = user.Fix
+		}
+		app.Log.Warn("doctor cannot write a lock proposal this configuration would accept",
+			"error", err, "fix", fix)
+		return nil
+	}
 	pr, err := s.Adapters.Forge.ProposeFiles(app.Ctx, core.FileProposal{
-		ID:    "lock",
-		Title: "chore(flow): refresh .flow.lock",
+		ID:    engine.LockProposal.ID,
+		Title: title,
 		Body:  lockProposalBody(),
 		Files: []core.ProposedFile{{Path: config.LockPath, Content: data}},
 	})

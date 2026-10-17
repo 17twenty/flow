@@ -859,3 +859,35 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   mode attestation has, and the fortnight of outcome is the cheapest thing
   that stops it. Every other attestation names no audit, because naming a
   check the report does not contain would send a reader looking for it.
+
+- **§5 `local.hook` has nothing to ask of a CI checkout (the daily audit,
+  revisited).** The hook is a file in a working copy; a runner's working copy
+  lasts as long as the job and nobody commits from it, so installing one
+  there would be installing it for nothing. This is the fact §2 already read
+  about the lock, applied to the other thing flow would otherwise put in a
+  throwaway tree. It matters more than it sounds: §10's whole point is a
+  scheduled run whose exit code can be believed, and a check that cannot hold
+  on a runner is a check that keeps every daily run red for ever. So `--ci`
+  skips it, saying which it is — a skip with no reason reads as flow being
+  coy about something it could have looked at.
+- **§10 the daily audit needs the credential a person would use (the daily
+  audit, revisited).** GitHub does not let a workflow grant its own Actions
+  token the `administration` permission, so `secrets.GITHUB_TOKEN` answers
+  403 to every read of branch protection and of the rulesets. flow reads both:
+  the audit's subject is what protects the trunk. The alternative — treating
+  a refused read as "nothing protects it" — is the failure mode this spec
+  warns about throughout, a blind run that grades green, so the template and
+  flow's own workflow hand the scheduled job a personal access token and say
+  in the file why. A reader who finds a `403` in a job log should find the
+  answer beside the token, not in a spec.
+- **§2 the lock proposal keeps to the team's convention (issue #152).** The
+  refreshed lock is offered as a pull request because a lock written on a
+  runner is thrown away with the checkout, and that pull request is then
+  judged by the gate like anybody else's. Its title is composed by
+  `engine.LockProposal.Title` against `commits.types`,
+  `commits.unlinked_types`, `commits.scopes` and `commits.header_max` rather
+  than being a constant, and when the configuration leaves no landable title
+  flow proposes nothing and logs which key refused it. This stays outside the
+  grading: §2 already settled that failing to propose the lock is not a
+  finding about the workflow, and a configuration flow cannot write
+  bookkeeping under is the team's to change, not a fault in their delivery.

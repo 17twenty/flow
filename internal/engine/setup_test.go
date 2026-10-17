@@ -377,6 +377,26 @@ func TestLocalHook(t *testing.T) {
 	}
 }
 
+// A runner's checkout is thrown away when the job ends and nobody commits
+// from it, so the one check about a working copy's convenience has nothing to
+// ask for there. Spec 07 §2 already read the same fact about the lock.
+func TestTheHookIsNotAskedOfAThrowawayCheckout(t *testing.T) {
+	missing := setupLocal()
+	missing.HookInstalled = false
+
+	cfg := setupConfig()
+	in := engine.SetupInput{Config: cfg, Local: missing, CI: true}
+	result := setupResult(t, in, setupEnv(t, cfg), engine.CheckLocalHook)
+
+	wantState(t, result, engine.StateSkip)
+	if !strings.Contains(result.Message, "thrown away") {
+		t.Errorf("the skip says %q, which does not say why a runner needs no hook", result.Message)
+	}
+	if result.Remediation.Kind != "" {
+		t.Errorf("the skip offers %q, and there is nothing for anybody to do", result.Remediation.Kind)
+	}
+}
+
 // probeFails is an adapter whose credential is refused. It wraps a working
 // fake rather than reimplementing one, so the test says only what it is about.
 type probeFails struct {
@@ -821,6 +841,43 @@ func TestARefusedItemHandsOverEverythingFlowKnows(t *testing.T) {
 	}
 	if !hasEvidence(result, `create ruleset "flow"`) {
 		t.Errorf("the report itself does not show the change:\n%+v", result.Evidence)
+	}
+}
+
+// The whole of a change is what an adapter is given; the part that is not
+// already true is what a person is told. Flow filed a ticket against its own
+// trunk naming five settings, four of which the repository already had, and
+// the reader checked all five before finding the one that mattered.
+func TestARefusedUpdateAsksOnlyForWhatIsNotAlreadySo(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Missing: []string{"admin"},
+		Changes: []core.Change{{
+			Op:   core.ChangeUpdate,
+			What: "forge.protection",
+			Item: core.Item{
+				Name: "protection",
+				Fields: map[string]string{
+					"enabled":       "true",
+					"strict_checks": "true",
+				},
+			},
+			Differs: []string{"strict_checks"},
+		}},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	steps := strings.Join(result.Remediation.Steps, "\n")
+	if !strings.Contains(steps, "with strict_checks=true") {
+		t.Errorf("the steps do not ask for the setting that is wrong:\n%s", steps)
+	}
+	if strings.Contains(steps, "enabled=true") {
+		t.Errorf("the steps ask for a setting the provider already has:\n%s", steps)
 	}
 }
 

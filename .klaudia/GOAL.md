@@ -1181,3 +1181,55 @@ still the only part of it waiting on a decision rather than on the calendar:
 run the four `flow attest` commands in `docs/cookbook.md` §6.1 and land the
 resulting `.flow.lock` through a pull request. Until those four states are
 vouched for, `flow doctor` exits 2 every day and the fourteen cannot start.
+
+### A pull request flow's own gate refused (issue #152)
+
+**The daily audit did what it was told, and flow said no.** A lock written on
+a runner goes into the bin with the checkout, so in `--ci` the refreshed lock
+is offered as a pull request instead (spec 07 §2). It opened one — #151 —
+and flow's gate then judged flow's own pull request and refused it on
+`pr.title.conventional` and `pr.ticket.linked`. The title was a constant,
+`chore(flow): refresh .flow.lock`: this repository allows no `flow` scope and
+does not let a `chore` merge without a ticket. Every morning flow would have
+opened a pull request that flow then marked with a red cross, on the one
+change nobody could act on.
+
+**A constant cannot keep to a convention it has never read.**
+`engine.Proposal` composes the header instead: a type that this team writes
+*and* may merge without a ticket, the first scope the team allows out of the
+ones the change can honestly claim, and the whole thing linted by the same
+linter the gate lints it with — against the header a squash would land, with
+room for the number the forge appends, because that was issue #106's lesson
+and flow is not going to repeat it about its own writing.
+
+**Both of flow's own pull requests go through it.** The lock refresh and the
+files a workflow needs were two constants with one defect between them, which
+is two mechanisms answering the same question. There is one now, with two
+descriptions: `engine.LockProposal` and `engine.FilesProposal`, each naming
+the types and scopes it may honestly claim.
+
+**When nothing landable can be written, flow writes nothing.** A configuration
+that lets no type through unlinked, or demands a scope it names none of, gets
+no pull request and a message naming the key — `commits.types`,
+`commits.unlinked_types`, `commits.scopes.allowed`, `commits.header_max` — in
+the *reason* and not only in the remedy, because an apply reports an item's
+failure by its message alone. This stays outside the grading: spec 07 §2
+already settled that failing to propose the lock is not a finding about the
+team's delivery.
+
+**And this repository now allows what flow needs.** `commits.unlinked_types`
+gained `chore`, which is what every shipped preset already has; the lock
+refresh is titled `chore(config): refresh .flow.lock` and the files proposal
+`ci(ci): add the files the workflow needs`. A root test reads the real
+`.flow.yaml` rather than a fixture, so narrowing the configuration later
+fails here rather than at six in the morning.
+
+**Fourteen mutants, two survivors, both bought tests.** A remedy may only
+name types `commits.types` actually allows — advising somebody to unlink
+`docs` when the team never writes `docs` sends them to the wrong key — and
+nothing had asked whether the doctor's refusal reached stderr at all.
+
+**Single best next step:** rebase #151 onto this once it lands and let the
+next `--ci --fix` run retitle it in place; then the four `flow attest`
+commands in `docs/cookbook.md` §6.1, which are still the only thing standing
+between this repository and the first of fourteen green days.

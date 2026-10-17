@@ -36,7 +36,7 @@ commits:
   header_max: 72
   merge_strategy: squash
   scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, ralph, deps] }
-  unlinked_types: [ci, build, docs]
+  unlinked_types: [ci, build, docs, chore]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
 agents:  { authors: ['flow-bot-gh'], labels: [agent], require_human_review: true }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -382,6 +383,12 @@ func TestPlanChanges(t *testing.T) {
 	}
 	if got := protection.Changes[0].Item.Field(engine.FieldRequireLinearHistory); got != "true" {
 		t.Errorf("the update asks for require_linear_history=%q, want true", got)
+	}
+	// The item is whole, because the forge is given all of it. What differs
+	// is kept beside it, because a person is told only that part: this trunk
+	// is already enabled and already refuses deletions.
+	if got := protection.Changes[0].Differs; !slices.Equal(got, []string{engine.FieldRequireLinearHistory, engine.FieldStrictChecks}) {
+		t.Errorf("the update differs in %v, want the two settings the trunk does not already have", got)
 	}
 }
 

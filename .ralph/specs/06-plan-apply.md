@@ -288,3 +288,33 @@ each successful mutation (atomic) and at the end. Summary.
   call, exactly as `forge.protection` and `forge.required_status` already do,
   and the squash text depends on the strategies so that the order a person
   reads the plan in is the order the call is made in.
+- **§2 a change is applied whole and described in part (issue #153).** An
+  adapter is given every field of a desired item, because writing one of these
+  settings writes them all and a field flow leaves out is a field the provider
+  clears. A person is given the fields the provider does not already agree
+  with. `core.Change.Differs` carries them and `core.Item.Differences` derives
+  them — the same reading `core.Item.Matches` uses to decide there is a change
+  at all, so the two can never come to disagree. Flow's own follow-up for
+  `forge.protection` named five settings, four of which the trunk already had,
+  and the one that mattered was buried among them.
+- **§4 the title of a pull request flow opens is composed, never written down
+  (issue #152).** Both pull requests flow opens for itself — the files a
+  workflow needs and the refreshed lock — are judged afterwards by flow's own
+  gate, against the team's own `commits` section. A constant title cannot
+  keep to a convention it has never read: `chore(flow): refresh .flow.lock`
+  has a scope this repository does not allow and a type this repository does
+  not let through unlinked, so flow opened a pull request every morning that
+  flow then refused. `engine.Proposal` therefore composes the header from
+  what the configuration permits — a type that may merge without a ticket, a
+  scope the team names, and the header a squash would land, number and all —
+  and lints it with the linter the gate will lint it with. There is one
+  mechanism for the question "is this title landable here?" and the gate owns
+  it.
+- **§4 flow opens nothing rather than something unlandable (issue #152).**
+  When no type flow can honestly claim may merge without a ticket, or the
+  team demands a scope it names none of, there is no landable title and flow
+  makes no proposal. A pull request the author's own gate refuses is worse
+  than no pull request: it is a red cross on the trunk's gate, on a change
+  nobody can act on. The refusal names the key in its *reason* and not only
+  in its remedy, because an apply reports an item's failure by the message
+  alone.

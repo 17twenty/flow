@@ -25,7 +25,7 @@ concurrency:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT, 'project' scope
+  FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT: 'project', plus 'repo' for the daily audit
   FLOW_LOG_FORMAT: json
 
 jobs:
@@ -66,6 +66,13 @@ jobs:
     name: daily health
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    env:
+      # The audit reads what protects the trunk, and GitHub does not let a
+      # workflow grant the Actions token the `administration` permission, so
+      # `secrets.GITHUB_TOKEN` answers 403 to every protection and ruleset
+      # read. A run that could not look is not a green run, so the daily job
+      # uses the same credential a person would (spec 07 §10).
+      GITHUB_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }

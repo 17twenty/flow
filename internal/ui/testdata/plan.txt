@@ -5,7 +5,7 @@ deploys  github-deployments
 
 ✓ native  forge.branch_protection (branch_protection)
     main is unprotected and the credential may protect it
-    update "main" required_checks="flow/policy" reviews="1"
+    update "main" reviews="1"
     hazard: rewriting protection clears any rule flow does not send
 
 ↻ compensated → a saved view  tracker.columns (status_options)
