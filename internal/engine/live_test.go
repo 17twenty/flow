@@ -201,6 +201,7 @@ func liveCheckIDs() []string {
 		engine.LiveTransitionCheck(config.EventIssueClosed),
 		engine.CheckLiveTransitionsFlow,
 		engine.CheckLiveFlagsCleanup,
+		engine.CheckLiveAgentsRework,
 	}
 }
 

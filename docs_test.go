@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,9 @@ import (
 // be one flow accepts, and every key, rule and check it names must exist.
 
 const deliveryBoardDoc = "docs/delivery-board.md"
+
+// gapIssue is the link a gap carries: the issue that will close it.
+var gapIssue = regexp.MustCompile(`/issues/[0-9]+`)
 
 // readDeliveryBoard is the document.
 func readDeliveryBoard(t *testing.T) string {
@@ -143,12 +147,27 @@ func TestTheDeliveryBoardDocumentPointsAtWhatEnforcesTheProposal(t *testing.T) {
 			t.Errorf("%s does not mention %s, which the proposal asks for", deliveryBoardDoc, rule)
 		}
 	}
-	// The five things flow does not do are issues, not paragraphs: a gap
-	// with no ticket behind it is a gap nobody will ever close.
-	for _, issue := range []string{"/issues/143", "/issues/144", "/issues/145", "/issues/146", "/issues/147"} {
-		if !strings.Contains(doc, issue) {
-			t.Errorf("%s records a gap with no issue behind it: %s is missing", deliveryBoardDoc, issue)
+	// What flow does not do is a list of issues, not of paragraphs: a gap
+	// with no ticket behind it is a gap nobody will ever close. The list is
+	// read rather than enumerated here, because it shortens as flow closes
+	// them and a copy of it in this file would be the thing that went stale.
+	_, gaps, ok := strings.Cut(doc, "## What the proposal asks for and flow does not do")
+	if !ok {
+		t.Fatalf("%s no longer says what flow does not do", deliveryBoardDoc)
+	}
+	bullets := 0
+	for _, line := range strings.Split(gaps, "\n") {
+		if !strings.HasPrefix(line, "- ") {
+			continue
 		}
+		bullets++
+		if !gapIssue.MatchString(line) {
+			t.Errorf("%s records a gap with no issue behind it: %q", deliveryBoardDoc, line)
+		}
+	}
+	if bullets == 0 {
+		t.Errorf("%s lists no gap at all, which is either a finished product or a reading that broke",
+			deliveryBoardDoc)
 	}
 }
 
