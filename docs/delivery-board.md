@@ -103,7 +103,7 @@ says the pull request closes, which is a structured link rather than a guess.
 |---|---|
 | No Blocked column | flow has no blocked column and the preset does not offer one |
 | Use the flag on the card | `workflow.blocked.label` — a label is what GitHub Projects and Linear have; Jira's flag is a label to flow |
-| Add a comment saying why, what unblocks it, and who monitors it | `workflow.blocked.require_comment` exists, is validated, and **nothing reads it**. [#145](https://github.com/17twenty/flow/issues/145) |
+| Add a comment saying why, what unblocks it, and who monitors it | `workflow.blocked.require_comment`, read by `live.tickets.blocked_explained`: an open blocked ticket needs a comment somebody other than flow wrote, and the remediation asks for the three things |
 | The card stays in its column | flow never moves blocked work; `ticket.not_blocked` warns on the pull request and `not_blocked` refuses the Definition of Ready |
 
 ## §8 Urgent work
@@ -239,8 +239,5 @@ the section it belongs to.
 - [#144](https://github.com/17twenty/flow/issues/144) — no transition fires
   when a branch is created, so Ready → In Progress waits for a draft pull
   request.
-- [#145](https://github.com/17twenty/flow/issues/145) —
-  `workflow.blocked.require_comment` is configured, validated and read by
-  nobody.
 - [#146](https://github.com/17twenty/flow/issues/146) — a flag's **age** is
   never judged, so "older than 90 days" has nothing behind it.

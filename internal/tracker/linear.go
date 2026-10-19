@@ -1138,8 +1138,9 @@ func (l *Linear) Comment(ctx context.Context, key string, m core.Marker, body st
 	return nil
 }
 
-// findComment returns flow's own comment carrying a marker, or nil.
-func (l *Linear) findComment(ctx context.Context, key string, m core.Marker) (*lnComment, error) {
+// walkComments hands every comment on an issue to fn, oldest first, stopping
+// when fn returns false.
+func (l *Linear) walkComments(ctx context.Context, key string, fn func(lnComment) bool) error {
 	after := ""
 	for {
 		variables := map[string]any{"key": key}
@@ -1149,22 +1150,58 @@ func (l *Linear) findComment(ctx context.Context, key string, m core.Marker) (*l
 		data, err := core.GraphQL[lnCommentsResult](ctx, l.client, l.request(),
 			core.GraphQLQuery{Query: lnCommentsQuery, Variables: variables}, lnSentinel)
 		if err != nil {
-			return nil, core.Explain(err, "read the comments of %s", key)
+			return core.Explain(err, "read the comments of %s", key)
 		}
 		if data.Issue == nil {
-			return nil, lnNoSuchTicket(key)
+			return lnNoSuchTicket(key)
 		}
 		for _, comment := range data.Issue.Comments.Nodes {
-			if core.HasMarker(comment.Body, m) {
-				return &comment, nil
+			if !fn(comment) {
+				return nil
 			}
 		}
 		page := data.Issue.Comments.PageInfo
 		if !page.HasNextPage || page.EndCursor == "" || len(data.Issue.Comments.Nodes) == 0 {
-			return nil, nil
+			return nil
 		}
 		after = page.EndCursor
 	}
+}
+
+// findComment returns flow's own comment carrying a marker, or nil.
+func (l *Linear) findComment(ctx context.Context, key string, m core.Marker) (*lnComment, error) {
+	var found *lnComment
+	err := l.walkComments(ctx, key, func(comment lnComment) bool {
+		if !core.HasMarker(comment.Body, m) {
+			return true
+		}
+		found = &comment
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// Comments returns every comment on a ticket, oldest first.
+func (l *Linear) Comments(ctx context.Context, key string) ([]core.TicketComment, error) {
+	issue, err := l.issue(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.TicketComment
+	if err := l.walkComments(ctx, issue.Identifier, func(comment lnComment) bool {
+		out = append(out, core.TicketComment{
+			Author:    comment.User.login(),
+			Body:      comment.Body,
+			CreatedAt: comment.CreatedAt.Time,
+		})
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Close closes a ticket, recording why (spec 07 §4).

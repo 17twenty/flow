@@ -980,8 +980,11 @@ func (j *JiraCloud) Comment(ctx context.Context, key string, m core.Marker, body
 	return nil
 }
 
-// findComment returns flow's own comment carrying a marker, or nil.
-func (j *JiraCloud) findComment(ctx context.Context, key string, m core.Marker) (*jiraComment, error) {
+// walkComments hands every comment on an issue to fn, stopping when fn returns
+// false. The order is the caller's: flow's own comment is the newest thing on
+// a ticket it has been nudging, and a person's explanation is read oldest
+// first because that is the order a person reads a ticket in.
+func (j *JiraCloud) walkComments(ctx context.Context, key, order string, fn func(jiraComment) bool) error {
 	path := "issue/" + url.PathEscape(key) + "/comment"
 	start := 0
 	for {
@@ -989,21 +992,63 @@ func (j *JiraCloud) findComment(ctx context.Context, key string, m core.Marker) 
 		query := url.Values{
 			"startAt":    []string{fmt.Sprint(start)},
 			"maxResults": []string{fmt.Sprint(jiraPageSize)},
-			"orderBy":    []string{"-created"},
+			"orderBy":    []string{order},
 		}
 		if _, err := j.do(ctx, core.Request{Path: path, Query: query, Out: &page}); err != nil {
-			return nil, core.Explain(err, "read the comments of %s", key)
+			return core.Explain(err, "read the comments of %s", key)
 		}
 		for _, comment := range page.Comments {
-			if core.HasMarker(comment.text(), m) {
-				return &comment, nil
+			if !fn(comment) {
+				return nil
 			}
 		}
 		start += len(page.Comments)
 		if len(page.Comments) == 0 || start >= page.Total {
-			return nil, nil
+			return nil
 		}
 	}
+}
+
+// findComment returns flow's own comment carrying a marker, or nil.
+func (j *JiraCloud) findComment(ctx context.Context, key string, m core.Marker) (*jiraComment, error) {
+	var found *jiraComment
+	err := j.walkComments(ctx, key, "-created", func(comment jiraComment) bool {
+		if !core.HasMarker(comment.text(), m) {
+			return true
+		}
+		found = &comment
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// Comments returns every comment on a ticket, oldest first.
+//
+// The issue is read first so that a key nobody has is [core.ErrNotFound]
+// rather than an empty list: Jira answers the comment endpoint of an issue
+// that is not there with a 404 whose message names the endpoint, and a board
+// check that cannot tell "nothing was said" from "no such ticket" would read
+// a mistyped key as a clean bill of health.
+func (j *JiraCloud) Comments(ctx context.Context, key string) ([]core.TicketComment, error) {
+	ticket, err := j.Ticket(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.TicketComment
+	if err := j.walkComments(ctx, ticket.Key, "created", func(comment jiraComment) bool {
+		out = append(out, core.TicketComment{
+			Author:    comment.Author.login(),
+			Body:      comment.text(),
+			CreatedAt: comment.Created.Time,
+		})
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Close closes a ticket, recording why (spec 07 §4).

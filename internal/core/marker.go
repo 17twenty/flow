@@ -229,6 +229,18 @@ func HasMarker(body string, want Marker) bool {
 	return false
 }
 
+// Marked reports whether a body carries any of flow's markers, which is how
+// flow recognises its own writing where it has no particular marker in mind:
+// a comment flow wrote is not somebody explaining themselves.
+func Marked(body string) bool {
+	for line := range strings.Lines(body) {
+		if _, ok := ParseMarker(line); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // MarkBody returns body with the marker on its own last line, replacing any
 // marker already there. html chooses the rendering: an HTML comment where the
 // provider preserves one, a visible line where it does not (spec 11 §1).

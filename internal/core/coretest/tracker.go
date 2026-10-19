@@ -29,6 +29,10 @@ type TrackerFixture struct {
 	// Columns map a column id to the name the tracker displays, so that a
 	// move sets a status a human would recognise.
 	Columns map[core.ColumnID]string
+	// Comments are the comments already on a ticket, keyed by its key.
+	// They are somebody else's writing as often as flow's, which is what
+	// the blocked-work audit reads (spec 07 §6).
+	Comments map[string][]core.Comment
 	// Clock decides what "now" is for anything the tracker writes.
 	Clock core.Clock
 
@@ -147,6 +151,9 @@ func NewFakeTracker(fx TrackerFixture) *FakeTracker {
 		columns:      maps.Clone(fx.Columns),
 		comments:     map[string][]core.Comment{},
 		reopens:      map[string]string{},
+	}
+	for key, comments := range fx.Comments {
+		t.comments[key] = slices.Clone(comments)
 	}
 	for what, candidates := range fx.Candidates {
 		t.candidates[what] = slices.Clone(candidates)
@@ -506,6 +513,28 @@ func (t *FakeTracker) Comment(ctx context.Context, key string, m core.Marker, bo
 	return nil
 }
 
+// Comments returns every comment on a ticket, oldest first.
+func (t *FakeTracker) Comments(ctx context.Context, key string) ([]core.TicketComment, error) {
+	if err := t.enter(ctx, "Comments"); err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	at := t.indexOf(key)
+	if at < 0 {
+		return nil, notFound("ticket", key)
+	}
+	var out []core.TicketComment
+	for _, comment := range t.comments[t.tickets[at].Key] {
+		out = append(out, core.TicketComment{
+			Author:    comment.Author,
+			Body:      comment.Body,
+			CreatedAt: comment.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 // Close closes a ticket, recording why.
 func (t *FakeTracker) Close(ctx context.Context, key string, reason string) error {
 	if err := t.enter(ctx, "Close"); err != nil {
@@ -555,8 +584,9 @@ func (t *FakeTracker) LinkedKeys(pr core.PullRequest) []string {
 	return slices.Clone(pr.ClosingIssues)
 }
 
-// Comments returns the comments on a ticket, for a test to inspect.
-func (t *FakeTracker) Comments(key string) []core.Comment {
+// Written returns the comments on a ticket, marker and all, for a test to
+// inspect. [FakeTracker.Comments] is the adapter's reading of the same store.
+func (t *FakeTracker) Written(key string) []core.Comment {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Clone(t.comments[key])

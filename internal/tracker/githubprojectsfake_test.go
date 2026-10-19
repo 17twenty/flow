@@ -107,8 +107,10 @@ type ghProjectsFake struct {
 
 // ghFakeComment is one comment on an issue.
 type ghFakeComment struct {
-	id   string
-	body string
+	id        string
+	body      string
+	author    string
+	createdAt time.Time
 }
 
 // ghFakeItem is one item of the board: an issue, where it currently sits, and
@@ -1250,7 +1252,15 @@ func (f *ghProjectsFake) commentPage(variables map[string]any) any {
 	}
 	nodes := make([]any, 0, len(rest))
 	for _, comment := range rest {
-		nodes = append(nodes, map[string]any{"id": comment.id, "body": comment.body})
+		node := map[string]any{
+			"id": comment.id, "body": comment.body,
+			"createdAt": comment.createdAt.Format(time.RFC3339),
+			"author":    nil,
+		}
+		if comment.author != "" {
+			node["author"] = map[string]any{"login": comment.author}
+		}
+		nodes = append(nodes, node)
 	}
 	return map[string]any{"issue": map[string]any{
 		"id": f.items[at].ticket.ID,
@@ -1276,10 +1286,13 @@ func (f *ghProjectsFake) addComment(w http.ResponseWriter, query core.GraphQLQue
 		return
 	}
 	f.commentsMade++
+	f.now = f.now.Add(time.Minute)
 	number := f.items[at].number
 	f.comments[number] = append(f.comments[number], &ghFakeComment{
-		id:   "IC_" + strconv.Itoa(f.commentsMade),
-		body: body,
+		id:        "IC_" + strconv.Itoa(f.commentsMade),
+		body:      body,
+		author:    "flow-bot",
+		createdAt: f.now,
 	})
 	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"addComment": map[string]any{}}})
 }

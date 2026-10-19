@@ -34,7 +34,8 @@ func liveConfig() *config.Config {
 	cfg.Commits = config.Commits{Convention: "conventional", UnlinkedTypes: []string{"chore"}}
 	cfg.Agents = config.Agents{Authors: []string{"flow-bot"}, RequireHumanReview: true}
 	cfg.Workflow = config.Workflow{
-		DoneOn: config.DoneOnMerged,
+		DoneOn:  config.DoneOnMerged,
+		Blocked: config.Blocked{Label: "blocked", RequireComment: true},
 		Columns: []config.Column{
 			{ID: "backlog", Name: "Backlog", Category: config.CategoryTodo},
 			{ID: "ready", Name: "Ready", Category: config.CategoryTodo, Gate: config.GateDefinitionOfReady},
@@ -197,6 +198,7 @@ func liveCheckIDs() []string {
 		engine.CheckLiveTicketsReviewHasPR,
 		engine.CheckLiveTicketsProgressStale,
 		engine.CheckLiveTicketsReadyDoR,
+		engine.CheckLiveTicketsBlockedExplained,
 		engine.LiveTransitionCheck(config.EventPRMerged),
 		engine.LiveTransitionCheck(config.EventIssueClosed),
 		engine.CheckLiveTransitionsFlow,
