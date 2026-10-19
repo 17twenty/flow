@@ -77,6 +77,7 @@ agents:
   authors: ['17twenty-flow-agent[bot]']
   labels: [agent]
   require_human_review: true
+  unreviewed_types: [chore]
 followups:
   labels: [flow-followup]
   owners:
@@ -157,6 +158,7 @@ func TestParseFull(t *testing.T) {
 			Authors:            []string{"17twenty-flow-agent[bot]"},
 			Labels:             []string{"agent"},
 			RequireHumanReview: true,
+			UnreviewedTypes:    []string{"chore"},
 		},
 		FollowUps: FollowUps{
 			Labels: []string{"flow-followup"},

@@ -564,6 +564,83 @@ func TestOneUnreviewedAgentMergeFailsHoweverFewThereAre(t *testing.T) {
 	evidenceMentions(t, result, "#1")
 }
 
+// TestTheAuditLetsThroughWhatTheGateLetsThrough: a gate that passes work the
+// audit reports red a fortnight later is two readings of one rule, which is
+// the disagreement issue #106 was. The exemption is read once, by both.
+func TestTheAuditLetsThroughWhatTheGateLetsThrough(t *testing.T) {
+	cfg := liveConfig()
+	cfg.Agents.UnreviewedTypes = []string{"chore"}
+
+	routine := landedPR(3, "chore(deps): bump the toolchain", daysAgo(3))
+	routine.Author = "flow-bot"
+	routine.Files = core.FileSummary{Changed: 1, Paths: []string{"go.mod"}}
+	feature := landedPR(4, "feat(api): a machine wrote this", daysAgo(2))
+	feature.Author = "flow-bot"
+	feature.Files = core.FileSummary{Changed: 1, Paths: []string{"api/thing.go"}}
+
+	env, _ := liveEnv(t, cfg, coretest.ForgeFixture{
+		PullRequests: []core.PullRequest{routine, feature},
+	})
+
+	result := liveResult(t, env, engine.CheckLivePRsReviewed)
+	wantState(t, result, engine.StateFail)
+	wantCounts(t, result, 0, 1)
+	evidenceMentions(t, result, "#4")
+	for _, evidence := range result.Evidence {
+		if strings.Contains(evidence.Text, "#3") {
+			t.Fatalf("the audit reported work the gate excused: %s", evidence.Text)
+		}
+	}
+}
+
+// TestAFortnightOfRoutineWorkSaysSoRatherThanNothing: an exempt pull request
+// is not a pull request nobody wrote. Reporting "nothing a machine wrote
+// merged" over a fortnight of agent chores would be a quiet lie about a
+// window flow read perfectly well.
+func TestAFortnightOfRoutineWorkSaysSoRatherThanNothing(t *testing.T) {
+	cfg := liveConfig()
+	cfg.Agents.UnreviewedTypes = []string{"chore"}
+
+	routine := landedPR(3, "chore(deps): bump the toolchain", daysAgo(3))
+	routine.Author = "flow-bot"
+	routine.Files = core.FileSummary{Changed: 1, Paths: []string{"go.mod"}}
+
+	env, _ := liveEnv(t, cfg, coretest.ForgeFixture{PullRequests: []core.PullRequest{routine}})
+
+	result := liveResult(t, env, engine.CheckLivePRsReviewed)
+	wantState(t, result, engine.StatePass)
+	if !strings.Contains(result.Message, "unattended") {
+		t.Fatalf("the report does not say what it let through: %q", result.Message)
+	}
+}
+
+// TestWorkAPersonApprovedIsCountedBesideWorkThatNeededNobody: the share the
+// check grades is of the work the team asked to be reviewed, and the rest is
+// still worth saying out loud.
+func TestWorkAPersonApprovedIsCountedBesideWorkThatNeededNobody(t *testing.T) {
+	cfg := liveConfig()
+	cfg.Agents.UnreviewedTypes = []string{"chore"}
+
+	routine := landedPR(3, "chore(deps): bump the toolchain", daysAgo(3))
+	routine.Author = "flow-bot"
+	routine.Files = core.FileSummary{Changed: 1, Paths: []string{"go.mod"}}
+	feature := landedPR(4, "feat(api): a machine wrote this", daysAgo(2))
+	feature.Author = "flow-bot"
+	feature.Files = core.FileSummary{Changed: 1, Paths: []string{"api/thing.go"}}
+	feature.Reviews = []core.Review{{Author: "dev", State: core.ReviewApproved}}
+
+	env, _ := liveEnv(t, cfg, coretest.ForgeFixture{
+		PullRequests: []core.PullRequest{routine, feature},
+	})
+
+	result := liveResult(t, env, engine.CheckLivePRsReviewed)
+	wantState(t, result, engine.StatePass)
+	wantCounts(t, result, 1, 1)
+	if !strings.Contains(result.Message, "1 more needed none") {
+		t.Fatalf("the report does not say what it let through: %q", result.Message)
+	}
+}
+
 // TestATeamThatDidNotAskForAHumanReviewIsNotAudited: there is no claim to hold
 // them to, which is the same answer the gate's agent.human_review rule gives.
 func TestATeamThatDidNotAskForAHumanReviewIsNotAudited(t *testing.T) {

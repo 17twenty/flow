@@ -425,6 +425,144 @@ func TestPolicyAgentHumanReview(t *testing.T) {
 	}
 }
 
+// TestPolicyAgentHumanReviewExemptsTheClassTheTeamWroteDown: a team may say
+// that a class of change needs no person. The permission is a type in
+// `.flow.yaml`, which only a person can change, and never a marker on the
+// pull request, which an agent with push can give its own work (spec 09 §2).
+func TestPolicyAgentHumanReviewExemptsTheClassTheTeamWroteDown(t *testing.T) {
+	const workflow = ".github/workflows/flow.yml"
+	touching := func(paths ...string) core.FileSummary {
+		return core.FileSummary{Changed: len(paths), Paths: paths}
+	}
+	tests := []struct {
+		name   string
+		title  string
+		squash string
+		files  core.FileSummary
+		ok     bool
+		says   string
+	}{
+		{
+			name:  "a chore lands unattended",
+			title: "chore(deps): bump the toolchain",
+			files: touching("go.mod"),
+			ok:    true,
+			says:  `a "chore" pull request may merge without a person approving it`,
+		},
+		{
+			name:  "a feature still wants a person",
+			title: "feat(engine): hold a pull request to the workflow",
+			files: touching("internal/engine/policy.go"),
+		},
+		{
+			name:  "a header that does not parse names no type at all",
+			title: "bump the toolchain",
+			files: touching("go.mod"),
+		},
+		{
+			name:  "a breaking chore is not routine",
+			title: "chore(deps)!: drop the old toolchain",
+			files: touching("go.mod"),
+			says:  "a breaking change is never routine",
+		},
+		{
+			name:  "the configuration cannot excuse itself",
+			title: "chore(config): let chores through",
+			files: touching(".flow.yaml"),
+			says:  "it changes .flow.yaml, which is where that permission is written",
+		},
+		{
+			name:  "nor can the workflow that runs the gate",
+			title: "chore(ci): tidy the workflow",
+			files: touching(workflow),
+			says:  "it changes " + workflow,
+		},
+		{
+			name:  "a change flow cannot see the whole of",
+			title: "chore(deps): bump everything",
+			files: core.FileSummary{Changed: 40, Paths: []string{"go.mod"}},
+			says:  "flow cannot see every file it changes",
+		},
+		{
+			name:  "a change the forge named no file of",
+			title: "chore(deps): bump the toolchain",
+			files: core.FileSummary{Changed: 1},
+			says:  "flow cannot see every file it changes",
+		},
+		{
+			name:  "a change the forge said nothing at all about",
+			title: "chore(deps): bump the toolchain",
+			says:  "flow cannot see every file it changes",
+		},
+		{
+			name:  "a template is not what decides anything",
+			title: "chore(ci): reword the pull request template",
+			files: touching(".github/pull_request_template.md"),
+			ok:    true,
+			says:  `a "chore" pull request may merge`,
+		},
+		{
+			name:   "the type is the one that lands, not the one typed",
+			title:  "chore(ui): tidy the wizard",
+			squash: "feat(ui): tidy the wizard (#7)",
+			files:  touching("internal/ui/wizard.go"),
+		},
+		{
+			name:   "and the other way round",
+			title:  "feat(ui): tidy the wizard",
+			squash: "chore(ui): tidy the wizard (#7)",
+			files:  touching("internal/ui/wizard.go"),
+			ok:     true,
+			says:   `a "chore" pull request may merge`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := snapshot(t)
+			s.Config.Agents.Authors = []string{"flow-bot"}
+			s.Config.Agents.RequireHumanReview = true
+			s.Config.Agents.UnreviewedTypes = []string{"chore"}
+			s.PR.Author = "flow-bot"
+			s.PR.Title = test.title
+			s.PR.SquashHeader = test.squash
+			s.PR.Files = test.files
+
+			got := finding(t, engine.CheckPolicy(s), engine.RuleAgentHumanReview)
+			if got.OK != test.ok || got.Skipped != test.ok {
+				t.Fatalf("ok=%v skipped=%v, want both %v (%s)", got.OK, got.Skipped, test.ok, got.Message)
+			}
+			if test.says != "" && !strings.Contains(said(got), test.says) {
+				t.Fatalf("the gate does not say why: %s", said(got))
+			}
+		})
+	}
+}
+
+// TestAnExemptionNobodyAskedForChangesNothing: the key is absent from every
+// shipped preset, so the rule a machine cannot relax stays absolute until a
+// person writes a type into it.
+func TestAnExemptionNobodyAskedForChangesNothing(t *testing.T) {
+	s := snapshot(t)
+	s.Config.Agents.Authors = []string{"flow-bot"}
+	s.Config.Agents.RequireHumanReview = true
+	s.PR.Author = "flow-bot"
+	s.PR.Title = "chore(deps): bump the toolchain"
+	s.PR.Files = core.FileSummary{Changed: 1, Paths: []string{"go.mod"}}
+
+	if got := finding(t, engine.CheckPolicy(s), engine.RuleAgentHumanReview); got.OK {
+		t.Fatalf("a chore merged unattended with no type written down: %s", got.Message)
+	}
+}
+
+// said is everything a finding tells a reader: its message and its evidence.
+func said(f engine.Finding) string {
+	parts := []string{f.Message}
+	for _, evidence := range f.Evidence {
+		parts = append(parts, evidence.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
 // inFlight is one thing in a column, with an arrival time the tests can order.
 func inFlight(key string, minute int, assignees ...string) engine.WIPItem {
 	return engine.WIPItem{

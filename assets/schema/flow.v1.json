@@ -34,6 +34,17 @@
         "require_human_review": {
           "description": "Demand a human approval on agent pull requests.",
           "type": "boolean"
+        },
+        "unreviewed_types": {
+          "description": "Commit types an agent may land without a human approval.",
+          "type": "array",
+          "items": {
+            "description": "A commit type.",
+            "type": "string",
+            "examples": [
+              "chore"
+            ]
+          }
         }
       },
       "additionalProperties": false

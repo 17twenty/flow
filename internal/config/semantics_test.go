@@ -420,6 +420,11 @@ func TestValidate(t *testing.T) {
 			wantIn: `agents.authors[1] repeats "bot"`,
 		},
 		{
+			name:   "excusing a type nobody may write",
+			change: func(c *Config) { c.Agents.UnreviewedTypes = []string{"wibble"} },
+			wantIn: `agents.unreviewed_types[0] is "wibble", which is not in commits.types`,
+		},
+		{
 			name: "insisting on human review of nobody's work",
 			change: func(c *Config) {
 				c.Agents = Agents{RequireHumanReview: true}
@@ -468,6 +473,29 @@ func TestValidate(t *testing.T) {
 			}
 			if len(parse.Problems) == 0 {
 				t.Error("the error carries no structured problems")
+			}
+		})
+	}
+}
+
+// TestAnExcusedTypeIsJudgedAgainstWhatTheTeamNarrowedTo: an empty
+// commits.types is the convention's own set of types, not an empty one, so a
+// team that never narrowed the list may still excuse a routine type.
+func TestAnExcusedTypeIsJudgedAgainstWhatTheTeamNarrowedTo(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		types []string
+	}{
+		{name: "a list the team narrowed", types: []string{"feat", "fix", "chore", "ci", "build", "docs"}},
+		{name: "no list at all", types: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := presetConfig(t, PresetLeanKanban)
+			cfg.Commits.Types = test.types
+			cfg.Agents.UnreviewedTypes = []string{"chore"}
+
+			if err := Validate(cfg, DefaultPath, testRegistry(t)); err != nil {
+				t.Fatalf("Validate refused a type the convention allows:\n%v", err)
 			}
 		})
 	}

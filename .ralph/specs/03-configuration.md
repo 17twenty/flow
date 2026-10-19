@@ -87,6 +87,7 @@ agents:
   authors: ['17twenty-flow-agent[bot]']   # logins treated as agents
   labels: [agent]
   require_human_review: true
+  unreviewed_types: []                    # types a machine may land unapproved
 
 followups:
   labels: [flow-followup]
@@ -487,3 +488,11 @@ gate, relaxed policy).
   state canonicalises its items, so the same set written two ways is the same
   plan and the same hash, and a team that alphabetises its list does not
   thereby propose a change.
+
+- **`agents.unreviewed_types` is validated against `commits.types`.** A type
+  that cannot be written cannot be excused, which is the same rule
+  `commits.unlinked_types` is held to and the same message. An empty
+  `commits.types` is the convention's own set rather than an empty one, so a
+  team that never narrowed the list may still excuse a routine type. The key
+  is absent from every shipped preset: the exemption exists only where a
+  person wrote it down.

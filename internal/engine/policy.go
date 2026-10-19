@@ -513,6 +513,12 @@ func agentHumanReview(s PolicySnapshot) Finding {
 		finding.Message = "a person opened this"
 		return finding
 	}
+	review := unattended(s.Config, s.PR)
+	if review.Exempt {
+		finding.Skipped = true
+		finding.Message = fmt.Sprintf("a %q pull request may merge without a person approving it", review.Type)
+		return finding
+	}
 	if login, approved := humanApprover(s.Config, s.PR); approved {
 		finding.Evidence = append(finding.Evidence, Evidence{
 			Text: fmt.Sprintf("%s approved it", login),
@@ -522,6 +528,11 @@ func agentHumanReview(s PolicySnapshot) Finding {
 	finding.OK = false
 	finding.Message = "an agent opened this and no person has approved it"
 	finding.Fix = "ask somebody to review it and approve"
+	if review.Listed {
+		finding.Evidence = append(finding.Evidence, Evidence{
+			Text: fmt.Sprintf("a %q pull request usually merges unattended, but %s", review.Type, review.Because),
+		})
+	}
 	for _, login := range s.PR.Approvals() {
 		finding.Evidence = append(finding.Evidence, Evidence{
 			Text: fmt.Sprintf("%s approved it, and is an agent too", login),
@@ -691,6 +702,88 @@ func unlinkedType(cfg *config.Config, title string) (string, bool) {
 		return kind, false
 	}
 	return kind, slices.Contains(cfg.Commits.UnlinkedTypes, kind)
+}
+
+// GateFiles are the files that say what the gate will ask. The configuration
+// is where a team writes down which changes a machine may land unattended,
+// and the workflow is what runs the gate that asks. A pull request that
+// changes one of them is changing the question, so it is never routine
+// whatever its type (spec 09 §2).
+func GateFiles() []string {
+	files := []string{config.DefaultPath}
+	for _, file := range proposedFiles {
+		if file.Workflow {
+			files = append(files, file.Path)
+		}
+	}
+	return files
+}
+
+// unattendedReview is what the team has said about a machine landing this
+// particular change with nobody approving it.
+type unattendedReview struct {
+	// Type is the type of the header a merge would land, empty when the
+	// header does not parse.
+	Type string
+	// Listed reports that agents.unreviewed_types names that type.
+	Listed bool
+	// Exempt reports that this pull request wants no human approval.
+	Exempt bool
+	// Because is why a listed type is not exempt after all, and is empty
+	// when it is.
+	Because string
+}
+
+// unattended asks whether the team has said a machine may land this class of
+// change without a person approving it (spec 09 §2).
+//
+// The permission is a class of change written in `.flow.yaml`, never a marker
+// on the pull request: an agent with push can label its own work, so a
+// per-pull-request signal is one an agent can give itself. A change to the
+// file that grants the permission can therefore never use it, and neither can
+// a change flow cannot see the whole of — a pull request that quietly edits
+// the configuration would otherwise excuse itself by name.
+//
+// The type is read from the header a merge would land rather than the title,
+// because that is the commit the team will live with (spec 09 §2, issue #106).
+func unattended(cfg *config.Config, pr core.PullRequest) unattendedReview {
+	if cfg == nil {
+		return unattendedReview{}
+	}
+	message := commits.Parse(pr.MergeHeader())
+	review := unattendedReview{Type: message.Type}
+	if message.Type == "" || !slices.Contains(cfg.Agents.UnreviewedTypes, message.Type) {
+		return review
+	}
+	review.Listed = true
+	switch decides, seen := gateFileIn(pr); {
+	case message.Breaking:
+		review.Because = "a breaking change is never routine, whatever its type"
+	case !seen:
+		review.Because = fmt.Sprintf("flow cannot see every file it changes, and one of them might be %s", config.DefaultPath)
+	case decides != "":
+		review.Because = fmt.Sprintf("it changes %s, which is where that permission is written", decides)
+	default:
+		review.Exempt = true
+	}
+	return review
+}
+
+// gateFileIn reports the first file of [GateFiles] a pull request changes,
+// and whether flow can see what it changes at all. A forge that names no file
+// or caps the list has not told flow enough to excuse anything: the counts
+// come from the pull request itself, so a list shorter than the count is a
+// list with something missing from it.
+func gateFileIn(pr core.PullRequest) (string, bool) {
+	if len(pr.Files.Paths) == 0 || pr.Files.Changed > len(pr.Files.Paths) {
+		return "", false
+	}
+	for _, path := range GateFiles() {
+		if slices.Contains(pr.Files.Paths, path) {
+			return path, true
+		}
+	}
+	return "", true
 }
 
 // linkFix is how this tracker wants a pull request linked. GitHub has a

@@ -377,6 +377,11 @@ type Agents struct {
 	Labels []string `yaml:"labels,omitempty"`
 	// RequireHumanReview demands a human approval on agent pull requests.
 	RequireHumanReview bool `yaml:"require_human_review,omitempty"`
+	// UnreviewedTypes are the commit types a machine may land without one.
+	// The exemption is a class of change the team wrote down here, not a
+	// marker on a pull request: an agent can label its own work, and it
+	// cannot approve a change to this file.
+	UnreviewedTypes []string `yaml:"unreviewed_types,omitempty"`
 }
 
 // FollowUps is how flow files the work it cannot do itself, so that a refusal
