@@ -23,7 +23,7 @@ Evaluation is pure and deterministic.
 | `ticket.ready` | error | every linked ticket passes DoR now, OR is already in in_progress/in_review (DoR was the entry gate; don't re-litigate edits) |
 | `pr.title.conventional` | error | title passes `cc.header.format`, `cc.type.allowed`, `cc.scope.*`, `cc.header.length` |
 | `pr.breaking.explained` | error | title has `!` ⇒ body has a "Breaking change" section |
-| `agent.human_review` | error | agent-authored PR (author in `agents.authors` or label in `agents.labels`) has ≥1 approval from a non-agent |
+| `agent.human_review` | error | agent-authored PR (author in `agents.authors` or label in `agents.labels`) has ≥1 approval from a non-agent, unless its landed type ∈ `agents.unreviewed_types` |
 | `wip.review` | warn | in_review count ≤ limit, or this PR is approved, or it entered review before the limit was exceeded |
 | `wip.in_progress` | warn | author's in_progress count ≤ per_person |
 | `ticket.not_blocked` | warn | no linked ticket blocked |
@@ -173,3 +173,34 @@ golden; determinism; fork/read-only path; draft path.
   characters the forge added, because a person counting their own title to 66
   cannot otherwise make sense of "73 characters"; when the two are the same
   string, nothing is said.
+
+- **A team may excuse a class of change from `agent.human_review`, and never a
+  pull request.** `agents.unreviewed_types` lists the commit types a machine
+  may land with nobody approving them; an agent pull request whose landed
+  header has one of those types passes the rule as skipped, saying which type
+  excused it. Everything else about the rule is unchanged, including its place
+  in `policyAlwaysError`: relaxed strictness still cannot turn it into a
+  warning. The alternative designs all fail on the same point — the signal has
+  to be one an agent cannot give itself. `agents.require_human_review: false`
+  and a `policy.rules` override are repo-wide and permanent; a label or any
+  other per-pull-request marker is applied with the same push access the agent
+  already has, and dropping the `agent` label is worse still, because the pull
+  request stops being agent work and the rule passes vacuously. A type written
+  in `.flow.yaml` is authority a person granted, because every change to that
+  file is itself reviewed.
+
+- **The permission cannot be self-granted, so three kinds of change can never
+  use it.** A pull request that changes `.flow.yaml`, or the workflow that
+  runs the gate (`engine.GateFiles`), is changing what the gate will ask and
+  is never exempt however routine its type. A breaking change is never
+  routine, whatever its type. And a pull request flow cannot see the whole of
+  — no file named, or a file list shorter than the forge's own count — is
+  never exempt either, because the file that grants the permission might be
+  the one that was not listed. When a listed type is refused for one of these
+  reasons the finding says so in its evidence: a person who wrote `chore` into
+  the configuration and then watched a chore fail would otherwise have nothing
+  to read.
+
+- **The type is read from the header a merge would land.** `MergeHeader()`
+  again, for the reason above it: the gate and the audit must agree about the
+  same commit, and the audit only ever sees what landed.

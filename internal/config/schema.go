@@ -159,6 +159,7 @@ func ConfigSchema() *Schema {
 				"authors":              array("Logins treated as agents.", str("A login.", "17twenty-flow-agent[bot]")),
 				"labels":               array("Labels that mark a pull request as agent work.", str("A label.", "agent")),
 				"require_human_review": boolean("Demand a human approval on agent pull requests."),
+				"unreviewed_types":     array("Commit types an agent may land without a human approval.", str("A commit type.", "chore")),
 			}),
 
 			"followups": object("How flow files the work it cannot do itself (spec 07 §4).", props{

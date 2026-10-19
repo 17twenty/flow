@@ -411,3 +411,38 @@ curl -s -H "Authorization: Bearer $GITEA_TOKEN" \
 reads there, and `effective_branch_protection_name` names the rule that
 governs the branch — which is not the branch's own name when a glob rule
 covers it.
+
+## 8. Letting routine agent work land unattended
+
+`agent.human_review` is absolute: `policy.strictness: relaxed` cannot soften
+it, and that is deliberate (spec 09 §2). But a repository with an agent in it
+accumulates routine work — the lock refresh flow opens for itself every
+morning, a dependency bump — and the ways of excusing it that look obvious are
+all wrong:
+
+| Lever | Problem |
+|---|---|
+| `agents.require_human_review: false` | turns it off for everything, for ever |
+| `policy.rules: {agent.human_review: warn}` | the same, and `.flow.yaml` is the thing under review |
+| drop the `agent` label | the pull request stops being agent work, so the rule passes **vacuously** — green while proving nothing |
+| `workflow.expedite.labels` | only skips `wip.review` and `wip.in_progress`; expedite is about queue limits |
+
+The one signal an agent cannot give itself is a class of change written in
+`.flow.yaml`, because a person reviews every change to that file:
+
+```yaml
+agents:
+  authors: [flow-bot-gh]
+  require_human_review: true
+  unreviewed_types: [chore]     # a machine may land a chore unapproved
+```
+
+Choose the types the team would merge without reading the diff, and no others.
+Three things are never excused, whatever the type: a pull request that changes
+`.flow.yaml` or `.github/workflows/flow.yml` (it would be granting itself the
+permission), a breaking change, and a pull request whose file list the forge
+did not give flow in full. `flow doctor`'s `live.prs.reviewed` excuses the
+same work, so the gate and the fortnightly audit cannot disagree about it.
+
+To take it back, delete the key — through a pull request a person approves,
+which is the only way the key ever changes.

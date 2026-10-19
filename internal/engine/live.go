@@ -352,8 +352,13 @@ func (a *audit) prsReviewed() Check {
 				return Failed(err)
 			}
 			var t tally
+			var excused int
 			for _, pr := range prs {
 				if !agentAuthored(env.Config, pr) {
+					continue
+				}
+				if unattended(env.Config, pr).Exempt {
+					excused++
 					continue
 				}
 				if _, approved := humanApprover(env.Config, pr); approved {
@@ -364,8 +369,14 @@ func (a *audit) prsReviewed() Check {
 			}
 			result := t.grade(env, true)
 			switch {
+			case t.counts.Total == 0 && excused > 0:
+				return result.Said("the %d agent %s that merged were all of a type this team lets through unattended",
+					excused, plural(excused, "pull request"))
 			case t.counts.Total == 0:
 				return result.Said("nothing a machine wrote merged in the window")
+			case result.State == StatePass && excused > 0:
+				return result.Said("a person approved all %d agent %s, and %d more needed none",
+					t.counts.Total, plural(t.counts.Total, "pull request"), excused)
 			case result.State == StatePass:
 				return result.Said("a person approved all %d agent %s",
 					t.counts.Total, plural(t.counts.Total, "pull request"))

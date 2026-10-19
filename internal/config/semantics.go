@@ -568,6 +568,17 @@ func (v *validator) agents() {
 	if agents.RequireHumanReview && len(agents.Authors) == 0 && len(agents.Labels) == 0 {
 		v.add("agents.require_human_review is set but no agents.authors or agents.labels are; nothing would ever count as agent work")
 	}
+
+	types := map[string]bool{}
+	for _, kind := range v.cfg.Commits.Types {
+		types[kind] = true
+	}
+	for i, kind := range agents.UnreviewedTypes {
+		at := fmt.Sprintf("agents.unreviewed_types[%d]", i)
+		if len(v.cfg.Commits.Types) > 0 && !types[kind] {
+			v.add("%s is %q, which is not in commits.types; a type that cannot be used cannot be exempted", at, kind)
+		}
+	}
 }
 
 // followUps checks how flow files the work it cannot do itself.

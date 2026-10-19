@@ -891,3 +891,13 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   grading: §2 already settled that failing to propose the lock is not a
   finding about the workflow, and a configuration flow cannot write
   bookkeeping under is the team's to change, not a fault in their delivery.
+
+- **`live.prs.reviewed` excuses exactly what the gate excuses.** A pull
+  request of a type in `agents.unreviewed_types` (spec 09 §2) is not counted
+  and is not a finding: a gate that lets work land and an audit that reports
+  it red a fortnight later are two readings of one rule, which is the
+  disagreement issue #106 was about. One function answers for both. An excused
+  pull request is still reported as a number, though — a fortnight of routine
+  agent work says that it was let through unattended rather than that nothing
+  a machine wrote merged, which would be untrue of a window flow read
+  perfectly well.
