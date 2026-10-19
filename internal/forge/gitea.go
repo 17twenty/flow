@@ -272,7 +272,7 @@ func (g *Gitea) PullRequests(ctx context.Context, q core.PRQuery) ([]core.PullRe
 		if q.State != "" && pr.State != q.State {
 			return true
 		}
-		prs = append(prs, pr)
+		prs = append(prs, listed(pr))
 		return q.Limit <= 0 || len(prs) < q.Limit
 	})
 	if err != nil {

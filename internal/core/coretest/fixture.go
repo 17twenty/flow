@@ -62,21 +62,28 @@ func ContractForge() ForgeFixture {
 				BaseRef:       "main",
 				Labels:        []string{"user-facing"},
 				ClosingIssues: []string{"#10"},
+				Mergeability:  core.MergeabilityClean,
 				Files:         core.FileSummary{Changed: 2, Additions: 40, Deletions: 3, Paths: []string{"ui/filter.go", "ui/filter_test.go"}},
 				CreatedAt:     ContractNow.Add(-2 * time.Hour),
 				UpdatedAt:     ContractNow.Add(-1 * time.Hour),
 				URL:           "https://forge.test/acme/widget/pull/1",
 			},
 			{
-				Number:        2,
-				Title:         "fix(core): stop losing the last event",
-				Body:          "Closes #11",
-				Author:        "flow-agent",
-				State:         core.PRStateMerged,
-				HeadSHA:       SHAMerged,
-				HeadRef:       "fix/last-event",
-				BaseRef:       "main",
-				MergeSHA:      SHAMerged,
+				Number:   2,
+				Title:    "fix(core): stop losing the last event",
+				Body:     "Closes #11",
+				Author:   "flow-agent",
+				State:    core.PRStateMerged,
+				HeadSHA:  SHAMerged,
+				HeadRef:  "fix/last-event",
+				BaseRef:  "main",
+				MergeSHA: SHAMerged,
+				// A forge goes on answering about a pull request it
+				// has finished with, against a base that has moved on
+				// since, which for anything merged is a refusal. An
+				// adapter that handed that on would report finished
+				// work as stuck.
+				Mergeability:  core.MergeabilityConflicted,
 				Labels:        []string{"agent"},
 				ClosingIssues: []string{"#11", "acme/other#7"},
 				Reviews: []core.Review{

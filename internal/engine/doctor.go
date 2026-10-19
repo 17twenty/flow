@@ -399,6 +399,17 @@ func (e *Env) Threshold() float64 {
 	return e.FailBelow
 }
 
+// Patience is how many working days work may sit in a column with nothing
+// happening to it before the audit says so. Like [Env.Threshold] the default
+// is applied here and nowhere else, so that the number the report prints and
+// the number it judged by cannot come apart.
+func (e *Env) Patience() int {
+	if e.Config == nil || e.Config.Health.StaleAfter <= 0 {
+		return config.DefaultStaleAfter
+	}
+	return e.Config.Health.StaleAfter
+}
+
 // Result returns what an earlier check found.
 func (e *Env) Result(id string) (Result, bool) {
 	result, ok := e.results[id]

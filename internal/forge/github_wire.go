@@ -119,6 +119,50 @@ type ghPull struct {
 	Additions    int    `json:"additions"`
 	Deletions    int    `json:"deletions"`
 	HTMLURL      string `json:"html_url"`
+	// Mergeable is null until GitHub has worked it out in the background,
+	// and absent from a listing altogether, so it is a pointer: false and
+	// "not said" are different answers and only one of them is a finding.
+	Mergeable      *bool  `json:"mergeable"`
+	MergeableState string `json:"mergeable_state"`
+}
+
+// GitHub's mergeable_state values flow has a use for. The rest — clean,
+// blocked, unstable, has_hooks, draft — all mean the same thing to flow:
+// nothing is in the way that moving the branch would fix.
+const (
+	// ghMergeableDirty is a conflict with the base branch.
+	ghMergeableDirty = "dirty"
+	// ghMergeableBehind is a branch out of date with a base that requires
+	// it to be current. GitHub reports it only where the protection has
+	// strict required status checks, which is exactly flow's question.
+	ghMergeableBehind = "behind"
+	// ghMergeableUnknown is GitHub still computing it.
+	ghMergeableUnknown = "unknown"
+)
+
+// mergeabilityFromGitHub maps the pair GitHub answers with onto flow's.
+//
+// Both halves are read because they disagree usefully: mergeable_state is the
+// specific reason and mergeable is the yes or no, and a state flow has no name
+// for alongside mergeable false is still a conflict as far as anybody acting
+// on it is concerned.
+func mergeabilityFromGitHub(mergeable *bool, state string) string {
+	switch {
+	case state == ghMergeableDirty:
+		return core.MergeabilityConflicted
+	case mergeable == nil, state == "", state == ghMergeableUnknown:
+		// Nothing below here may read through the pointer: GitHub
+		// sends null while the background job that works it out has
+		// not run, and a state flow has no name for alongside it is
+		// still GitHub declining to say.
+		return core.MergeabilityUnknown
+	case !*mergeable:
+		return core.MergeabilityConflicted
+	case state == ghMergeableBehind:
+		return core.MergeabilityBehind
+	default:
+		return core.MergeabilityClean
+	}
 }
 
 // toPullRequest converts the payload. GitHub has no merged state: a merged
@@ -161,6 +205,13 @@ func (p ghPull) toPullRequest() core.PullRequest {
 		pr.MergedAt = *p.MergedAt
 		pr.State = core.PRStateMerged
 		pr.MergeSHA = p.MergeCommitSHA
+	}
+	if pr.State == core.PRStateOpen {
+		// Only an open pull request has a mergeability worth reading.
+		// GitHub keeps answering for a closed one, with whatever it last
+		// computed, and a merged pull request reported as conflicted is
+		// a reading that can only mislead whoever acts on it.
+		pr.Mergeability = mergeabilityFromGitHub(p.Mergeable, p.MergeableState)
 	}
 	return pr
 }

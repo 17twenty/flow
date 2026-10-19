@@ -552,3 +552,32 @@ duplicate-pipeline hazards). MR closing issues: `GET
   `deploys.source: commit_status`, which item 7.5 made work for any forge by
   reading statuses through `core.Forge`. A GitLab deployment source is worth
   having and is its own item.
+
+- **A pull request says whether the forge would take it, and only an open one
+  says it (issue #156).** `core.PullRequest.Mergeability` is one of
+  `clean`, `conflicted`, `behind` or the empty string, which is the absence of
+  a reading rather than a reading that nothing is wrong: GitHub computes it in
+  the background and answers `null` until it has, and silence must not read as
+  a refusal or the check would fail hardest on the pull request somebody
+  opened a moment ago. Adapters fill it from `Forge.PullRequest` only, and
+  drop it for anything merged or closed — every forge goes on answering for a
+  pull request it has finished with, with whatever it last computed against a
+  base that has moved on, and "this merged pull request conflicts" can only
+  mislead whoever acts on it.
+
+- **A listing never carries it, including from the forges whose listing
+  does.** GitHub's list endpoint sends neither `mergeable` nor
+  `mergeable_state`; GitLab's and Gitea's send theirs. An engine written
+  against a listing would therefore answer "nothing is stuck" on GitHub and
+  the truth everywhere else — a difference between providers nothing would
+  catch, since each adapter's tests only ever meet their own. All three
+  adapters drop it from a listing and the forge contract requires that.
+
+- **`behind` is reported only where the protection makes it matter.** GitHub
+  answers `mergeable_state: behind` when the base has strict required status
+  checks and GitLab answers `detailed_merge_status: need_rebase` when the
+  merge method demands a rebase; everywhere else falling behind the trunk is
+  not a reason to refuse a merge, and flow does not invent one. Gitea has a
+  single `mergeable` bool computed from conflicts alone — it applies
+  `block_on_outdated_branch` at merge time and never says so beforehand — so
+  a Gitea pull request is conflicted or clean and never behind.

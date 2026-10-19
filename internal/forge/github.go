@@ -310,7 +310,7 @@ func (g *GitHub) PullRequests(ctx context.Context, q core.PRQuery) ([]core.PullR
 		if q.State != "" && pr.State != q.State {
 			return true
 		}
-		prs = append(prs, pr)
+		prs = append(prs, listed(pr))
 		return q.Limit <= 0 || len(prs) < q.Limit
 	})
 	if err != nil {
@@ -1125,6 +1125,19 @@ type restAdapter interface {
 // the same header to each of them.
 func paginate[T any](ctx context.Context, a restAdapter, req core.Request, visit func(T) bool) error {
 	return core.Paginate(ctx, a.sender(), a.decorate(req), visit)
+}
+
+// listed is one pull request as a listing is allowed to describe it.
+//
+// Mergeability is dropped on every forge, including the two whose list
+// endpoint happens to carry it. GitHub's does not, so an engine written
+// against a listing would answer "nothing is stuck" there and be right
+// everywhere else — a difference between providers that nothing would catch,
+// since each adapter's tests only ever meet their own. Spec 10 §2 asks it of
+// [core.Forge.PullRequest] and of nothing else.
+func listed(pr core.PullRequest) core.PullRequest {
+	pr.Mergeability = core.MergeabilityUnknown
+	return pr
 }
 
 // graphQL sends one GraphQL query and returns its data, through the shared

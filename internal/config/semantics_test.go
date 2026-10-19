@@ -350,6 +350,11 @@ func TestValidate(t *testing.T) {
 			wantIn: "health.flag_max_age is -5d",
 		},
 		{
+			name:   "a patience that is not a length of time",
+			change: func(c *Config) { c.Health.StaleAfter = -1 },
+			wantIn: "health.stale_after is -1",
+		},
+		{
 			name:   "a commit type that is not a word",
 			change: func(c *Config) { c.Commits.Types = []string{"feat", "Fix!"} },
 			wantIn: "a type is lowercase letters",

@@ -150,7 +150,7 @@ func (f *FakeForge) PullRequest(ctx context.Context, number int) (core.PullReque
 	defer f.mu.Unlock()
 	for _, pr := range f.prs {
 		if pr.Number == number {
-			return squashed(pr), nil
+			return landable(squashed(pr)), nil
 		}
 	}
 	return core.PullRequest{}, notFound("pull request", "#"+strconv.Itoa(number))
@@ -194,6 +194,24 @@ func summarised(pr core.PullRequest) core.PullRequest {
 	pr.Reviews = nil
 	pr.ClosingIssues = nil
 	pr.Files.Paths = nil
+	pr.Mergeability = core.MergeabilityUnknown
+	return pr
+}
+
+// landable is the mergeability an adapter would report, which is none at all
+// unless the pull request is open.
+//
+// A forge keeps answering for a pull request it has finished with — GitHub
+// serves whatever it last computed, Gitea a bool that is false for everything
+// merged — and an adapter drops it, because "this merged pull request
+// conflicts" is a reading that can only mislead whoever acts on it. A fake
+// that handed the fixture's value back for a merged pull request would be
+// more generous than any adapter, and the check reading it would be tested
+// against a world that does not exist.
+func landable(pr core.PullRequest) core.PullRequest {
+	if pr.State != core.PRStateOpen {
+		pr.Mergeability = core.MergeabilityUnknown
+	}
 	return pr
 }
 

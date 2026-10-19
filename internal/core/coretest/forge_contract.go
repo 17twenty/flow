@@ -37,6 +37,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "one pull request, with everything the gate reads", Run: forgeOnePullRequest},
 		{Name: "the tickets a pull request closes", Run: forgeClosingIssues},
 		{Name: "a pull request says what header a squash would land", Run: forgeSquashHeader},
+		{Name: "a pull request says whether the forge would take it", Run: forgeMergeability},
 		{Name: "a pull request that is not there", Run: forgeMissingPullRequest},
 		{Name: "pull requests in a window, newest first", Run: forgePullRequestWindow},
 		{Name: "a listing is a summary and says so", Run: forgePullRequestListIsSummary},
@@ -258,6 +259,59 @@ func forgeSquashHeader(t *testing.T, newForge NewForge) {
 		return
 	}
 	t.Fatalf("the merged listing does not hold #%d", pr.Number)
+}
+
+// forgeMergeability: a pull request says whether the forge would take it as
+// it stands, and says nothing of the sort about one the forge has finished
+// with or about one it only listed.
+//
+// This is the one fact about a pull request that changes without anything
+// changing on the pull request: a merge somewhere else conflicts it, or puts
+// it behind a trunk it has to be level with, and the checks that passed stay
+// green on a head that has not moved. Nothing goes red, so unless flow asks,
+// work that cannot land is indistinguishable from work that can.
+//
+// Only the contract's open pull request is asked. What a forge answers for a
+// conflict is the adapter's own business — GitHub has a word for a branch that
+// has fallen behind and Gitea has one bool for all of it — and is tested
+// against each provider's own fake. What every adapter must agree on is that
+// an open pull request gets a reading, a finished one does not, and a listing
+// is not where either comes from.
+func forgeMergeability(t *testing.T, newForge NewForge) {
+	forge := newForge(t, ContractForge())
+
+	open, err := forge.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest(1): %v", err)
+	}
+	if open.Mergeability != core.MergeabilityClean {
+		t.Errorf("#1 is open and the forge would take it, but Mergeability = %q, want %q",
+			open.Mergeability, core.MergeabilityClean)
+	}
+	if why, stuck := open.Stuck(); stuck {
+		t.Errorf("#1 reads as stuck (%s), and a check would report work that is moving as work that is not", why)
+	}
+
+	merged, err := forge.PullRequest(t.Context(), 2)
+	if err != nil {
+		t.Fatalf("PullRequest(2): %v", err)
+	}
+	if merged.Mergeability != core.MergeabilityUnknown {
+		t.Errorf("#2 has merged and Mergeability = %q; a forge keeps answering for a pull request it has finished with, and the answer can only mislead whoever acts on it",
+			merged.Mergeability)
+	}
+
+	prs, err := forge.PullRequests(t.Context(), core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	for _, pr := range prs {
+		if pr.Mergeability == core.MergeabilityUnknown {
+			continue
+		}
+		t.Errorf("the listing says #%d is %q; GitHub's list endpoint carries no such reading, so an engine that believed a listing would answer one thing there and another everywhere else",
+			pr.Number, pr.Mergeability)
+	}
 }
 
 // forgeMissingPullRequest: a pull request that does not exist is ErrNotFound.

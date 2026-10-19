@@ -46,6 +46,17 @@ type gitHubFake struct {
 	// loop makes every page point at another one, which is what a provider
 	// with a bug in its own Link header does to a client that trusts it.
 	loop bool
+	// mergeableState, when set, is the `mergeable_state` every pull
+	// request answers with, alongside `mergeable: false`. GitHub grows
+	// this vocabulary with its features, so a fake that could only speak
+	// the words flow has names for could never hand the adapter one it
+	// has not.
+	mergeableState string
+	// mergeableNull sends `mergeable: null` alongside it, which is what
+	// GitHub answers while the background job that works it out has not
+	// run — including, for a moment, next to a state that is not
+	// `unknown`.
+	mergeableNull bool
 	// refusalKind and refusalMessage, when set, make every GraphQL query
 	// fail the way GraphQL fails: 200, no data, and a reason.
 	refusalKind    string
@@ -350,7 +361,14 @@ func (f *gitHubFake) pull(w http.ResponseWriter, r *http.Request, raw string) {
 		f.fail(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	f.writeJSON(w, r, ghPullJSON(pr, true))
+	doc := ghPullJSON(pr, true)
+	if f.mergeableState != "" {
+		doc["mergeable"], doc["mergeable_state"] = false, f.mergeableState
+		if f.mergeableNull {
+			doc["mergeable"] = nil
+		}
+	}
+	f.writeJSON(w, r, doc)
 }
 
 // reviews serves a pull request's reviews, oldest first and paginated.
@@ -1326,8 +1344,45 @@ func ghPullJSON(pr core.PullRequest, detail bool) map[string]any {
 		doc["changed_files"] = pr.Files.Changed
 		doc["additions"] = pr.Files.Additions
 		doc["deletions"] = pr.Files.Deletions
+		mergeable, mergeableState := ghMergeabilityJSON(pr)
+		doc["mergeable"] = mergeable
+		doc["mergeable_state"] = mergeableState
 	}
 	return doc
+}
+
+// ghMergeabilityJSON renders the pair GitHub answers mergeability with.
+//
+// The list endpoint sends neither key, which is why they are behind `detail`,
+// and GitHub answers `null` with the state `unknown` until the background job
+// that works it out has run. A fake that always said true or false would
+// never once hand the adapter the third state, and the adapter would then be
+// free to read a pull request nobody has looked at yet as one that is fine.
+func ghMergeabilityJSON(pr core.PullRequest) (any, string) {
+	if pr.State != core.PRStateOpen {
+		// GitHub does not stop answering once a pull request is closed
+		// or merged; it answers with whatever it last computed against
+		// a base that has moved on since, which for anything finished
+		// is a refusal. The adapter has to drop it, and a fake that
+		// went quiet here would let it keep it.
+		return false, "dirty"
+	}
+	switch pr.Mergeability {
+	case core.MergeabilityClean:
+		return true, "clean"
+	case core.MergeabilityConflicted:
+		return false, "dirty"
+	case core.MergeabilityBehind:
+		// GitHub says a branch that has only fallen behind is still
+		// mergeable: nothing conflicts, it is the protection that will
+		// not take it until it is level. Rendering it as false here
+		// would let an adapter that reads the bool and ignores the
+		// state pass, and it would then call a stale branch a conflict
+		// and send somebody to resolve one that is not there.
+		return true, "behind"
+	default:
+		return nil, "unknown"
+	}
 }
 
 // ghCommitJSON renders a commit as GitHub does.

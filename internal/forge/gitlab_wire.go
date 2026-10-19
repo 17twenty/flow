@@ -287,6 +287,78 @@ type glMergeRequest struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 	MergedAt  *time.Time `json:"merged_at"`
 	ClosedAt  *time.Time `json:"closed_at"`
+
+	// DetailedMergeStatus is the first merge check that is failing, and
+	// MergeStatus is the coarse field it replaced in GitLab 15.6. Both are
+	// read, because an installation older than that answers only the
+	// second and a forge that has said something coarse has still said
+	// more than nothing.
+	DetailedMergeStatus string `json:"detailed_merge_status"`
+	MergeStatus         string `json:"merge_status"`
+}
+
+// The detailed_merge_status values flow has a use for.
+//
+// GitLab reports the *first* failing merge check, not all of them, so a merge
+// request that conflicts and is also unapproved answers `not_approved`. That
+// is not a problem for the question flow asks, because flow only asks it of
+// work somebody has already approved: by then the approval check has passed
+// and whatever is left is the real blocker.
+const (
+	// glMergeMergeable is every check passing.
+	glMergeMergeable = "mergeable"
+	// glMergeConflict is the source and target branches conflicting.
+	glMergeConflict = "conflict"
+	// glMergeBroken is GitLab unable to merge the source into the target,
+	// which it reports for a conflict it could not describe.
+	glMergeBroken = "broken_status"
+	// glMergeNeedRebase is a merge method — fast-forward, semi-linear —
+	// that requires the branch to be rebased whenever the target moves.
+	glMergeNeedRebase = "need_rebase"
+)
+
+// The detailed_merge_status values that mean GitLab has not finished working
+// it out. They are an answer about GitLab, not about the merge request.
+var glMergeUnsettled = []string{"checking", "unchecked", "preparing", "approvals_syncing"}
+
+// The merge_status values of installations too old for detailed_merge_status.
+const (
+	glMergeStatusCan    = "can_be_merged"
+	glMergeStatusCannot = "cannot_be_merged"
+)
+
+// mergeabilityFromGitLab maps GitLab's answer onto flow's.
+//
+// Every value that is neither a conflict, a rebase nor a shrug reads as clean:
+// an unapproved merge request, one whose pipeline is running and one with an
+// open thread are all blocked on something, but on nothing that moving the
+// branch would fix, which is the only distinction this is asked to make.
+func mergeabilityFromGitLab(detailed, coarse string) string {
+	switch {
+	case detailed == "":
+		return mergeabilityFromGitLabStatus(coarse)
+	case slices.Contains(glMergeUnsettled, detailed):
+		return core.MergeabilityUnknown
+	case detailed == glMergeConflict, detailed == glMergeBroken:
+		return core.MergeabilityConflicted
+	case detailed == glMergeNeedRebase:
+		return core.MergeabilityBehind
+	default:
+		return core.MergeabilityClean
+	}
+}
+
+// mergeabilityFromGitLabStatus reads the deprecated field, which cannot tell a
+// conflict from a branch that needs rebasing and so never answers `behind`.
+func mergeabilityFromGitLabStatus(coarse string) string {
+	switch coarse {
+	case glMergeStatusCan:
+		return core.MergeabilityClean
+	case glMergeStatusCannot:
+		return core.MergeabilityConflicted
+	default:
+		return core.MergeabilityUnknown
+	}
 }
 
 // toPullRequest converts the payload.
@@ -329,6 +401,9 @@ func (m glMergeRequest) toPullRequest() core.PullRequest {
 		if pr.ClosedAt.IsZero() {
 			pr.ClosedAt = pr.MergedAt
 		}
+	}
+	if pr.State == core.PRStateOpen {
+		pr.Mergeability = mergeabilityFromGitLab(m.DetailedMergeStatus, m.MergeStatus)
 	}
 	return pr
 }

@@ -425,6 +425,10 @@ const DefaultFlagMaxAge = 90 * Day
 // is about stays on purpose.
 const DefaultFlagKeptLabel = "flag-kept"
 
+// DefaultStaleAfter is how long work may sit in a column with nothing
+// happening to it before the audit mentions it, in working days (spec 07 §6).
+const DefaultStaleAfter = 5
+
 // Health is how the live-health audit grades what it saw (spec 07 §6).
 //
 // The window it looks back over is not here: `--window` is a property of the
@@ -442,6 +446,16 @@ type Health struct {
 	// FlagKeptLabel is the label a team puts on a cleanup ticket to say that
 	// flag stays on purpose. Empty means [DefaultFlagKeptLabel].
 	FlagKeptLabel string `yaml:"flag_kept_label,omitempty"`
+	// StaleAfter is how many working days work may sit in a column with
+	// nothing happening to it or to its pull requests before the audit
+	// says so. Zero means [DefaultStaleAfter].
+	//
+	// One number covers every column that has a patience, rather than one
+	// per column: a team that waits a week for a review and a week for
+	// work in progress has one answer to "how long is too long", and two
+	// keys would mostly be set to the same thing and occasionally be set
+	// to different things by accident.
+	StaleAfter int `yaml:"stale_after,omitempty"`
 }
 
 // Threshold is the share a live check must reach, as a ratio. An unset

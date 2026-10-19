@@ -972,6 +972,17 @@ func gtPullJSON(pr core.PullRequest, detail bool) map[string]any {
 		"head":             map[string]any{"ref": pr.HeadRef, "sha": pr.HeadSHA},
 		"base":             map[string]any{"ref": pr.BaseRef, "sha": coretest.SHADeployed},
 		"html_url":         pr.URL,
+		// Gitea sends one bool, in the listing as well as in the pull
+		// request's own payload, and goes on sending it after the pull
+		// request is merged — where it is false, because a merged
+		// branch no longer merges. The adapter has to know not to read
+		// it then.
+		//
+		// It is computed from conflicts alone, so a branch that has
+		// only fallen behind its base is still mergeable here: Gitea
+		// applies `block_on_outdated_branch` when somebody presses
+		// merge and says nothing about it beforehand.
+		"mergeable": pr.State == core.PRStateOpen && pr.Mergeability != core.MergeabilityConflicted,
 	}
 	labels := make([]any, 0, len(pr.Labels))
 	for _, label := range pr.Labels {

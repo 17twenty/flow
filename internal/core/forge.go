@@ -225,6 +225,34 @@ const (
 	PRStateClosed = "closed"
 )
 
+// What a forge says about landing a pull request as it stands (spec 10 §2).
+//
+// This is the one thing about a pull request that goes wrong without anything
+// going red: the checks that passed were computed on a head that has not
+// changed, so they stay green for ever, and no forge sends mail about a
+// conflict. Work that cannot land looks exactly like work that can.
+const (
+	// MergeabilityUnknown is the absence of a reading, not a reading that
+	// the pull request is fine. GitHub computes mergeability in the
+	// background and answers null until it has; every forge answers
+	// nothing at all for a pull request it has finished with, and a
+	// listing does not carry it.
+	MergeabilityUnknown = ""
+	// MergeabilityClean is the forge saying it would take it. Something
+	// else may still be in the way — an approval owing, a check running —
+	// but nothing that moving the branch would fix.
+	MergeabilityClean = "clean"
+	// MergeabilityConflicted is a pull request that no longer merges into
+	// its base without somebody resolving the overlap.
+	MergeabilityConflicted = "conflicted"
+	// MergeabilityBehind is a pull request the forge would take once it is
+	// level with the branch it targets. A forge reports it only where the
+	// protection demands it — GitHub's strict required status checks,
+	// GitLab's fast-forward merges — because everywhere else falling
+	// behind the trunk is not a reason to refuse a merge.
+	MergeabilityBehind = "behind"
+)
+
 // Review states, in the vocabulary of spec 04 §4's events.
 const (
 	// ReviewApproved is an approval.
@@ -302,6 +330,12 @@ type PullRequest struct {
 	ClosingIssues []string
 	// Files summarises what it changes.
 	Files FileSummary
+	// Mergeability is what the forge says about landing it as it stands,
+	// one of the mergeability values above. Like Reviews it is a separate
+	// read: no forge puts a reading flow can rely on in a listing, and a
+	// pull request already merged or abandoned has none to give, so only
+	// [Forge.PullRequest] fills it in and only for an open one.
+	Mergeability string
 	// CreatedAt, UpdatedAt, MergedAt and ClosedAt are its timeline. The zero
 	// time means it has not happened.
 	CreatedAt time.Time
@@ -330,6 +364,32 @@ func (p PullRequest) MergeHeader() string {
 		return p.SquashHeader
 	}
 	return p.Title
+}
+
+// Stuck reports whether the forge has said it would not take this pull
+// request as it stands, and in a few words why.
+//
+// An unknown mergeability is not stuck. A forge that has not worked it out
+// has not said no, and treating silence as a refusal would make a check fail
+// hardest on the pull request somebody opened a moment ago.
+func (p PullRequest) Stuck() (string, bool) {
+	switch p.Mergeability {
+	case MergeabilityConflicted:
+		return "it conflicts with " + branchName(p.BaseRef), true
+	case MergeabilityBehind:
+		return "it is behind " + branchName(p.BaseRef) + ", which it has to be level with to merge", true
+	default:
+		return "", false
+	}
+}
+
+// branchName is a base branch to put in a sentence, for a forge that did not
+// say which one it was.
+func branchName(ref string) string {
+	if ref == "" {
+		return "the branch it targets"
+	}
+	return ref
 }
 
 // Approvals returns the logins that approved and have not been dismissed or

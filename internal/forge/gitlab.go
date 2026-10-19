@@ -353,7 +353,7 @@ func (g *GitLab) PullRequests(ctx context.Context, q core.PRQuery) ([]core.PullR
 	// (spec 10 §4).
 	var prs []core.PullRequest
 	err := paginate(ctx, g, core.Request{Path: g.path("merge_requests"), Query: query}, func(m glMergeRequest) bool {
-		prs = append(prs, m.toPullRequest())
+		prs = append(prs, listed(m.toPullRequest()))
 		return q.Limit <= 0 || len(prs) < q.Limit
 	})
 	if err != nil {

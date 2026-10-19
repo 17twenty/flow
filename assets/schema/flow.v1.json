@@ -379,6 +379,11 @@
             "7d",
             "30d"
           ]
+        },
+        "stale_after": {
+          "description": "How many working days work may sit in a column with nothing happening to it before the audit says so. Omitted means 5.",
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false
