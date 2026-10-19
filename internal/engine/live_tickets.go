@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -55,6 +56,9 @@ const (
 	// CheckLiveTicketsBlockedExplained is whether work the team has stopped
 	// says why it stopped.
 	CheckLiveTicketsBlockedExplained = "live.tickets.blocked_explained"
+	// CheckLiveTicketsSharedBoard is whether every repository whose work is
+	// on this board is one the configuration names.
+	CheckLiveTicketsSharedBoard = "live.tickets.shared_board"
 )
 
 // errNoTracker is what a board check reports when there is no tracker to ask.
@@ -70,6 +74,7 @@ var errNoDeploys = errors.New("there is no deployment source to ask")
 // the board once and the window once however many of them are selected.
 func (a *audit) ticketChecks() []Check {
 	return []Check{
+		a.ticketsSharedBoard(),
 		a.ticketsDoneMerged(),
 		a.ticketsDoneDeployed(),
 		a.ticketsReviewHasPR(),
@@ -168,8 +173,13 @@ func (a *audit) ticketsDoneMerged() Check {
 			work := prsByTicket(env, prs)
 			since := env.Since()
 			var t tally
+			var elsewhere int
 			for _, ticket := range done {
 				if finished(ticket).Before(since) {
+					continue
+				}
+				if deliveredElsewhere(env.Config, ticket) != "" {
+					elsewhere++
 					continue
 				}
 				if ticket.CloseReason == core.ClosedNotPlanned {
@@ -185,13 +195,13 @@ func (a *audit) ticketsDoneMerged() Check {
 			result := t.grade(env, false)
 			switch {
 			case t.counts.Total == 0:
-				return result.Said("nothing reached %s in the window", column.Name)
+				return result.Said("nothing reached %s in the window%s", column.Name, sharedNote(elsewhere))
 			case result.State == StatePass:
-				return result.Said("all %d %s that reached %s had work behind them",
-					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+				return result.Said("all %d %s that reached %s had work behind them%s",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, sharedNote(elsewhere))
 			}
-			return result.Said("%d of %d tickets reached %s with no merge behind them",
-				t.missed(), t.counts.Total, column.Name).
+			return result.Said("%d of %d tickets reached %s with no merge behind them%s",
+				t.missed(), t.counts.Total, column.Name, sharedNote(elsewhere)).
 				Fix(Remediation{
 					Kind:    RemedyManual,
 					Summary: "the merge should be what moves a ticket to " + column.Name + ", not a hand on the board",
@@ -256,8 +266,13 @@ func (a *audit) ticketsDoneDeployed() Check {
 			work := prsByTicket(env, prs)
 			since := env.Since()
 			var t tally
+			var elsewhere int
 			for _, ticket := range done {
 				if finished(ticket).Before(since) || ticket.CloseReason == core.ClosedNotPlanned {
+					continue
+				}
+				if deliveredElsewhere(env.Config, ticket) != "" {
+					elsewhere++
 					continue
 				}
 				theirs := work[ticketKey(ticket)]
@@ -281,13 +296,13 @@ func (a *audit) ticketsDoneDeployed() Check {
 			result := t.grade(env, false)
 			switch {
 			case t.counts.Total == 0:
-				return result.Said("nothing reached %s in the window", column.Name)
+				return result.Said("nothing reached %s in the window%s", column.Name, sharedNote(elsewhere))
 			case result.State == StatePass:
-				return result.Said("all %d %s in %s are running in %s",
-					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, where)
+				return result.Said("all %d %s in %s are running in %s%s",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, where, sharedNote(elsewhere))
 			}
-			return result.Said("%d of %d tickets in %s are not running in %s",
-				t.missed(), t.counts.Total, column.Name, where).
+			return result.Said("%d of %d tickets in %s are not running in %s%s",
+				t.missed(), t.counts.Total, column.Name, where, sharedNote(elsewhere)).
 				Fix(Remediation{
 					Kind:    RemedyManual,
 					Summary: "a ticket reached " + column.Name + " before its work was deployed",
@@ -324,7 +339,12 @@ func (a *audit) ticketsReviewHasPR() Check {
 			}
 			work := prsByTicket(env, open)
 			var t tally
+			var elsewhere int
 			for _, ticket := range waiting {
+				if deliveredElsewhere(env.Config, ticket) != "" {
+					elsewhere++
+					continue
+				}
 				theirs := work[ticketKey(ticket)]
 				switch {
 				case len(theirs) == 0:
@@ -338,13 +358,13 @@ func (a *audit) ticketsReviewHasPR() Check {
 			result := t.grade(env, false)
 			switch {
 			case t.counts.Total == 0:
-				return result.Said("nothing is in %s", column.Name)
+				return result.Said("nothing is in %s%s", column.Name, sharedNote(elsewhere))
 			case result.State == StatePass:
-				return result.Said("all %d %s in %s have a pull request open for review",
-					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+				return result.Said("all %d %s in %s have a pull request open for review%s",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, sharedNote(elsewhere))
 			}
-			return result.Said("%d of %d tickets in %s have nothing to review",
-				t.missed(), t.counts.Total, column.Name).
+			return result.Said("%d of %d tickets in %s have nothing to review%s",
+				t.missed(), t.counts.Total, column.Name, sharedNote(elsewhere)).
 				Fix(Remediation{
 					Kind:    RemedyManual,
 					Summary: "a ticket in " + column.Name + " is asking for somebody's time; it should say what to look at",
@@ -910,4 +930,117 @@ func workingDaysBefore(now time.Time, n int) time.Time {
 		}
 	}
 	return cutoff
+}
+
+// A board may gather the work of several repositories, and flow runs in one
+// of them (spec 03 §1). The pull requests it can see are that repository's, so
+// a sibling's ticket reaching Done looks exactly like work that never went
+// through the trunk: no merge, no deployment, nothing open for review. Every
+// board check that asks a ticket what landed behind it therefore passes over
+// the tickets of a repository `tracker.shared_with` names, and says how many
+// it passed over, because the flow running there is the one that can answer.
+//
+// A ticket from a repository nobody named is still a finding. The silence is
+// the point: an unnamed sibling is either a repository running no flow at all
+// or a line somebody forgot to write, and both are worth saying out loud.
+
+// deliveredElsewhere names the repository that is this ticket's, when it is a
+// sibling the configuration says shares the board. It answers empty for this
+// repository's own tickets, for a ticket from a repository nobody named, and
+// for a tracker that records no repository at all — the last because what it
+// answers is the ticket's own repository, which such a ticket does not have.
+func deliveredElsewhere(cfg *config.Config, ticket core.Ticket) string {
+	if cfg == nil || strings.EqualFold(ticket.Repo, cfg.Forge.Repo) {
+		return ""
+	}
+	for _, sibling := range cfg.Tracker.SharedWith {
+		if strings.EqualFold(sibling, ticket.Repo) {
+			return ticket.Repo
+		}
+	}
+	return ""
+}
+
+// sharedNote is what a check adds to its message when it passed over work
+// another repository's flow is the one to judge. Without it a count of nought
+// reads as an empty board rather than a board somebody else is watching.
+func sharedNote(elsewhere int) string {
+	if elsewhere == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", not counting %d %s a repository sharing this board owns",
+		elsewhere, plural(elsewhere, "ticket"))
+}
+
+// ticketsSharedBoard asks whether every repository whose work is on this board
+// is one the configuration knows about.
+//
+// Only foreign tickets are counted. Counting this repository's as well would
+// drown a single unnamed sibling in a board of two hundred and let it pass the
+// threshold, and the question is not what share of the board is accounted for
+// but whether anything on it is accounted for by nobody.
+func (a *audit) ticketsSharedBoard() Check {
+	return Check{
+		ID:        CheckLiveTicketsSharedBoard,
+		Title:     "Every repository sharing this board is named",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			board, err := a.board(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			here := env.Config.Forge.Repo
+			var t tally
+			strangers := map[string]bool{}
+			for _, ticket := range board {
+				if ticket.Repo == "" || strings.EqualFold(ticket.Repo, here) {
+					continue
+				}
+				if deliveredElsewhere(env.Config, ticket) != "" {
+					t.held()
+					continue
+				}
+				strangers[ticket.Repo] = true
+				t.broke(ticket.URL, "%s %s — it is %s's, which nothing in tracker.shared_with names",
+					ticket.Key, ticket.Title, ticket.Repo)
+			}
+			result := t.grade(env, true)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("every ticket on this board is %s's", here)
+			case result.State == StatePass:
+				return result.Said("all %d %s from elsewhere belong to a repository this configuration names",
+					t.counts.Total, plural(t.counts.Total, "ticket"))
+			}
+			return result.Said("%d of %d tickets from elsewhere belong to %s nothing names",
+				t.missed(), t.counts.Total, repositories(len(strangers))).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "a board that gathers several repositories' work needs each of them named, or flow judges their tickets against pull requests it cannot see",
+					Steps: append(namingSteps(strangers),
+						"run flow in that repository too: its tickets are only audited by the flow that can see its pull requests",
+						"read docs/multi-repo.md for the whole arrangement"),
+				})
+		},
+	}
+}
+
+// namingSteps is the line to write, one per repository found. They are sorted
+// so that two runs of the same board give the same instruction.
+func namingSteps(strangers map[string]bool) []string {
+	names := slices.Sorted(maps.Keys(strangers))
+	steps := make([]string, 0, len(names))
+	for _, name := range names {
+		steps = append(steps, "add "+name+" to tracker.shared_with in .flow.yaml")
+	}
+	return steps
+}
+
+// repositories reads a count of them the way the sentence around it needs.
+func repositories(n int) string {
+	if n == 1 {
+		return "a repository"
+	}
+	return "repositories"
 }

@@ -92,7 +92,9 @@ func ConfigSchema() *Schema {
 				"owner_type": enum("Whether the owner is a person or an organisation.", OwnerUser, OwnerOrg),
 				"project":    pending("The board: a GitHub project number, a Jira project key or a Linear team key.", "3"),
 				"url":        str("Base URL, for trackers whose host is per-tenant.", "https://17twenty.atlassian.net"),
-				"auth":       authSchema(),
+				"shared_with": array("Other repositories whose work appears on this board; their tickets are audited by the flow running there.",
+					pattern("A repository, as owner/name.", `^[^/\s]+/[^/\s]+$`, "17twenty/flow-api")),
+				"auth": authSchema(),
 			}, "type"),
 
 			"workflow": object("The board flow keeps true.", props{

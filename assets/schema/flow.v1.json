@@ -492,6 +492,18 @@
             "${pending:project}"
           ]
         },
+        "shared_with": {
+          "description": "Other repositories whose work appears on this board; their tickets are audited by the flow running there.",
+          "type": "array",
+          "items": {
+            "description": "A repository, as owner/name.",
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "examples": [
+              "17twenty/flow-api"
+            ]
+          }
+        },
         "type": {
           "description": "Which tracker adapter to use.",
           "type": "string",

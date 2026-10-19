@@ -83,6 +83,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.prs.reviewed` | Did agent-authored PRs get a human approval? (critical when `require_human_review`) | reviews |
 | `live.deploys.recent` | Was there a successful deployment to `deploys.environment` within `max_age`? | deploy records |
 | `live.deploys.lag` | Did every merged PR reach the environment within `max_lag`? (merge SHA ⊑ some deployed SHA, via forge compare API, results cached) | PRs + deploy records |
+| `live.tickets.shared_board` | Is every repository whose tickets are on this board named in `tracker.shared_with`? | tracker |
 | `live.tickets.done_merged` | Is every ticket moved to Done in the window linked to a merged PR (or closed as not planned)? | tracker + forge |
 | `live.tickets.done_deployed` | (`done_on: deployed`) Is every Done ticket's PR deployed? | tracker + deploys |
 | `live.tickets.review_has_pr` | Does every ticket in `in_review` have an open, ready PR? | tracker + forge |
@@ -1060,3 +1061,31 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   does not exist. The grace is there to let an in-flight CI run settle a move
   first, and here there is no run to wait for. A board that dates nothing at
   all still has its work started.
+
+- **§6 `live.tickets.shared_board` counts only the tickets that are not this
+  repository's (issue #89).** Counting the whole board would drown a single
+  unaccounted-for sibling in two hundred of this repository's tickets and let
+  it pass the threshold. The question is not what share of the board is
+  accounted for but whether anything on it is accounted for by nobody, so the
+  check grades critically: one repository nothing names fails it.
+
+- **§6 The three checks that ask a ticket what landed behind it pass over a
+  named sibling's tickets entirely, and say how many they passed over.**
+  `done_merged`, `done_deployed` and `review_has_pr` all compare a ticket
+  against this repository's pull requests. Counting a sibling's ticket as held
+  would claim flow had checked something it never looked at; counting it as
+  broken is the cross-talk `tracker.shared_with` exists to stop. The count
+  goes in the message because a tally of nought with nothing said reads as an
+  empty board rather than a board somebody else is watching.
+
+- **§6 `live.transitions.flow` will not move a named sibling's ticket, even
+  under `--fix`.** Every reason to leave it where it is — an open pull request
+  of theirs, a review they are waiting on — is invisible from here, so the
+  only transition flow could reach would be one made in ignorance. Spec 04 §5
+  rule 4 already says a ticket's column depends on all of its work; a
+  repository that cannot see all of it has no business deciding.
+
+- **§6 The remediation names the repositories it found, one line each, sorted.**
+  "Add it to `tracker.shared_with`" is a sentence anybody could have written;
+  the repository's name is the part the team does not have. Sorting is what
+  makes two runs of the same board give the same instruction.

@@ -679,3 +679,15 @@ reopen, pagination, error mapping.
   evidence anybody cut it. Both declare `linked_branches_read` unset and
   unverifiable, which is what makes `workflow.transitions.branch_created`
   refuse at validation on those boards rather than at six in the morning.
+
+- **§1 `core.Ticket.Repo` is the repository a ticket belongs to, as
+  `owner/name`, where the tracker records one (issue #89).** The GitHub
+  Projects adapter already qualified a foreign ticket's *key* as
+  `owner/repo#7`, but a key is a thing people type, and the engine parsing
+  GitHub's spelling of one back apart would be the engine knowing which
+  tracker it was talking to. The repository is a fact about the ticket, so the
+  adapter states it. It is filled for every ticket, this repository's
+  included: a field set only for strangers would leave an ordinary ticket
+  looking like one from a tracker that records no repository at all. Jira and
+  Linear leave it empty, and a board of theirs is one repository's by
+  assumption.

@@ -697,6 +697,41 @@ func whyOf(t *testing.T, err error) string {
 // nothing".
 func ptr[T any](v T) *T { return &v }
 
+// A board gathers work from several repositories, and the live-health audit
+// can only judge a ticket against the pull requests of the repository flow is
+// running in (spec 03 §1). Which one a ticket is in is therefore a fact about
+// it, kept beside the key rather than parsed back out of it: a key is a thing
+// people type, and the engine reading GitHub's spelling of one would be the
+// engine knowing which tracker it was talking to.
+func TestGitHubProjectsSaysWhichRepositoryEachTicketIsIn(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.items = append(fake.items, &ghFakeItem{
+		id: "PVTI_901", number: 7, optionID: string(coretest.ColumnTodo),
+		repo:      "acme/other",
+		updatedAt: coretest.ContractNow,
+		ticket:    core.Ticket{ID: "I_901", Title: "Elsewhere", UpdatedAt: coretest.ContractNow},
+	})
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	all, err := adapter.Tickets(t.Context(), core.TicketQuery{})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	in := map[string]string{}
+	for _, ticket := range all {
+		in[ticket.ID] = ticket.Repo
+	}
+	if got := in["I_901"]; got != "acme/other" {
+		t.Errorf("the issue from elsewhere says it is in %q, want acme/other", got)
+	}
+	// The board's own tickets must say so too. An adapter that only filled
+	// the field for strangers would leave every ordinary ticket looking like
+	// one from a tracker that records no repository at all.
+	if got := in["I_10"]; got != "acme/widget" {
+		t.Errorf("this repository's own ticket says it is in %q, want acme/widget", got)
+	}
+}
+
 // A ticket key is "#7" in the repository flow is configured for and
 // "owner/repo#7" anywhere else, and the same adapter reads back both — a board
 // gathers issues from several repositories, and a key that lost which one it

@@ -34,6 +34,7 @@ tracker:
   owner_type: user                # user | org
   project: ${pending:project}     # github-projects: project number; jira: project key; linear: team key
   auth: { token_env: FLOW_PROJECT_TOKEN }
+  shared_with: []                 # github-projects: other repos whose work is on this board
   # jira-cloud: url, auth.email_env ; linear: (none)
 
 workflow:
@@ -517,3 +518,27 @@ gate, relaxed policy).
   review column had no patience at all. The key is optional, defaults to 5,
   must not be negative and has no upper bound: a team that waits a quarter has
   said so deliberately, and the checks that read it only ever warn.
+
+- **§1 `tracker.shared_with` names the other repositories whose work is on
+  this board (issue #89).** flow runs in one repository and can only see that
+  repository's pull requests, so a sibling's ticket reaching Done is
+  indistinguishable from work that never went through the trunk. The key is a
+  list of `owner/name`, optional, and says that those tickets are audited by
+  the flow running there. Deriving it instead — auditing only tickets whose
+  repository matches `forge.repo` and saying nothing about the rest — was
+  rejected: a repository nobody runs flow in would then escape silently, and
+  nothing in the configuration would record the arrangement for the next
+  person to read.
+
+- **§1 A ticket from a repository `shared_with` does not name is still a
+  finding.** The key is how a team says "somebody else is watching that". An
+  unnamed sibling is either a repository running no flow at all or a line
+  somebody forgot to write, and both are worth a report.
+
+- **§1.1 `tracker.shared_with` is refused for a tracker that records no
+  repository.** Jira and Linear tickets belong to a project rather than to a
+  repository, so flow could never tell a sibling's work from this
+  repository's and the key would quietly do nothing. Naming this repository
+  in its own list, naming the same sibling twice, or writing something that is
+  not `owner/name` are errors for the same reason: each is a line that cannot
+  mean what it says.
