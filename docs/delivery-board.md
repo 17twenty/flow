@@ -11,12 +11,58 @@ doctor check named here must exist in the binary, and the configuration in
 §"A delivery board, as flow" must parse and validate. A document that drifts
 away from the code fails the build rather than quietly misleading somebody.
 
-The product board (epics: Idea → Discovery → Shaped → Building → Rolling out →
-Live) is **out of scope** and nothing here implements it. flow works one board
-of one project; an epic is a ticket's parent and nothing more. See
-[#143](https://github.com/17twenty/flow/issues/143).
+The proposal describes two boards. flow implements one of them, and §4
+below says whose the other is and why it stays theirs.
 
 ---
+
+## §4 The product board, and why it is not flow's
+
+The proposal's first board carries an epic from a problem somebody noticed
+to a feature every user has. **flow does not model it, and that
+is a decision rather than an omission** — spec 00 §2 lists it among the things
+flow is not, and the Decision at the end of that spec says why.
+
+The why is in the proposal's own exit rules, each of which names its owner:
+
+| Proposal §4.2: exit rule | Who can answer it |
+|---|---|
+| Idea → Discovery: the product owner agrees to investigate | a person |
+| Discovery → Shaped: the functional requirements are written and agreed | a person |
+| Shaped → Building: stories exist on the delivery board, and the flag is named | a person splitting the work; `flag_if_user_facing` then holds the name on each story |
+| Building → Rolling out: all stories are Done | **the delivery board**, which flow keeps true |
+| Rolling out → Live: the flag is on for 100% of users and the metrics are acceptable | a flag service and a metrics tool |
+| Live: the flag is removed from the code | the code, which flow does not read |
+
+The seventh column, Dropped, has no exit rule at all: it is where a decision
+goes, and no event implies it.
+
+One of the six is a fact flow holds. The rest belong to a product owner, a
+flag service and a metrics tool — three things spec 00 §2 already says flow is
+not. flow's fifth principle is *enforce in the forge, display in the
+tracker*: it shows a column because something it owns makes the column true.
+On the product board it would own nothing and display everything.
+
+So flow supplies the facts and leaves the column to the people who own the
+decision:
+
+- **"All stories are Done"** is the delivery board, which flow moves on the
+  forge's own events and audits with `live.tickets.done_merged` and
+  `live.tickets.done_deployed`. An epic is a ticket's parent, and its stories
+  are the tickets that name it.
+- **"An epic cannot move to Live while a cleanup ticket is open"** is the
+  cleanup ticket `live.flags.cleanup` files from the `Flag-Added:` trailer.
+  flow opens it, never closes it — it cannot read the code — and
+  `live.flags.age` turns an old one into a finding. The fact is flow's; the
+  column that shows it is not.
+- **"The flag is on for 100% of users"** is a flag service's to answer, and
+  flow is not one (spec 00 §2).
+
+A team that wants the product board in the same tool makes it a second
+project and moves it by hand, or with its tracker's own automation. flow's
+`workflow.columns` describe the board that Git events move; there is no
+second workflow and no second project in the configuration, which is the
+shape of this decision in the schema.
 
 ## §5.2 Columns
 
@@ -121,7 +167,7 @@ says the pull request closes, which is a structured link rather than a guess.
 | A PR that adds a flag gets a cleanup ticket | `live.flags.cleanup` reads the `Flag-Added:` trailer on trunk commits and files one per flag, once, found again by its marker |
 | Each flag has one owner | the cleanup ticket is assigned from `followups.owners` |
 | Each flag has one epic | — a cleanup ticket has no parent, so it does not meet flow's own Definition of Ready |
-| An epic cannot move to Live while a cleanup ticket is open | — the product board is out of scope |
+| An epic cannot move to Live while a cleanup ticket is open | the open cleanup ticket is the fact the rule rests on, and the board that reads it is somebody else's (§4 above) |
 | Review open flags monthly; remove flags older than 90 days or explain why | `live.flags.age` — every open cleanup ticket whose flag is older than `health.flag_max_age` (90d) is a finding unless the ticket carries `health.flag_kept_label` |
 
 flow never closes a flag cleanup ticket: it cannot read the code, so it cannot
@@ -234,8 +280,6 @@ Each one that is left is an issue rather than a paragraph. A gap this
 document found and flow has since closed leaves the list and is described in
 the section it belongs to.
 
-- [#143](https://github.com/17twenty/flow/issues/143) — the product board
-  (epics) is not modelled at all.
 - [#144](https://github.com/17twenty/flow/issues/144) — no transition fires
   when a branch is created, so Ready → In Progress waits for a draft pull
   request.
