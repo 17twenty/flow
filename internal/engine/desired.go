@@ -251,6 +251,10 @@ func trackerLabels(cfg *config.Config) DesiredItem {
 	add(cfg.FollowUps.Labels...)
 	add(cfg.Agents.Labels...)
 	add(ReadyLabels...)
+	// The one label flow reads but never writes: a label nobody can apply is
+	// no way out of a finding, so the board gets it even though only a person
+	// ever puts it on anything (spec 07 §6).
+	add(flagKeptLabel(cfg))
 
 	items := make([]core.Item, 0, len(names))
 	for _, name := range names {

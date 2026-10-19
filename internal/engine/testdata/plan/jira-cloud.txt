@@ -17,6 +17,7 @@ deploys  forge_deployments
     flow cannot see this through the API, so a person has to confirm it
     create "agent"
     create "blocked"
+    create "flag-kept"
     create "flow-followup"
     create "incident"
     create "ui"

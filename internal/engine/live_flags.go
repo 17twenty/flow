@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -39,6 +40,10 @@ import (
 // ticket to take it out again.
 const CheckLiveFlagsCleanup = "live.flags.cleanup"
 
+// CheckLiveFlagsAge is whether every feature flag that has stood longer than
+// the team agreed has either gone or been told to stay.
+const CheckLiveFlagsAge = "live.flags.age"
+
 // FlagTrailer is the trailer a commit announces a new feature flag with
 // (spec 07 §6). It is matched the way git matches trailer keys, without
 // regard to case.
@@ -60,6 +65,12 @@ type TrailerParser interface {
 var errNoTrailers = errors.New("there is no working copy to read commit trailers with")
 
 // flag is one feature flag the window announced, and the commit that said so.
+//
+// Where two commits announce the same flag it is the oldest of them, because
+// that is when the branch in the code appeared and mentioning it again does
+// not make it younger. The cleanup ticket is stamped with that date and the
+// age check reads the stamp, so which commit this is decides when the flag's
+// clock started.
 type flag struct {
 	// Name is the trailer's value, as the commit wrote it.
 	Name string
@@ -107,7 +118,7 @@ func (a *audit) flagsCleanup() Check {
 						added.Name, shortSHA(added.Commit.SHA))
 					continue
 				}
-				opened, err := fileFlagTicket(ctx, env, added, marker)
+				opened, err := fileFlagTicket(ctx, env, added)
 				if err != nil {
 					t.broke(added.Commit.URL, "%s has no cleanup ticket and flow could not file one: %v",
 						added.Name, err)
@@ -141,6 +152,173 @@ func (a *audit) flagsCleanup() Check {
 	}
 }
 
+// flagsAge asks what became of the flags that have stood too long.
+//
+// The cleanup check is about the promise being written down; this one is
+// about it being kept. They are two checks because they are two failures with
+// two remedies: a flag nobody filed a ticket for is something flow can fix
+// this morning, and a flag that has been behind an open ticket for three
+// months is a conversation.
+//
+// It reads the board rather than the history, and that is the whole of why it
+// works. A flag past ninety days was announced by a commit more than ninety
+// days ago, which is further back than any window worth reading every morning
+// — so the commit is long gone from what the audit looks at, while the ticket
+// is still right there. The ticket carries the date the commit had, written
+// into its marker when flow filed it, so the clock is the commit's and
+// nothing that happens to the ticket afterwards winds it back.
+func (a *audit) flagsAge() Check {
+	return Check{
+		ID:        CheckLiveFlagsAge,
+		Title:     "Every feature flag past the agreed age has gone, or says why it stays",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			board, err := a.board(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			age := flagMaxAge(env.Config)
+			kept := flagKeptLabel(env.Config)
+			deadline := env.Now().Add(-age)
+
+			var t tally
+			for _, open := range openCleanups(board, repoName(env)) {
+				// A ticket flow filed before it recorded the date has no
+				// clock to read. Counting it would be judging it by the only
+				// other date there is, which is the ticket's own and the one
+				// thing this check must not use.
+				if open.Added.IsZero() || !open.Added.Before(deadline) {
+					continue
+				}
+				if hasLabel(open.Ticket.Labels, kept) {
+					t.held()
+					continue
+				}
+				t.broke(open.Ticket.URL, "%s has stood %s and %s says nothing about why",
+					open.Name, stoodFor(env.Now(), open.Added), open.Ticket.Key)
+			}
+
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("no feature flag flow has a ticket for has stood longer than %s",
+					config.Duration(age))
+			case result.State == StatePass:
+				return result.Said("every feature flag past %s has gone or said why it stays",
+					config.Duration(age))
+			}
+			return result.Said("%d of %d feature flags past %s are neither gone nor explained",
+				t.missed(), t.counts.Total, config.Duration(age)).
+				Fix(flagAgeRemedy(kept))
+		},
+	}
+}
+
+// cleanup is one open flag cleanup ticket, and what its marker says about the
+// flag: which one it is, and the day the commit announcing it landed.
+type cleanup struct {
+	// Ticket is the ticket itself.
+	Ticket core.Ticket
+	// Name is the flag, falling back to the ticket's title for a marker
+	// written before flow recorded the name.
+	Name string
+	// Added is the day the flag appeared, zero where the marker records none.
+	Added time.Time
+}
+
+// openCleanups is the flag cleanup tickets of this repository that are still
+// open, in key order.
+//
+// Closed is the flag having gone, which is this check's whole aim and so
+// never its finding. Archived needs no test of its own here: a listing is the
+// board, and an archived item is not on it (spec 11 §1).
+func openCleanups(board []core.Ticket, repo string) []cleanup {
+	var open []cleanup
+	for _, ticket := range board {
+		if ticket.Closed {
+			continue
+		}
+		marker, found := core.FindMarker(ticket.Body)
+		if !found || marker.Kind != core.MarkerFlag {
+			continue
+		}
+		// One tracker serves many repositories, and a flag in another one is
+		// not this audit's business. A ticket naming no repository is taken
+		// as this one's, which is what a marker written before flow recorded
+		// the repository looks like.
+		if at := marker.Fields[flagFieldRepo]; at != "" && at != repo {
+			continue
+		}
+		entry := cleanup{Ticket: ticket, Name: ticket.Title}
+		if name := marker.Fields[flagFieldName]; name != "" {
+			entry.Name = name
+		}
+		if added, err := time.Parse(time.DateOnly, marker.Fields[flagFieldAdded]); err == nil {
+			entry.Added = added
+		}
+		open = append(open, entry)
+	}
+	slices.SortStableFunc(open, func(x, y cleanup) int { return strings.Compare(x.Ticket.Key, y.Ticket.Key) })
+	return open
+}
+
+// stoodFor is how long the flag has been there, in whole days, which is the
+// unit the agreement is written in.
+func stoodFor(now, added time.Time) string {
+	days := int(now.Sub(added) / (24 * time.Hour))
+	return fmt.Sprintf("%d %s", days, plural(days, "day"))
+}
+
+// flagAgeRemedy is what to do about a flag that has outstayed the agreement.
+// There is no --fix arm: flow cannot read the code, so both ways out of this
+// finding are a person's, and a command here would be flow offering to decide
+// something it is not able to decide.
+func flagAgeRemedy(kept string) Remediation {
+	return Remediation{
+		Kind:    RemedyManual,
+		Summary: "a flag this old is a branch in the code nobody came back for",
+		Steps: []string{
+			"take the flag out, delete whichever path it was choosing between, and close its cleanup ticket",
+			fmt.Sprintf("or label the cleanup ticket %s and write in a comment why the flag stays", kept),
+			"raise health.flag_max_age if the team has agreed a longer life for its flags",
+		},
+	}
+}
+
+// flagMaxAge is how long a flag may stand before this check asks about it.
+func flagMaxAge(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Health.FlagMaxAge <= 0 {
+		return config.DefaultFlagMaxAge.Std()
+	}
+	return cfg.Health.FlagMaxAge.Std()
+}
+
+// flagKeptLabel is the label that says a flag stays on purpose.
+//
+// A label, rather than a marker or a comment flow reads: the explanation
+// itself belongs in the comments, where the team already writes and where
+// nobody has to keep to flow's vocabulary, and what the check needs from it
+// is only the yes or no. A label is the one field every tracker flow speaks
+// to has, it is already read on every ticket flow lists, and a person applies
+// it in one click. Flow never applies it: the whole point of it is that it is
+// the team's word and not flow's.
+func flagKeptLabel(cfg *config.Config) string {
+	if cfg == nil || cfg.Health.FlagKeptLabel == "" {
+		return config.DefaultFlagKeptLabel
+	}
+	return cfg.Health.FlagKeptLabel
+}
+
+// hasLabel reports whether a ticket carries that label, the way a tracker
+// matches one: trackers differ on whether a label's case is part of its
+// identity, and no team means two spellings to be two labels.
+func hasLabel(labels []string, want string) bool {
+	return slices.ContainsFunc(labels, func(have string) bool {
+		return strings.EqualFold(have, want)
+	})
+}
+
 // flagsAdded is every feature flag the window's commits announced, one entry
 // per name, in name order.
 //
@@ -156,7 +334,7 @@ func (a *audit) flagsAdded(ctx context.Context, env *Env) ([]flag, error) {
 	if env.Trailers == nil {
 		return nil, errNoTrailers
 	}
-	seen := map[string]bool{}
+	at := map[string]int{}
 	var flags []flag
 	for _, commit := range log {
 		trailers, err := env.Trailers.Trailers(ctx, commit.Message)
@@ -167,10 +345,17 @@ func (a *audit) flagsAdded(ctx context.Context, env *Env) ([]flag, error) {
 			// A trailer with no value announces no flag anybody can file a
 			// ticket about, and the commit linter stopped judging trailers
 			// in v2 (spec 08 §4), so this is not the place to start.
-			if name = strings.TrimSpace(name); name == "" || seen[name] {
+			if name = strings.TrimSpace(name); name == "" {
 				continue
 			}
-			seen[name] = true
+			// The log arrives newest first, so a name seen again is being
+			// announced by an older commit, and the oldest is the one the
+			// flag's age is counted from.
+			if i, ok := at[name]; ok {
+				flags[i].Commit = commit
+				continue
+			}
+			at[name] = len(flags)
 			flags = append(flags, flag{Name: name, Commit: commit})
 		}
 	}
@@ -178,22 +363,55 @@ func (a *audit) flagsAdded(ctx context.Context, env *Env) ([]flag, error) {
 	return flags, nil
 }
 
+// The fields of a cleanup ticket's marker: which flag, which repository, and
+// the day the commit that announced it landed.
+const (
+	flagFieldName  = "name"
+	flagFieldRepo  = "repo"
+	flagFieldAdded = "added"
+)
+
 // FlagMarker is what makes filing the same cleanup ticket twice impossible,
 // and what finds it again on a board nothing in flow remembers (spec 07 §6).
 func FlagMarker(name, repo string) core.Marker {
 	if repo == "" {
-		return core.NewMarker(core.MarkerFlag, "name", name)
+		return core.NewMarker(core.MarkerFlag, flagFieldName, name)
 	}
-	return core.NewMarker(core.MarkerFlag, "name", name, "repo", repo)
+	return core.NewMarker(core.MarkerFlag, flagFieldName, name, flagFieldRepo, repo)
+}
+
+// flagFiling is the marker flow writes on a cleanup ticket it is opening:
+// [FlagMarker] and the day the flag appeared.
+//
+// The date is in the marker rather than in the prose because the age check
+// has to read it back, and flow parsing its own paragraphs is a second
+// mechanism waiting to disagree with the first. Searching by [FlagMarker]
+// still finds a ticket stamped this way — a marker naming fewer fields
+// matches more tickets (spec 11 §1) — so the stamp can appear in flow's
+// writing without orphaning a ticket filed before it existed.
+func flagFiling(name, repo string, commit core.Commit) core.Marker {
+	marker := FlagMarker(name, repo)
+	marker.Fields[flagFieldAdded] = day(landed(commit))
+	return marker
+}
+
+// landed is when a commit joined the history: the date the forge's own
+// windows are about, falling back to when it was written for a provider that
+// records only that.
+func landed(commit core.Commit) time.Time {
+	if !commit.CommittedAt.IsZero() {
+		return commit.CommittedAt
+	}
+	return commit.AuthoredAt
 }
 
 // fileFlagTicket opens the cleanup ticket for one flag.
-func fileFlagTicket(ctx context.Context, env *Env, added flag, marker core.Marker) (core.Ticket, error) {
+func fileFlagTicket(ctx context.Context, env *Env, added flag) (core.Ticket, error) {
 	owner := Owner(env.Config, env.Lock, OwnerDefault)
 	ticket, err := env.Adapters.Tracker.CreateFollowUp(ctx, core.FollowUp{
-		Marker:   marker,
+		Marker:   flagFiling(added.Name, repoName(env), added.Commit),
 		Title:    FlagTitle(added.Name, repoName(env)),
-		Body:     FlagBody(added.Name, added.Commit),
+		Body:     FlagBody(env.Config, added.Name, added.Commit),
 		Labels:   flagLabels(env.Config),
 		Assignee: owner,
 	})
@@ -226,7 +444,7 @@ func FlagTitle(name, repo string) string {
 // to. Flow cannot see into the code, so it will never know this flag is gone,
 // and a ticket that implied otherwise would sit on a board being quietly
 // untrue.
-func FlagBody(name string, commit core.Commit) string {
+func FlagBody(cfg *config.Config, name string, commit core.Commit) string {
 	var body strings.Builder
 	fmt.Fprintf(&body, "`%s` was added behind a feature flag, and a flag is a branch in the code "+
 		"somebody has to come back for.\n\n", name)
@@ -251,6 +469,10 @@ func FlagBody(name string, commit core.Commit) string {
 		"as check `%s`.\n", FlagTrailer, CheckLiveFlagsCleanup)
 	body.WriteString("Flow cannot read the code, so it will never know the flag is gone: ")
 	body.WriteString("this one is closed by a person.\n")
+	fmt.Fprintf(&body, "\nAfter %s from that commit, `%s` reports the flag as one nobody came back for. "+
+		"If it is staying on purpose, label this ticket `%s` and say why in a comment: "+
+		"that is the whole of how a flag is allowed to stay.\n",
+		config.Duration(flagMaxAge(cfg)), CheckLiveFlagsAge, flagKeptLabel(cfg))
 	return body.String()
 }
 

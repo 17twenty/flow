@@ -92,6 +92,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
 | `live.wip` | Days in window where any WIP limit was exceeded (warn) | tracker snapshot now + PR timeline approximation |
 | `live.flags.cleanup` | Every `Flag-Added: <name>` trailer merged in window has an open or done cleanup ticket (marker `flow:flag name=<name>`) — created by doctor `--fix` if missing | git log trailers (git's trailer format; parsed with `git interpret-trailers --parse`, no regex) |
+| `live.flags.age` | Every open cleanup ticket whose flag is older than `health.flag_max_age` (90d) carries `health.flag_kept_label`, i.e. the flag went or the team said it stays | tracker (the marker's `added=` day, written from the commit) |
 | `live.agents.rework` | How much agent work merged in the window, and how much of it was asked for changes at least once before it did (reported, never graded) | forge PRs merged in window + reviews |
 
 Doctor `--fix` performs only: placeholder resolution, native apply items,
@@ -903,6 +904,55 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   agent work says that it was let through unattended rather than that nothing
   a machine wrote merged, which would be untrue of a window flow read
   perfectly well.
+
+- **`live.flags.age` reads the board, not the history (item #146).** A flag
+  past ninety days was announced more than ninety days ago, so the commit is
+  further back than any window worth reading every morning while the ticket is
+  still right there. Reading the history far enough back to find the commit
+  would cost every team a quarter of their trunk and a trailer parse per
+  commit, every day, to find the few flags that are late — and would still
+  miss a flag older than whatever span was chosen. The ticket is the record of
+  the promise, so the ticket is what is audited.
+
+- **The date is in the marker, written from the commit.** `flow:flag
+  name=<n> repo=<r> added=<yyyy-mm-dd>` is stamped when the ticket is filed,
+  from the day the announcing commit landed. That satisfies both halves of
+  what the age has to be: it is the commit's date and not the ticket's, so
+  closing, reopening, rewriting or re-filing the ticket does not wind the
+  clock back; and it is machine-readable, so flow is not parsing its own
+  paragraphs to find out. A search by `flow:flag name=<n> repo=<r>` still
+  finds a stamped ticket, because a marker naming fewer fields matches more
+  tickets (spec 11 §1) — which is what lets the stamp appear without
+  orphaning the tickets filed before it existed. A ticket carrying no `added`
+  is not counted: the only other date it has is its own, and that is the one
+  date this check must not use.
+
+- **Where two commits announce the same flag, the oldest is the one the
+  ticket is stamped with.** The branch in the code is as old as it is, and
+  mentioning it again does not make it younger.
+
+- **Only flags past the date are counted.** One forgotten flag among fifty
+  healthy ones is one of one, not an encouraging ninety-eight per cent, and a
+  team whose flags are all current is `0/0` with a sentence saying which
+  nothing it was.
+
+- **A label is how a flag is allowed to stay, and flow never applies it.**
+  The explanation belongs in the ticket's comments, where the team already
+  writes and nobody has to keep to flow's vocabulary; what the check needs
+  from it is the yes or no, and a label is the one field every tracker flow
+  speaks to has, is already read on every ticket flow lists, and is one click
+  for a person. It is in the labels `flow apply` asks the tracker for —
+  a label nobody can apply is no way out of a finding — but putting it on
+  anything is the team's word and never flow's.
+
+- **There is no `--fix` arm.** Both ways out of this finding are a person's:
+  flow cannot read the code, so it can neither take the flag out nor decide
+  that it stays. The remedy names the two of them and the key to raise if the
+  team has agreed a longer life for its flags.
+
+- **Closed is gone.** The cleanup ticket says in as many words that a person
+  closes it when the flag is out, so a closed ticket is the only account of
+  the code flow has and it is the one the team wrote.
 - **§6 a measurement is reported and never graded (issue #147).** The
   proposal asks for an agent's throughput and rework rate, and neither has a
   share that is right: a team landing forty agent pull requests a fortnight

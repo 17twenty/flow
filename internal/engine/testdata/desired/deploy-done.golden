@@ -20,6 +20,7 @@ depends_on "tracker.project"
 additive
 content "" "agent"
 content "" "blocked"
+content "" "flag-kept"
 content "" "flow-followup"
 content "" "incident"
 content "" "ui"

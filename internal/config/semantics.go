@@ -613,6 +613,11 @@ func (v *validator) health() {
 	if below != 0 && (below < 1 || below > 100) {
 		v.add("health.fail_below is %d; it must be a percentage between 1 and 100", below)
 	}
+	// An age that has already passed makes every flag ever announced a
+	// finding on the day it is announced, which is not a review of anything.
+	if age := v.cfg.Health.FlagMaxAge; age < 0 {
+		v.add("health.flag_max_age is %s; it must be a length of time, not a negative one", age)
+	}
 }
 
 // checkSecrets reports any scalar in the document that looks like a credential.

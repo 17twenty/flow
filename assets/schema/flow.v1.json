@@ -364,6 +364,21 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "flag_kept_label": {
+          "description": "The label on a cleanup ticket that says the flag stays on purpose. Omitted means flag-kept.",
+          "type": "string"
+        },
+        "flag_max_age": {
+          "description": "How long a feature flag may stand before the audit asks about it, measured from the commit that announced it. Omitted means 90d. Go duration syntax plus d (24h) and w (7d).",
+          "type": "string",
+          "pattern": "^0$|^[+-]?(\\d+(\\.\\d+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$",
+          "examples": [
+            "90m",
+            "2h",
+            "7d",
+            "30d"
+          ]
         }
       },
       "additionalProperties": false
