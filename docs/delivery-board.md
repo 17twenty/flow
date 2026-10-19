@@ -122,7 +122,7 @@ says the pull request closes, which is a structured link rather than a guess.
 | Each flag has one owner | the cleanup ticket is assigned from `followups.owners` |
 | Each flag has one epic | — a cleanup ticket has no parent, so it does not meet flow's own Definition of Ready |
 | An epic cannot move to Live while a cleanup ticket is open | — the product board is out of scope |
-| Review open flags monthly; remove flags older than 90 days or explain why | — the check reports flags added inside `--window` and never a flag's age. [#146](https://github.com/17twenty/flow/issues/146) |
+| Review open flags monthly; remove flags older than 90 days or explain why | `live.flags.age` — every open cleanup ticket whose flag is older than `health.flag_max_age` (90d) is a finding unless the ticket carries `health.flag_kept_label` |
 
 flow never closes a flag cleanup ticket: it cannot read the code, so it cannot
 know the flag is gone. A person closes it, which is the opposite of every
@@ -239,5 +239,3 @@ the section it belongs to.
 - [#144](https://github.com/17twenty/flow/issues/144) — no transition fires
   when a branch is created, so Ready → In Progress waits for a draft pull
   request.
-- [#146](https://github.com/17twenty/flow/issues/146) — a flag's **age** is
-  never judged, so "older than 90 days" has nothing behind it.

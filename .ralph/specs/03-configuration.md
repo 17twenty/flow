@@ -102,6 +102,8 @@ attestation:
 
 health:
   fail_below: 90                  # doctor: a live check below this % fails rather than warns
+  flag_max_age: 90d               # doctor: how long a feature flag may stand before it is asked about
+  flag_kept_label: flag-kept      # the label on a cleanup ticket that says the flag stays on purpose
 ```
 
 ### 1.1 Semantic validation (`flow doctor` check `config.semantics`)
@@ -496,3 +498,16 @@ gate, relaxed policy).
   team that never narrowed the list may still excuse a routine type. The key
   is absent from every shipped preset: the exemption exists only where a
   person wrote it down.
+
+- **`health.flag_max_age` and `health.flag_kept_label` are the team's, and
+  they live beside `fail_below` (item #146).** How long a flag may stand is an
+  agreement a team makes once and keeps to, which is the same kind of thing as
+  how strictly its audit is graded and not the same kind of thing as
+  `--window`, which is a property of one run. The label is configurable for
+  the reason every other label flow reads is: it is a word in the team's
+  vocabulary, and flow asks the tracker for it by whatever name they gave it.
+
+- **A negative `flag_max_age` is refused and an absent one is 90 days.** Zero
+  is how an absent key reads, so it cannot also mean "every flag is too old
+  the day it is announced"; the default is written down once, in the engine,
+  for the reason `fail_below`'s is.

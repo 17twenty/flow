@@ -15,6 +15,7 @@ deploys  forge_deployments
 ✓ native  tracker.labels (labels)
     flow can set it through the provider's API
     create "agent"
+    create "flag-kept"
     create "incident"
     create "ui"
     create "user-facing"

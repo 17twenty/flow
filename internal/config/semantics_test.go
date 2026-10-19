@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/17twenty/flow/internal/core"
 )
@@ -342,6 +343,11 @@ func TestValidate(t *testing.T) {
 			name:   "a health threshold below one per cent",
 			change: func(c *Config) { c.Health.FailBelow = -1 },
 			wantIn: "a percentage between 1 and 100",
+		},
+		{
+			name:   "a feature flag that was too old the day it was written",
+			change: func(c *Config) { c.Health.FlagMaxAge = Duration(-5 * 24 * time.Hour) },
+			wantIn: "health.flag_max_age is -5d",
 		},
 		{
 			name:   "a commit type that is not a word",

@@ -8,7 +8,7 @@
     "tracker": "jira-cloud"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:9cd024bdfb9ab54e45df41fa95ae975a36f49cd392f76e478ce1ad2a6a69ea94",
+  "desired_hash": "sha256:f2ea41fdd7d1a17f46e96ba9f877e4a13a6d89deadd96f40fd16113666e6b754",
   "items": [
     {
       "id": "tracker.project",
@@ -74,7 +74,7 @@
       "outcome": "attest",
       "why": "flow cannot see this through the API, so a person has to confirm it",
       "exists": true,
-      "desired_hash": "sha256:f5595b7c4e7d497174161026c5f274aa027fa8baa2506da2df929ae44bc9b53f",
+      "desired_hash": "sha256:2d124cd19ab71729843def9eb597fb834938faff0d91c6d0bb75e003c9510545",
       "observed_hash": "sha256:37a29ce98ecdf625267e2af6ccb9c4f43e8b1d313fc82bf4ca42f258056dcf1b",
       "changes": [
         {
@@ -89,6 +89,13 @@
           "op": "create",
           "item": {
             "name": "blocked"
+          }
+        },
+        {
+          "what": "tracker.labels",
+          "op": "create",
+          "item": {
+            "name": "flag-kept"
           }
         },
         {

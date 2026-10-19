@@ -417,6 +417,14 @@ type AttestationPolicy struct {
 // rather than warns, as a percentage (spec 07 §6).
 const DefaultFailBelow = 90
 
+// DefaultFlagMaxAge is how long a feature flag may stand before the audit
+// reports it as one nobody came back for (spec 07 §6).
+const DefaultFlagMaxAge = 90 * Day
+
+// DefaultFlagKeptLabel is the label on a cleanup ticket that says the flag it
+// is about stays on purpose.
+const DefaultFlagKeptLabel = "flag-kept"
+
 // Health is how the live-health audit grades what it saw (spec 07 §6).
 //
 // The window it looks back over is not here: `--window` is a property of the
@@ -427,6 +435,13 @@ type Health struct {
 	// FailBelow is the percentage of items a live check must see hold before
 	// it fails rather than warns. Zero means [DefaultFailBelow].
 	FailBelow int `yaml:"fail_below,omitempty"`
+	// FlagMaxAge is how long a feature flag may stand before the audit asks
+	// about it, measured from the commit that announced it. Zero means
+	// [DefaultFlagMaxAge].
+	FlagMaxAge Duration `yaml:"flag_max_age,omitempty"`
+	// FlagKeptLabel is the label a team puts on a cleanup ticket to say that
+	// flag stays on purpose. Empty means [DefaultFlagKeptLabel].
+	FlagKeptLabel string `yaml:"flag_kept_label,omitempty"`
 }
 
 // Threshold is the share a live check must reach, as a ratio. An unset

@@ -201,7 +201,7 @@ func TestDesiredLabels(t *testing.T) {
 			t.Errorf("label %q carries %v; flow has no opinion about a label beyond its existing", label.Name, label.Fields)
 		}
 	}
-	want := []string{"agent", "blocked", "flow-followup", "incident", "ui", "user-facing"}
+	want := []string{"agent", "blocked", "flag-kept", "flow-followup", "incident", "ui", "user-facing"}
 	if !slices.Equal(got, want) {
 		t.Errorf("labels are %v, spec 06 §1 asks for %v", got, want)
 	}
@@ -214,6 +214,18 @@ func TestDesiredLabels(t *testing.T) {
 	}
 	if _, found := labelled(item, "incident"); found {
 		t.Error("a team that does not expedite is still asked for an incident label")
+	}
+
+	// The label a person puts on a flag that stays is read by flow and
+	// written by nobody, so the board has to be asked for it under whatever
+	// name the team gave it (spec 07 §6).
+	cfg.Health.FlagKeptLabel = "wontfix-flag"
+	item, _ = desired(t, cfg).Find(core.ItemTrackerLabels)
+	if _, found := labelled(item, "wontfix-flag"); !found {
+		t.Error("renaming the kept-flag label did not change what flow wants")
+	}
+	if _, found := labelled(item, "flag-kept"); found {
+		t.Error("the default kept-flag label is still wanted after the team renamed it")
 	}
 }
 

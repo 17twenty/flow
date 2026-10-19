@@ -184,7 +184,8 @@ func evidenceLinks(t *testing.T, got engine.Result, want, url string) {
 // the pull requests that merged, the board they came off, the transitions the
 // tracker promised to perform itself — one check per native event, which
 // setupConfig gives two of — the one check for all the transitions flow
-// performs, and the feature flags the window announced.
+// performs, and the feature flags: the ones the window announced and the ones
+// that have stood longer than the team agreed to.
 func liveCheckIDs() []string {
 	return []string{
 		engine.CheckLivePRsLinked,
@@ -203,6 +204,7 @@ func liveCheckIDs() []string {
 		engine.LiveTransitionCheck(config.EventIssueClosed),
 		engine.CheckLiveTransitionsFlow,
 		engine.CheckLiveFlagsCleanup,
+		engine.CheckLiveFlagsAge,
 		engine.CheckLiveAgentsRework,
 	}
 }
