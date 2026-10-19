@@ -959,7 +959,27 @@ type ghAddItemResult struct {
 // id so that a comment can be added without a second lookup.
 const ghCommentsQuery = "query($owner:String!,$name:String!,$number:Int!,$first:Int!,$after:String){" +
 	"repository(owner:$owner,name:$name){issue(number:$number){id " +
-	"comments(first:$first,after:$after){nodes{id body}pageInfo{hasNextPage endCursor}}}}}"
+	"comments(first:$first,after:$after){nodes{id body createdAt author{login}}" +
+	"pageInfo{hasNextPage endCursor}}}}}"
+
+// ghComment is one comment of [ghCommentsQuery]. An author is a nullable
+// actor: GitHub answers null for a comment whose account has gone.
+type ghComment struct {
+	ID        string    `json:"id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"createdAt"`
+	Author    *struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+// login is who wrote it, empty where the account is gone.
+func (c ghComment) login() string {
+	if c.Author == nil {
+		return ""
+	}
+	return c.Author.Login
+}
 
 // ghCommentsResult is the answer to [ghCommentsQuery].
 type ghCommentsResult struct {
@@ -967,11 +987,8 @@ type ghCommentsResult struct {
 		Issue *struct {
 			ID       string `json:"id"`
 			Comments struct {
-				Nodes []struct {
-					ID   string `json:"id"`
-					Body string `json:"body"`
-				} `json:"nodes"`
-				PageInfo ghPageInfo `json:"pageInfo"`
+				Nodes    []ghComment `json:"nodes"`
+				PageInfo ghPageInfo  `json:"pageInfo"`
 			} `json:"comments"`
 		} `json:"issue"`
 	} `json:"repository"`

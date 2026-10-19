@@ -47,6 +47,7 @@ func TrackerContractCases() []TrackerContractCase {
 		{Name: "a new follow-up carries its marker", Run: trackerNewFollowUp},
 		{Name: "flow rewrites its own ticket and nobody else's", Run: trackerUpdateFollowUp},
 		{Name: "a comment is written and edited in place", Run: trackerComment},
+		{Name: "every comment on a ticket can be read back", Run: trackerComments},
 		{Name: "a ticket is closed, and closing it again is no work", Run: trackerClose},
 		{Name: "a closed ticket is reopened", Run: trackerReopen},
 		{Name: "linkage uses the forge's own link", Run: trackerLinkedKeys},
@@ -714,6 +715,60 @@ func trackerComment(t *testing.T, newTracker NewTracker) {
 	}
 	if err := tracker.Comment(t.Context(), fx.Key("#4040"), marker, "nobody is listening"); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("commenting on a ticket that is not there = %v, want ErrNotFound", err)
+	}
+}
+
+// trackerComments: everything written on a ticket comes back, oldest first,
+// with flow's own writing still recognisable as flow's. The blocked-work audit
+// asks whether anybody has explained a ticket, and a reading that lost the
+// marker would count flow's own nudge as the explanation (spec 07 §6).
+func trackerComments(t *testing.T, newTracker NewTracker) {
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	key := fx.Key("#13")
+	first := core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
+	second := core.NewMarker(core.MarkerFollowUp, "check", "tracker.labels", "repo", "acme/widget")
+	if err := tracker.Comment(t.Context(), key, first, "the older of the two"); err != nil {
+		t.Fatalf("Comment: %v", err)
+	}
+	if err := tracker.Comment(t.Context(), key, second, "the newer of the two"); err != nil {
+		t.Fatalf("Comment again: %v", err)
+	}
+	comments, err := tracker.Comments(t.Context(), key)
+	if err != nil {
+		t.Fatalf("Comments: %v", err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("Comments returned %d comments, want the 2 that were written: %+v", len(comments), comments)
+	}
+	if !strings.Contains(comments[0].Body, "the older of the two") {
+		t.Errorf("the first comment back is %q, want the older one: comments come back oldest first", comments[0].Body)
+	}
+	if !strings.Contains(comments[1].Body, "the newer of the two") {
+		t.Errorf("the second comment back is %q, want the newer one", comments[1].Body)
+	}
+	for _, comment := range comments {
+		if !core.Marked(comment.Body) {
+			t.Errorf("a comment flow wrote came back as %q, with no marker: flow cannot tell its own writing from an explanation", comment.Body)
+		}
+		if comment.Author == "" {
+			t.Error("a comment came back with no author, though flow's own credential wrote it")
+		}
+		if comment.CreatedAt.IsZero() {
+			t.Error("a comment came back with no date, so nothing can be said about when it was written")
+		}
+	}
+	missing := fx.Key("#4040")
+	_, err = tracker.Comments(t.Context(), missing)
+	if !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("reading the comments of a ticket that is not there = %v, want ErrNotFound", err)
+	}
+	// The ticket is what the caller asked about, so the ticket is what the
+	// refusal has to name: a provider that answers the comment endpoint of a
+	// missing issue with a 404 about the endpoint leaves whoever reads the
+	// report looking for a fault in flow.
+	if err != nil && !strings.Contains(err.Error(), missing) {
+		t.Errorf("reading the comments of %s failed with %q, which does not name the ticket", missing, err)
 	}
 }
 

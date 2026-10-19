@@ -123,6 +123,11 @@ type Tracker interface {
 	UpdateFollowUp(ctx context.Context, key string, m Marker, title, body string) error
 	// Comment writes a marked comment on a ticket.
 	Comment(ctx context.Context, key string, m Marker, body string) error
+	// Comments returns every comment on a ticket, oldest first. It is how
+	// flow asks whether anybody has said why a ticket is blocked (spec 07
+	// §6); flow's own writing is in there too, and [Marked] is what tells
+	// the two apart.
+	Comments(ctx context.Context, key string) ([]TicketComment, error)
 	// Close closes a ticket, recording why, with one of the close reasons the
 	// tracker distinguishes. It is idempotent: closing a closed ticket does
 	// nothing. Flow closes only tickets it opened (spec 07 §4).

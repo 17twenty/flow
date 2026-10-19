@@ -85,6 +85,18 @@ func (t Ticket) HasLabel(label string) bool {
 	})
 }
 
+// TicketComment is one comment on a ticket, by anybody: flow's own marked
+// writing and a person's explanation look the same to a tracker, and telling
+// them apart is [Marked]'s job rather than the adapter's.
+type TicketComment struct {
+	// Author is the login that wrote it, where the tracker says.
+	Author string
+	// Body is what it says, in the tracker's own markup.
+	Body string
+	// CreatedAt is when it was written.
+	CreatedAt time.Time
+}
+
 // TicketQuery selects tickets: by key, by the column they sit in, or by when
 // they last changed (spec 01 §3).
 type TicketQuery struct {

@@ -44,6 +44,9 @@ const (
 	CheckLiveTicketsProgressStale = "live.tickets.progress_stale"
 	// CheckLiveTicketsReadyDoR is whether what is ready to start really is.
 	CheckLiveTicketsReadyDoR = "live.tickets.ready_dor"
+	// CheckLiveTicketsBlockedExplained is whether work the team has stopped
+	// says why it stopped.
+	CheckLiveTicketsBlockedExplained = "live.tickets.blocked_explained"
 )
 
 // StaleAfter is how long a ticket may sit in progress with nothing happening
@@ -69,6 +72,7 @@ func (a *audit) ticketChecks() []Check {
 		a.ticketsReviewHasPR(),
 		a.ticketsProgressStale(),
 		a.ticketsReadyDoR(),
+		a.ticketsBlockedExplained(),
 	}
 }
 
@@ -555,6 +559,126 @@ func finished(ticket core.Ticket) time.Time {
 		return ticket.ClosedAt
 	}
 	return ticket.UpdatedAt
+}
+
+// ticketsBlockedExplained asks whether work the team has stopped says why it
+// stopped.
+//
+// It exists only for a team that asked for it. `workflow.blocked.label` on its
+// own is a team that marks blocked work and says nothing more about it, which
+// is their business; `require_comment` is the team writing down that a label
+// is not enough. Flow holds them to what they wrote and to nothing else.
+//
+// It fails rather than warns. Unlike a ticket that has gone quiet, this is not
+// a fact about what people had time for: the label was put on deliberately,
+// and the explanation is the half of the gesture that was left out.
+func (a *audit) ticketsBlockedExplained() Check {
+	return Check{
+		ID:        CheckLiveTicketsBlockedExplained,
+		Title:     "Work the team has blocked says why",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker},
+		Run: func(ctx context.Context, env *Env) Result {
+			if env.Config == nil || !env.Config.Workflow.Blocked.RequireComment {
+				return Skip("workflow.blocked.require_comment is off, so a label is all this team asks for")
+			}
+			if env.Adapters.Tracker == nil {
+				return Failed(errNoTracker)
+			}
+			board, err := a.board(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			label := blockedLabel(env.Config)
+			var stopped []core.Ticket
+			for _, ticket := range board {
+				if ticket.Closed {
+					// Work that is finished is not waiting on anybody,
+					// whatever label it still carries.
+					continue
+				}
+				if ticket.Blocked || (label != "" && ticket.HasLabel(label)) {
+					stopped = append(stopped, ticket)
+				}
+			}
+			slices.SortStableFunc(stopped, func(x, y core.Ticket) int { return cmp.Compare(x.Key, y.Key) })
+			var t tally
+			for _, ticket := range stopped {
+				comments, err := env.Adapters.Tracker.Comments(ctx, ticket.Key)
+				if err != nil {
+					// A ticket flow could not read is not a ticket with
+					// nothing written on it, and reporting it as one would
+					// be flow inventing a finding out of its own blindness.
+					return Failed(core.Explain(err, "read the comments on %s", ticket.Key))
+				}
+				said, last := explanation(comments)
+				switch {
+				case said:
+					t.held()
+				case last.IsZero():
+					t.broke(ticket.URL, "%s %s — nobody has written anything on it", ticket.Key, ticket.Title)
+				default:
+					t.broke(ticket.URL, "%s %s — only flow has written on it, last on %s",
+						ticket.Key, ticket.Title, day(last))
+				}
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing on the board is marked blocked")
+			case result.State == StatePass:
+				return result.Said("all %d blocked %s say why",
+					t.counts.Total, plural(t.counts.Total, "ticket"))
+			}
+			return result.Said("%d of %d blocked tickets do not say why",
+				t.missed(), t.counts.Total).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "a blocked ticket is a request for somebody's help; the label alone does not say what help",
+					Steps: []string{
+						"comment on each ticket below saying why it is blocked",
+						"say what will unblock it, so that somebody can tell when it is no longer true",
+						"say who is monitoring it, so that it is somebody's to chase rather than nobody's",
+						unblockStep(label),
+						"set workflow.blocked.require_comment to false if this team does not want to be asked",
+					},
+				})
+		},
+	}
+}
+
+// explanation reports whether anybody but flow has written on a ticket, and
+// when flow last wrote where nobody else has.
+//
+// Flow's own writing does not count: a nudge flow left on a follow-up is not
+// somebody explaining themselves, and a check that counted it would be
+// answered by flow's own daily run. The marker is what tells them apart,
+// rather than the author, because the account flow writes as is the team's own
+// and may be a person's.
+func explanation(comments []core.TicketComment) (said bool, lastFromFlow time.Time) {
+	for _, comment := range comments {
+		if strings.TrimSpace(core.StripMarkers(comment.Body)) == "" {
+			continue
+		}
+		if !core.Marked(comment.Body) {
+			return true, time.Time{}
+		}
+		if comment.CreatedAt.After(lastFromFlow) {
+			lastFromFlow = comment.CreatedAt
+		}
+	}
+	return false, lastFromFlow
+}
+
+// unblockStep is the remediation step for work that is not really blocked. A
+// team that marks blocked work through the tracker's own flag has no label to
+// take off, and naming one they have never configured would send them looking
+// for it.
+func unblockStep(label string) string {
+	if label == "" {
+		return "work that is not really blocked should lose the tracker's blocked flag instead"
+	}
+	return "work that is not really blocked should lose the " + label + " label instead"
 }
 
 // prsByTicket indexes pull requests by the tickets they are for, so that a

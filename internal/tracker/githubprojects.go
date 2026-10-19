@@ -1490,10 +1490,13 @@ func (g *GitHubProjects) Comment(ctx context.Context, key string, m core.Marker,
 	return nil
 }
 
-// findComment returns the issue's id and the id of the comment carrying the
-// marker, empty when there is none. It reads every page: flow's comment is
-// the oldest one on a ticket that has been nudged for weeks.
-func (g *GitHubProjects) findComment(ctx context.Context, owner, name string, number int, key string, m core.Marker) (string, string, error) {
+// walkComments hands every comment on an issue to fn, oldest first, stopping
+// when fn returns false. It returns the issue's own id, so that a comment can
+// be added without a second lookup.
+//
+// It reads every page unless fn stops it: flow's comment is the oldest one on
+// a ticket that has been nudged for weeks.
+func (g *GitHubProjects) walkComments(ctx context.Context, owner, name string, number int, key string, fn func(ghComment) bool) (string, error) {
 	var after any
 	issueID := ""
 	for {
@@ -1505,24 +1508,62 @@ func (g *GitHubProjects) findComment(ctx context.Context, owner, name string, nu
 			},
 		}, ghSentinel)
 		if err != nil {
-			return "", "", core.Explain(err, "read the comments on %s", key)
+			return "", core.Explain(err, "read the comments on %s", key)
 		}
 		if data.Repository == nil || data.Repository.Issue == nil {
-			return "", "", core.Errorf(core.ErrNotFound, "comment on %s", key).
+			return "", core.Errorf(core.ErrNotFound, "read the comments on %s", key).
 				WithWhy("%s/%s has no issue %d", owner, name, number)
 		}
 		issue := data.Repository.Issue
 		issueID = issue.ID
 		for _, comment := range issue.Comments.Nodes {
-			if core.HasMarker(comment.Body, m) {
-				return issueID, comment.ID, nil
+			if !fn(comment) {
+				return issueID, nil
 			}
 		}
 		if !issue.Comments.PageInfo.HasNextPage || issue.Comments.PageInfo.EndCursor == "" {
-			return issueID, "", nil
+			return issueID, nil
 		}
 		after = issue.Comments.PageInfo.EndCursor
 	}
+}
+
+// findComment returns the issue's id and the id of the comment carrying the
+// marker, empty when there is none.
+func (g *GitHubProjects) findComment(ctx context.Context, owner, name string, number int, key string, m core.Marker) (string, string, error) {
+	found := ""
+	issueID, err := g.walkComments(ctx, owner, name, number, key, func(comment ghComment) bool {
+		if !core.HasMarker(comment.Body, m) {
+			return true
+		}
+		found = comment.ID
+		return false
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return issueID, found, nil
+}
+
+// Comments returns every comment on a ticket, oldest first, which is the order
+// GitHub lists them in.
+func (g *GitHubProjects) Comments(ctx context.Context, key string) ([]core.TicketComment, error) {
+	owner, name, number, err := ghParseKey(key, g.repo)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.TicketComment
+	if _, err := g.walkComments(ctx, owner, name, number, key, func(comment ghComment) bool {
+		out = append(out, core.TicketComment{
+			Author:    comment.login(),
+			Body:      comment.Body,
+			CreatedAt: comment.CreatedAt,
+		})
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Close closes a ticket, recording why.

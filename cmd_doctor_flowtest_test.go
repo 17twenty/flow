@@ -372,7 +372,7 @@ func TestScenario_A06_DoctorFilesARulesetFollowUpAndSettlesIt(t *testing.T) {
 	if done.CloseReason != core.ClosedCompleted {
 		t.Errorf("%s was closed as %q, want %q", ticket.Key, done.CloseReason, core.ClosedCompleted)
 	}
-	if comments := world().tracker.Comments(ticket.Key); len(comments) == 0 {
+	if comments := world().tracker.Written(ticket.Key); len(comments) == 0 {
 		t.Error("flow closed the ticket without saying why")
 	} else if !strings.Contains(comments[len(comments)-1].Body, core.ItemForgeProtection) {
 		t.Errorf("the closing comment does not name the check:\n%s", comments[len(comments)-1].Body)
@@ -413,7 +413,7 @@ func TestScenario_A06_DoctorReopensAFollowUpClosedWithTheWorkUndone(t *testing.T
 	if reason := world().tracker.ReopenReason(ticket.Key); !strings.Contains(reason, core.ItemForgeProtection) {
 		t.Errorf("flow reopened %s without saying why: %q", ticket.Key, reason)
 	}
-	comments := world().tracker.Comments(ticket.Key)
+	comments := world().tracker.Written(ticket.Key)
 	if len(comments) == 0 {
 		t.Fatal("flow reopened the ticket silently")
 	}

@@ -268,8 +268,8 @@ func TestAForgottenFollowUpIsFoundByItsMarker(t *testing.T) {
 	}
 	// Adoption does not chase: flow does not know how long it has really been
 	// outstanding, and a comment on every fresh clone is noise.
-	if len(w.tracker.Comments(filed.Ticket.Key)) != 0 {
-		t.Errorf("comments = %v, want adoption to be silent", w.tracker.Comments(filed.Ticket.Key))
+	if len(w.tracker.Written(filed.Ticket.Key)) != 0 {
+		t.Errorf("comments = %v, want adoption to be silent", w.tracker.Written(filed.Ticket.Key))
 	}
 }
 
@@ -285,7 +285,7 @@ func TestAnOutstandingFollowUpIsChasedWeekly(t *testing.T) {
 	if out := w.reconcile(t, needsAHuman(), true); out.Action != engine.FollowUpWaiting {
 		t.Fatalf("action after six days = %q, want %q", out.Action, engine.FollowUpWaiting)
 	}
-	if got := len(w.tracker.Comments(filed.Ticket.Key)); got != 0 {
+	if got := len(w.tracker.Written(filed.Ticket.Key)); got != 0 {
 		t.Fatalf("comments after six days = %d, want none", got)
 	}
 
@@ -294,7 +294,7 @@ func TestAnOutstandingFollowUpIsChasedWeekly(t *testing.T) {
 	if out.Action != engine.FollowUpNudged {
 		t.Fatalf("action after a week = %q, want %q", out.Action, engine.FollowUpNudged)
 	}
-	comments := w.tracker.Comments(filed.Ticket.Key)
+	comments := w.tracker.Written(filed.Ticket.Key)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %d, want one chase", len(comments))
 	}
@@ -323,7 +323,7 @@ func TestChasingEditsOneCommentRatherThanGrowingAColumn(t *testing.T) {
 		}
 	}
 
-	comments := w.tracker.Comments(filed.Ticket.Key)
+	comments := w.tracker.Written(filed.Ticket.Key)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %d, want one, edited in place", len(comments))
 	}
@@ -359,7 +359,7 @@ func TestAFollowUpIsClosedWhenFlowSeesTheWorkDone(t *testing.T) {
 	if ticket.CloseReason != core.ClosedCompleted {
 		t.Errorf("close reason = %q, want %q", ticket.CloseReason, core.ClosedCompleted)
 	}
-	comments := w.tracker.Comments(filed.Ticket.Key)
+	comments := w.tracker.Written(filed.Ticket.Key)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %d, want one saying what flow saw", len(comments))
 	}
@@ -405,7 +405,7 @@ func TestAFollowUpClosedWithoutTheWorkIsReopened(t *testing.T) {
 	if reason := w.tracker.ReopenReason(filed.Ticket.Key); !strings.Contains(reason, followUpCheck.ID) {
 		t.Errorf("reopen reason = %q, want it to name the check", reason)
 	}
-	comments := w.tracker.Comments(filed.Ticket.Key)
+	comments := w.tracker.Written(filed.Ticket.Key)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %d, want one explaining the reopen", len(comments))
 	}
@@ -469,7 +469,7 @@ func TestAFollowUpNoLongerNeededIsWithdrawn(t *testing.T) {
 		t.Errorf("close reason = %q, want %q: the work was not done, it stopped being asked for",
 			ticket.CloseReason, core.ClosedNotPlanned)
 	}
-	comments := w.tracker.Comments(filed.Ticket.Key)
+	comments := w.tracker.Written(filed.Ticket.Key)
 	if len(comments) != 1 || !strings.Contains(comments[0].Body, "No longer needed") {
 		t.Fatalf("comments = %v, want one saying why it was withdrawn", comments)
 	}
@@ -493,14 +493,14 @@ func TestAFollowUpAlreadyClosedAndVerifiedIsLeftAlone(t *testing.T) {
 	w.clock.Advance(24 * time.Hour)
 	w.reconcile(t, done, true)
 
-	before := w.tracker.Comments(filed.Ticket.Key)
+	before := w.tracker.Written(filed.Ticket.Key)
 	w.clock.Advance(24 * time.Hour)
 	out := w.reconcile(t, done, true)
 
 	if out.Action != engine.FollowUpNone {
 		t.Fatalf("action = %q, want nothing to do", out.Action)
 	}
-	if after := w.tracker.Comments(filed.Ticket.Key); len(after) != len(before) {
+	if after := w.tracker.Written(filed.Ticket.Key); len(after) != len(before) {
 		t.Errorf("comments went from %d to %d on a ticket already closed", len(before), len(after))
 	}
 }
@@ -848,7 +848,7 @@ func TestAFollowUpIsBroughtUpToDate(t *testing.T) {
 	if record := w.locked(t); !record.NudgedAt.IsZero() {
 		t.Errorf("the refresh was recorded as a chase, at %v", record.NudgedAt)
 	}
-	if comments := w.tracker.Comments(filed.Ticket.Key); len(comments) != 0 {
+	if comments := w.tracker.Written(filed.Ticket.Key); len(comments) != 0 {
 		t.Errorf("the refresh commented on the ticket: %+v", comments)
 	}
 }

@@ -88,6 +88,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.tickets.review_has_pr` | Does every ticket in `in_review` have an open, ready PR? | tracker + forge |
 | `live.tickets.progress_stale` | Any ticket in `in_progress` with no linked PR activity for > 5 working days? (warn only) | tracker + forge |
 | `live.tickets.ready_dor` | Do tickets in `ready` pass DoR? | tracker |
+| `live.tickets.blocked_explained` | (`workflow.blocked.require_comment`) Does every open blocked ticket carry a comment somebody other than flow wrote? | tracker |
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
 | `live.wip` | Days in window where any WIP limit was exceeded (warn) | tracker snapshot now + PR timeline approximation |
 | `live.flags.cleanup` | Every `Flag-Added: <name>` trailer merged in window has an open or done cleanup ticket (marker `flow:flag name=<name>`) — created by doctor `--fix` if missing | git log trailers (git's trailer format; parsed with `git interpret-trailers --parse`, no regex) |
@@ -929,3 +930,34 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   as a team doing well, and what happened is that nobody asked a machine for
   anything. A configuration naming no machine contributors skips the check
   outright — 0/0 beside a team of people reads as a reproach.
+- **§6 a label is a request for help; the comment is what asks (issue #145).**
+  `workflow.blocked.require_comment` was decoded, validated and read by
+  nothing. `live.tickets.blocked_explained` reads it: a team that wrote the key
+  down has said a label on its own is not enough, and flow holds them to that
+  and to nothing else — the check skips for everybody else rather than
+  teaching every team the same lesson about their board. It is graded like the
+  rest of the board family rather than warn-only, because unlike a ticket that
+  has gone quiet this is not a fact about what people had time for: the label
+  went on deliberately and the explanation is the half of the gesture that was
+  left out. Graded and not critical, because `health.fail_below` is where a
+  team says how much of this they will carry, and one unexplained ticket in
+  twenty is a reminder rather than a broken workflow.
+- **§6 flow's own writing cannot answer the question flow is asking.** A
+  comment is an explanation when somebody who is not flow wrote it, which is
+  decided by the marker rather than by the author: the account flow writes as
+  belongs to the team and may well be a person's. Flow nudges its own
+  follow-ups, so a reading that counted a nudge would pass exactly the tickets
+  that have been waiting longest. A ticket flow has written on and nobody else
+  has says so in those words, because "nobody has said anything" and "only
+  flow has said anything" need different things from whoever reads the report.
+- **§6 what the comment must say is in the remedy, not in the rule.** Flow
+  cannot judge whether a paragraph names why the work stopped, what would
+  clear it and who is chasing it — so it asks for a comment and the
+  remediation asks for the three. A rule that tried to grade the prose would
+  be wrong about English, and a remedy that only said "add a comment" would
+  collect the word "blocked" on every ticket.
+- **§6 blocked work that is closed is not waiting on anybody.** A closed
+  ticket keeps whatever labels it had, and asking a team to explain work they
+  have already dropped is asking them to tidy history. The tracker's own
+  blocked flag counts beside the label, because a board that uses a Jira flag
+  or a Linear blocking relation and no label at all has still stopped the work.

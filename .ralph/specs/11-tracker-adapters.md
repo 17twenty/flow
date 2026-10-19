@@ -639,3 +639,28 @@ reopen, pagination, error mapping.
   `core.Ticket.Size` is a duration, and Linear's estimate is a number of
   points whose meaning each team settles for itself. flow leaves the field
   empty rather than multiplying by an hour it invented.
+
+- **§1 a tracker can be asked what was said on a ticket (issue #145).**
+  `core.Tracker.Comments` returns every comment on a ticket, oldest first, as
+  `core.TicketComment` — author, body and the moment it was written. It is not
+  a capability: every tracker flow speaks to has comments, and a declaration
+  that could say no would be declaring something no adapter does. The marker
+  is left in the body rather than parsed out by the adapter, because telling
+  flow's own writing from somebody's explanation is the caller's question and
+  `core.Marked` is where it is answered.
+
+- **§1 one walk of a ticket's comments, two questions.** Finding flow's own
+  comment by its marker and listing all of them are the same walk with
+  different stopping conditions, so each adapter has one `walkComments` and
+  both callers go through it: two pagers over the same endpoint would drift,
+  and the one that is wrong would be the one nothing reads daily. Jira asks in
+  the order the question wants — newest first for flow's own comment, oldest
+  first for the list — because Jira is the only one of the three that orders a
+  page on request.
+
+- **§1 an empty list and a key nobody has are different answers.** Jira
+  answers the comment endpoint of a missing issue with a 404 that names the
+  endpoint rather than the issue, so the adapter reads the issue first: a
+  board check that could not tell "nothing was said" from "no such ticket"
+  would read a mistyped key as a clean bill of health.
+

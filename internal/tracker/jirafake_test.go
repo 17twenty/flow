@@ -787,13 +787,19 @@ func (f *jiraFake) comments(w http.ResponseWriter, r *http.Request, segments []s
 	}
 	switch {
 	case r.Method == http.MethodGet && len(segments) == 3:
+		// Jira orders a page as it was asked to, and flow asks in two
+		// different orders for two different questions.
+		ordered := slices.Clone(found.comments)
+		if r.URL.Query().Get("orderBy") == "-created" {
+			slices.Reverse(ordered)
+		}
 		start, _ := strconv.Atoi(r.URL.Query().Get("startAt"))
-		end := min(start+f.pageSize, len(found.comments))
-		if start > len(found.comments) {
-			start = len(found.comments)
+		end := min(start+f.pageSize, len(ordered))
+		if start > len(ordered) {
+			start = len(ordered)
 		}
 		f.write(w, jiraCommentPage{
-			Comments: found.comments[start:end],
+			Comments: ordered[start:end],
 			StartAt:  start,
 			MaxItems: f.pageSize,
 			Total:    len(found.comments),
@@ -807,6 +813,7 @@ func (f *jiraFake) comments(w http.ResponseWriter, r *http.Request, segments []s
 		f.nextID++
 		found.comments = append(found.comments, jiraComment{
 			ID: strconv.Itoa(f.nextID), Body: body,
+			Author:  &jiraUser{AccountID: "acct-flow", DisplayName: "Flow Bot"},
 			Created: jiraTime{Time: f.now}, Updated: jiraTime{Time: f.now},
 		})
 		w.WriteHeader(http.StatusCreated)
