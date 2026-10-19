@@ -91,6 +91,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
 | `live.wip` | Days in window where any WIP limit was exceeded (warn) | tracker snapshot now + PR timeline approximation |
 | `live.flags.cleanup` | Every `Flag-Added: <name>` trailer merged in window has an open or done cleanup ticket (marker `flow:flag name=<name>`) — created by doctor `--fix` if missing | git log trailers (git's trailer format; parsed with `git interpret-trailers --parse`, no regex) |
+| `live.agents.rework` | How much agent work merged in the window, and how much of it was asked for changes at least once before it did (reported, never graded) | forge PRs merged in window + reviews |
 
 Doctor `--fix` performs only: placeholder resolution, native apply items,
 follow-up lifecycle, flag cleanup ticket creation, and **catch-up** of missed
@@ -901,3 +902,30 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   agent work says that it was let through unattended rather than that nothing
   a machine wrote merged, which would be untrue of a window flow read
   perfectly well.
+- **§6 a measurement is reported and never graded (issue #147).** The
+  proposal asks for an agent's throughput and rework rate, and neither has a
+  share that is right: a team landing forty agent pull requests a fortnight
+  with a quarter of them sent back may be doing better work than one landing
+  two with none. So `live.agents.rework` passes whatever it finds and cannot
+  move the exit code. A check that could fail would need a threshold, and a
+  threshold nobody can justify is a number flow made up.
+- **§6 throughput and rework are one check, not two (issue #147).**
+  Throughput is the rework rate's denominator: "a machine merged 12 pull
+  requests" beside "3 of 12 were sent back" is the same sentence written
+  twice, and the second cannot be read without the first. It is a check
+  rather than a new kind of thing in the report because the report has one
+  shape — counts, a message and evidence, rendered in text, markdown, JSON
+  and in the issue the morning run edits in place. A measurement with a shape
+  of its own would be rendered four more times to say less.
+- **§6 rework is what happened, not what is still being asked (issue
+  #147).** Every merged pull request has been approved by the time it lands,
+  so `core.PullRequest.ChangesRequested`, which reads each reviewer's latest
+  verdict, is false of all of them. The new `SentBack` asks whether anybody
+  ever asked for changes, counting a review a later one overtook and one
+  somebody dismissed. The approval that followed is what makes it rework
+  rather than a refusal.
+- **§6 a share of nothing is not a good score (issue #147).** A window with
+  no agent work in it reports that, rather than 0% of nothing: a rate reads
+  as a team doing well, and what happened is that nobody asked a machine for
+  anything. A configuration naming no machine contributors skips the check
+  outright — 0/0 beside a team of people reads as a reproach.

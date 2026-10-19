@@ -475,3 +475,21 @@ type FileProposal struct {
 
 // Branch is the branch a proposal is made on.
 func (p FileProposal) Branch() string { return "flow/setup-" + p.ID }
+
+// SentBack reports whether anybody ever asked for changes on this pull
+// request, including a review that a later one overtook or that was
+// dismissed.
+//
+// It is the other question to [PullRequest.ChangesRequested], which asks
+// whether the work is held up as it stands and is therefore false of
+// everything that merged. Rework is a thing that happened: the review that
+// asked for it counts for ever, and the approval that followed is what makes
+// it rework rather than a refusal (spec 07 §6).
+func (p PullRequest) SentBack() bool {
+	for _, review := range p.Reviews {
+		if review.State == ReviewChangesRequested {
+			return true
+		}
+	}
+	return false
+}

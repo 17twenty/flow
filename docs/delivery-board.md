@@ -136,7 +136,7 @@ other follow-up flow files.
 | Mark agent work with the label `agent`, or an agent user | `agents.labels` and `agents.authors` — either one makes a pull request agent-written |
 | A person reviews each agent PR; the reviewer owns the merge | `agent.human_review`, which relaxed strictness does not relax |
 | The WIP limit on In Review matters: agents outrun reviewers | `workflow.columns[].wip.limit` on the review column, warned on every gated pull request. Expedited work is the one exception, which is the team’s own agreed way past a limit |
-| Track throughput and rework rate for agent work | — the health issue counts checks, not work. [#147](https://github.com/17twenty/flow/issues/147) |
+| Track throughput and rework rate for agent work | `live.agents.rework` — how much a machine merged in the window and how much of it came back first, reported in the same health issue and never graded |
 
 ## §11 Testing · §12 Change management
 
@@ -230,7 +230,9 @@ the credential may write and files a follow-up for the rest.
 
 ## What the proposal asks for and flow does not do
 
-Five things, each an issue rather than a paragraph:
+Each one that is left is an issue rather than a paragraph. A gap this
+document found and flow has since closed leaves the list and is described in
+the section it belongs to.
 
 - [#143](https://github.com/17twenty/flow/issues/143) — the product board
   (epics) is not modelled at all.
@@ -242,5 +244,3 @@ Five things, each an issue rather than a paragraph:
   nobody.
 - [#146](https://github.com/17twenty/flow/issues/146) — a flag's **age** is
   never judged, so "older than 90 days" has nothing behind it.
-- [#147](https://github.com/17twenty/flow/issues/147) — throughput and rework
-  rate for agent work are not measured.

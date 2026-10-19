@@ -445,3 +445,49 @@ func TestChangeFields(t *testing.T) {
 		t.Errorf("Fields() = %v, want all of them: nothing exists yet, so none of it is already true", got)
 	}
 }
+
+// TestPullRequestSentBack is the other question to ChangesRequested: not
+// whether the work is held up now, which is false of everything that merged,
+// but whether anybody ever asked for changes (spec 07 §6).
+func TestPullRequestSentBack(t *testing.T) {
+	at := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		reviews []core.Review
+		want    bool
+	}{
+		{name: "nobody has looked"},
+		{
+			name:    "approved and nothing else",
+			reviews: []core.Review{{Author: "dev", State: core.ReviewApproved, SubmittedAt: at}},
+		},
+		{
+			name: "they asked, got them, and approved",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewApproved, SubmittedAt: at.Add(time.Hour)},
+			},
+			want: true,
+		},
+		{
+			name: "a refusal somebody dismissed still happened",
+			reviews: []core.Review{
+				{Author: "dev", State: core.ReviewChangesRequested, SubmittedAt: at},
+				{Author: "dev", State: core.ReviewDismissed, SubmittedAt: at.Add(time.Hour)},
+			},
+			want: true,
+		},
+		{
+			name:    "a comment is not a refusal",
+			reviews: []core.Review{{Author: "dev", State: core.ReviewCommented, SubmittedAt: at}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pr := core.PullRequest{Reviews: test.reviews}
+			if got := pr.SentBack(); got != test.want {
+				t.Fatalf("SentBack() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
