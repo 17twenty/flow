@@ -664,3 +664,18 @@ reopen, pagination, error mapping.
   board check that could not tell "nothing was said" from "no such ticket"
   would read a mistyped key as a clean bill of health.
 
+
+- **§1 a branch a tracker has forgotten the name of is not a branch (issue
+  #144).** GitHub keeps the link between an issue and a branch after somebody
+  deletes the branch, and answers `linkedBranches` with a node whose `ref` is
+  null. The work it stood for is over and flow could not name it in a
+  sentence anyway, so the adapter drops it. The capability is declared
+  `set: false, verify: true`: flow reads the link and never writes one, and
+  creating a branch for somebody is not a remedy flow offers.
+
+- **§1 two of the three trackers cannot answer this at all, and say so.**
+  Jira's development information — branches, commits, pull requests — has no
+  public API, and Linear's `Issue.branchName` is the name it *suggests*, not
+  evidence anybody cut it. Both declare `linked_branches_read` unset and
+  unverifiable, which is what makes `workflow.transitions.branch_created`
+  refuse at validation on those boards rather than at six in the morning.

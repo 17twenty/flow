@@ -369,3 +369,82 @@ func TestAMoveOwedForDaysIsNotDeferredByFreshWork(t *testing.T) {
 		t.Errorf("the ticket is in %q, want In review: it has been owed the move for days", got)
 	}
 }
+
+// TestACatchUpStartsWorkNobodyHasOpenedAPullRequestFor: a branch is the only
+// thing a ticket can have that is not a pull request, and no CI run fires when
+// somebody cuts one — there is no pull request for a workflow to run on. So
+// here the catch-up is not a catch-up at all but the only thing that ever
+// performs the event, which is why it must look at a ticket with no pull
+// requests behind it.
+func TestACatchUpStartsWorkNobodyHasOpenedAPullRequestFor(t *testing.T) {
+	cfg := startsOnABranch(t)
+	started := boarded("#12", "tidy the icons", "Ready", daysAgo(2))
+	started.Branches = []string{"12-tidy-the-icons"}
+	// Nobody has started this one, and a check that counted it would report
+	// the whole board as work flow had an opinion about.
+	waiting := boarded("#13", "rename the widget", "Ready", daysAgo(2))
+
+	told, _ := catchUp(t, cfg, false, coretest.ForgeFixture{}, started, waiting)
+
+	wantState(t, told, engine.StateFail)
+	wantCounts(t, told, 0, 1)
+	evidenceMentions(t, told, "#12")
+	evidenceMentions(t, told, "a branch for it already existed by")
+
+	done, tracker := catchUp(t, cfg, true, coretest.ForgeFixture{}, started, waiting)
+	wantState(t, done, engine.StatePass)
+	if got := movesTo(t, tracker, "#12"); got != "In progress" {
+		t.Errorf("the ticket is in %q, want In progress: flow owns the move and was allowed to make it", got)
+	}
+}
+
+// And a team that has not asked for the event is not told about branches. The
+// tracker reports them whatever the workflow says, so the configuration is
+// the whole of what makes a branch worth noticing.
+func TestACatchUpLeavesABranchAloneWhenNoTransitionRestsOnIt(t *testing.T) {
+	started := boarded("#12", "tidy the icons", "Ready", daysAgo(2))
+	started.Branches = []string{"12-tidy-the-icons"}
+
+	told, tracker := catchUp(t, liveConfig(), true, coretest.ForgeFixture{}, started)
+
+	wantState(t, told, engine.StatePass)
+	wantCounts(t, told, 0, 0)
+	if got := movesTo(t, tracker, "#12"); got != "Ready" {
+		t.Errorf("the ticket is in %q, want Ready: nothing in the workflow asks flow to move work when a branch appears", got)
+	}
+}
+
+// Nor when the tracker's own automation owns it: flow reports a native
+// transition that did not happen and never performs one itself (spec 04 §5).
+func TestACatchUpDoesNotStartWorkTheTrackerSaidItWouldStart(t *testing.T) {
+	cfg := startsOnABranch(t)
+	cfg.Workflow.Transitions[config.EventBranchCreated] = config.Transition{To: "in_progress", Owner: config.OwnerNative}
+	started := boarded("#12", "tidy the icons", "Ready", daysAgo(2))
+	started.Branches = []string{"12-tidy-the-icons"}
+
+	told, tracker := catchUp(t, cfg, true, coretest.ForgeFixture{}, started)
+
+	wantCounts(t, told, 0, 0)
+	if got := movesTo(t, tracker, "#12"); got != "Ready" {
+		t.Errorf("the ticket is in %q, want Ready: branch_created is the tracker's own move here", got)
+	}
+}
+
+// Nothing dates the link between a ticket and a branch — no tracker records
+// when it was made, and no forge announces one — so the event cannot be made
+// to wait for a grace period the way a pull request's can. A board that dates
+// nothing at all must still have its work started, because there is nobody to
+// wait for: no CI run fires when a branch appears, so the catch-up is not
+// racing a workflow that is about to do the same thing.
+func TestACatchUpStartsWorkOnABoardThatDatesNothing(t *testing.T) {
+	cfg := startsOnABranch(t)
+	started := boarded("#12", "tidy the icons", "Ready", time.Time{})
+	started.Branches = []string{"12-tidy-the-icons"}
+
+	told, tracker := catchUp(t, cfg, true, coretest.ForgeFixture{}, started)
+
+	wantCounts(t, told, 1, 1)
+	if got := movesTo(t, tracker, "#12"); got != "In progress" {
+		t.Errorf("the ticket is in %q, want In progress", got)
+	}
+}

@@ -23,6 +23,12 @@ Status options, Jira statuses, Linear workflow states) and resolved into the loc
 | Jira Cloud | — (dev-info API is not public) | Jira issue key in branch name or PR title — the convention Jira itself uses to link development work |
 | Linear | Linear attachment for the PR URL (created by Linear's Git integration) | Linear identifier in branch name or PR title — Linear's own convention |
 
+`branch_created` (§4) reads the same linkage the other way round, from the
+ticket to its branches, and only from the tracker's own structured link
+(`Tracker.Ticket().Branches`, capability `linked_branches_read`). There is no
+fallback: a ticket key read out of a branch name is the user regex P12
+refuses, so a tracker that keeps no such link cannot have the event at all.
+
 Rules:
 - The fallback key format is the tracker's format (`[A-Z][A-Z0-9]+-\d+` for
   Jira/Linear) compiled once in the adapter; it is not configurable.
@@ -34,6 +40,7 @@ Rules:
 
 | Event | Source |
 |---|---|
+| `branch_created` | the tracker's own link between a ticket and a branch (§3) |
 | `pr_opened_draft` | PR opened as draft |
 | `pr_opened` | PR opened ready for review |
 | `pr_ready_for_review` | draft → ready |
@@ -47,6 +54,11 @@ Rules:
 
 `pr_opened` is treated as `pr_opened_draft` followed by `pr_ready_for_review`
 (so both transitions apply in order).
+
+`branch_created` has no event behind it: no forge announces a branch through
+the APIs flow uses, and the tracker does not date the link. It is a *state* —
+the ticket has branches — read every time flow looks, which is why only the
+doctor's catch-up ever performs it.
 
 ## 5. Transition ownership (P11)
 
@@ -304,3 +316,39 @@ Enforced by policy rules `wip.*` (spec 09); never blocks an approved PR.
   shipped presets configures the event — whether abandoning work returns the
   ticket to someone or leaves it where a person will see it is a team's
   decision, and flow's job was only to stop refusing the sensible answer.
+
+- **§3–§5 the work starts on a branch, and the tracker is the only one who
+  can say so (issue #144).** The proposal's automation table begins with
+  "branch created with ticket key → Ready → In Progress", and flow's first
+  event was `pr_opened_draft`, so work sat in Ready until somebody opened a
+  draft pull request. The event exists now, and the key word in the
+  proposal's row is the one flow will not honour: *with ticket key*. Reading
+  a key out of a branch name is the user regex P12 refuses, and an adapter
+  that did it would be the same guess with the configuration taken away. So
+  `branch_created` is fed by the tracker's own link between a ticket and its
+  branches and by nothing else — `Issue.linkedBranches` on GitHub, which is
+  what "Create a branch" and `gh issue develop` write — and a tracker that
+  keeps no such link may not configure the event. That is a refusal at
+  `flow init` and `flow doctor`, not a quiet never-firing transition: a
+  workflow whose first column never empties is worse than one that honestly
+  starts at the pull request.
+
+- **§4 it is a state, not an event, and that changes who performs it.** No
+  forge announces a branch through the APIs flow uses and no tracker dates
+  the link, so there is no moment to react to and nothing to measure a grace
+  period against. `flow check pr` cannot see it either — it runs on a pull
+  request, and the whole point is that there is not one yet. The doctor's
+  catch-up is therefore not a catch-up here but the only thing that ever
+  performs the event, which is why it must look at tickets with no pull
+  requests behind them at all, and why the move is dated at the grace
+  deadline: there is nobody to wait for.
+
+- **§5 a branch is one opinion among the pull requests', never an override
+  of them.** It goes through the same fold and the same rule 4, so a ticket
+  whose work is already in review stays in review (the backwards rule
+  refuses it, as it would any other event not in the back-moves list), and a
+  ticket whose last pull request was abandoned stays in progress while the
+  branch is still there — which is the first time anything other than a pull
+  request has held a ticket where it is. The sentence a dry run prints names
+  one branch and counts several: which of five it was is nobody's decision,
+  and the number says more than the names.

@@ -17,6 +17,8 @@ capabilities:
   labels:             { set: true,  verify: true, requires: [issues_write], remediation: follow_up }
   follow_up_tickets:  { set: true,  verify: true, requires: [issues_write, project_write], remediation: none }
   ticket_move:        { set: true,  verify: true, requires: [project_write], remediation: follow_up }
+  linked_branches_read: { set: false, verify: true, requires: [project_read], remediation: none,
+                        notes: "Issue.linkedBranches: the branches GitHub itself links to the issue, created from the issue or by `gh issue develop`." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
   native_transition_changes_requested:   { set: false, verify: false, remediation: attest, notes: "Built-in 'Code changes requested'; not listable at setup, watched by the live audit." }

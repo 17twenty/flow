@@ -75,7 +75,7 @@ func (a *audit) transitionsFlow() Check {
 			var caught []Evidence
 			for _, ticket := range board {
 				theirs := work[ticketKey(ticket)]
-				if len(theirs) == 0 && !closedInWindow(env, ticket) {
+				if len(theirs) == 0 && !closedInWindow(env, ticket) && !branchStarted(env.Config, ticket) {
 					continue
 				}
 				linked, err := a.linkedPRs(ctx, env, theirs, running, deadline)
@@ -309,14 +309,38 @@ func owedSince(move TicketMove, ticket core.Ticket, prs []core.PullRequest, dead
 	return first, !first.IsZero()
 }
 
+// branchStarted reports a ticket somebody has cut a branch for, under a workflow
+// that asks flow to move work when they do. It is what lets the catch-up look
+// at a ticket with no pull request at all: until somebody opens one there is
+// nothing else about the ticket to notice, and noticing is the whole of the
+// event.
+func branchStarted(cfg *config.Config, ticket core.Ticket) bool {
+	if cfg == nil || len(ticket.Branches) == 0 {
+		return false
+	}
+	// Who owns the transition is the whole question. A workflow that names
+	// no branch_created at all has no owner for it either, and one that
+	// names a column flow does not have was refused before any of this ran
+	// — so asking about the column here would be a second reading of what
+	// the validator and the fold have each already answered.
+	return cfg.Workflow.Transitions[config.EventBranchCreated].Owner == config.OwnerFlow
+}
+
 // stepAt is when the event behind one step happened.
 //
 // A deployment is dated at the deadline itself, because that is exactly what
 // the flag means here: [audit.linkedPRs] only sets Deployed when the merge
 // was running by then, so the event is at or before it and flow has no reason
 // to care which.
+//
+// So is a branch, for the opposite reason: no tracker dates the link between
+// a ticket and a branch, and the grace the date is measured against exists to
+// let an in-flight CI run settle the move first. Nothing in CI moves a ticket
+// when a branch appears — no pull request exists for a workflow to run on —
+// so there is nobody to wait for, and the catch-up is not a catch-up here but
+// the only thing that ever performs the event.
 func stepAt(step TransitionStep, ticket core.Ticket, byNumber map[int]core.PullRequest, deadline time.Time) (time.Time, bool) {
-	if step.Event == config.EventDeployed {
+	if step.Event == config.EventDeployed || step.Event == config.EventBranchCreated {
 		return deadline, true
 	}
 	if step.PR == 0 {
@@ -346,6 +370,8 @@ func movedBy(event string) string {
 		return "its pull request was closed unmerged on"
 	case config.EventPRConvertedToDraft:
 		return "its pull request went back to draft on"
+	case config.EventBranchCreated:
+		return "a branch for it already existed by"
 	case config.EventDeployed:
 		return "its work reached the environment by"
 	default:

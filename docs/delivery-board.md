@@ -131,11 +131,20 @@ writes and `forge.protection` audits.
 
 | Proposal: Git event | Proposal: transition | flow |
 |---|---|---|
-| Branch created with ticket key | Ready → In Progress | **not implemented.** flow's first event is `pr_opened_draft`: it reads the forge, and a branch with no pull request is not something a forge tells anybody about. [#144](https://github.com/17twenty/flow/issues/144) |
+| Branch created with ticket key | Ready → In Progress | `branch_created`, on a tracker that keeps the link itself. Not on this one: Jira's development information has no public API, so the configuration below starts at the pull request |
 | PR opened | In Progress → In Review | `pr_ready_for_review` |
 | PR changes requested | In Review → In Progress | `changes_requested` |
 | PR merged **and** production sync succeeds | In Review → Done | `deployed`, with `workflow.done_on: deployed` |
 | Production sync fails | the ticket stays in In Review | flow moves nothing until the deployment record exists, and `live.deploys.lag` says how long it has been waiting |
+
+Not *with ticket key*, though. flow performs `branch_created` from the
+tracker's own link between a ticket and its branches — `Issue.linkedBranches`
+on GitHub, written by "Create a branch" and by `gh issue develop` — and never
+from the branch's name, which would be the guess P12 refuses with the
+configuration taken away. A tracker that keeps no such link may not configure
+the event at all, so this is one of the two rows where the proposal's board
+and this tracker disagree, and the disagreement is refused at `flow init`
+rather than discovered at six in the morning.
 
 The proposal puts the ticket key in the branch name and the PR title. flow
 reads both, plus the header a squash will land, and never a pattern somebody
@@ -280,6 +289,9 @@ Each one that is left is an issue rather than a paragraph. A gap this
 document found and flow has since closed leaves the list and is described in
 the section it belongs to.
 
-- [#144](https://github.com/17twenty/flow/issues/144) — no transition fires
-  when a branch is created, so Ready → In Progress waits for a draft pull
-  request.
+Nothing is left on it. The five gaps this verification found when it was
+written — the product board, the transition a branch starts, the comment a
+blocked ticket owes, the age of a feature flag, and what the agents got
+through — are each closed, and each is described in the section above that
+the proposal puts it in. The list is kept because the next reading of the
+next proposal will fill it again.

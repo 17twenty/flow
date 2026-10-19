@@ -129,11 +129,14 @@ type ghFakeItem struct {
 	// archived is an item the board has put out of sight: GitHub leaves it
 	// out of ProjectV2.items, returns it from Issue.projectItems, and
 	// silently declines to write to it.
-	repo       string
-	parentRepo string
-	draft      bool
-	offBoard   bool
-	archived   bool
+	// goneBranches are branches the issue is still linked to and nobody can
+	// reach any more: GitHub keeps the link and answers `ref: null`.
+	repo         string
+	parentRepo   string
+	goneBranches []string
+	draft        bool
+	offBoard     bool
+	archived     bool
 }
 
 // in returns the repository an item's issue is in, which is the board's own
@@ -312,7 +315,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.Contains(query.Query, "search(query:") {
 		f.writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{"search": f.search(query.Variables)},
+			"data": map[string]any{"search": f.search(query.Query, query.Variables)},
 		})
 		return
 	}
@@ -544,7 +547,7 @@ func (f *ghProjectsFake) itemPage(document string, variables map[string]any) any
 	nodes := make([]any, 0, len(rest))
 	for _, item := range rest {
 		doc := f.itemJSON(document, item)
-		doc["content"] = f.issueJSON(item)
+		doc["content"] = f.issueJSON(document, item)
 		nodes = append(nodes, doc)
 	}
 	return map[string]any{"items": map[string]any{
@@ -576,7 +579,7 @@ func (f *ghProjectsFake) issueLookup(document string, variables map[string]any) 
 		if item.number != int(raw) || !strings.EqualFold(item.in(f.repo), slug) {
 			continue
 		}
-		doc := f.issueJSON(item)
+		doc := f.issueJSON(document, item)
 		if item.offBoard {
 			// The repository has the issue; no project holds it.
 			doc["projectItems"] = map[string]any{"nodes": []any{}}
@@ -820,7 +823,7 @@ func (f *ghProjectsFake) optionName(id string) string {
 }
 
 // issueJSON renders the issue behind an item.
-func (f *ghProjectsFake) issueJSON(item *ghFakeItem) map[string]any {
+func (f *ghProjectsFake) issueJSON(document string, item *ghFakeItem) map[string]any {
 	if item.draft {
 		// An item holding a draft or a pull request matches no inline
 		// fragment, and GraphQL answers with an empty object rather
@@ -843,6 +846,14 @@ func (f *ghProjectsFake) issueJSON(item *ghFakeItem) map[string]any {
 		"assignees":   ghNameNodes("login", ticket.Assignees),
 		"parent":      nil,
 	}
+	branches := make([]any, 0, len(ticket.Branches)+len(item.goneBranches))
+	for _, name := range ticket.Branches {
+		branches = append(branches, map[string]any{"ref": map[string]any{"name": name}})
+	}
+	for range item.goneBranches {
+		branches = append(branches, map[string]any{"ref": nil})
+	}
+	doc["linkedBranches"] = map[string]any{"nodes": branches}
 	if ticket.Closed {
 		doc["state"] = "CLOSED"
 		doc["closedAt"] = ticket.ClosedAt.Format(time.RFC3339)
@@ -861,7 +872,63 @@ func (f *ghProjectsFake) issueJSON(item *ghFakeItem) map[string]any {
 			}
 		}
 	}
+	selection := ghIssueSelectionOf(document)
+	for field := range doc {
+		if !strings.Contains(selection, " "+field+" ") {
+			delete(doc, field)
+		}
+	}
 	return doc
+}
+
+// ghIssueSelectionOf is the fields a document asks of an issue, with every
+// nested selection taken out, so that what is left is the names of the issue's
+// own fields and nothing a label or a parent happens to be called. The answer
+// is padded with spaces at both ends so that a caller can ask for a whole
+// word.
+//
+// Like [ghItemSelectionOf] it reads two known shapes rather than parsing
+// GraphQL: a query that stops matching it reports every field as unasked-for
+// and fails loudly, which is the direction an unreadable document should fail
+// in.
+func ghIssueSelectionOf(document string) string {
+	for _, open := range []string{"...on Issue{", "issue(number:$number){", "issue{"} {
+		at := strings.Index(document, open)
+		if at < 0 {
+			continue
+		}
+		return " " + ghFlatten(document[at+len(open):]) + " "
+	}
+	return ""
+}
+
+// ghFlatten returns the top level of one brace-delimited selection: every
+// nested `{...}` and every field's `(...)` arguments are replaced by a space,
+// and the text stops at the brace that closes the selection itself. What is
+// left is the field names, separated by spaces.
+func ghFlatten(rest string) string {
+	var out strings.Builder
+	depth, args := 0, 0
+	for _, r := range rest {
+		switch {
+		case r == '(':
+			args++
+		case r == ')':
+			args--
+			out.WriteRune(' ')
+		case args > 0:
+		case r == '{':
+			depth++
+		case r == '}' && depth == 0:
+			return out.String()
+		case r == '}':
+			depth--
+			out.WriteRune(' ')
+		case depth == 0:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 // ghNameNodes renders a list of strings as a GraphQL connection of one field.
@@ -884,6 +951,21 @@ func (f *ghProjectsFake) itemIn(number int) string {
 		}
 	}
 	return ""
+}
+
+// item is the fake's item for a ticket key, for a test that wants to change
+// something about an issue the fixture already holds.
+func (f *ghProjectsFake) item(t *testing.T, key string) *ghFakeItem {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, item := range f.items {
+		if item.ticket.Key == key {
+			return item
+		}
+	}
+	t.Fatalf("the fake holds no %s", key)
+	return nil
 }
 
 // sent returns the GraphQL documents the fake has been asked, in order.
@@ -1081,7 +1163,7 @@ func (f *ghProjectsFake) userLookup(variables map[string]any) any {
 //
 // A blind fake answers with nothing at all, which is the index as it is for
 // the minutes after an issue is filed.
-func (f *ghProjectsFake) search(variables map[string]any) any {
+func (f *ghProjectsFake) search(document string, variables map[string]any) any {
 	expression, _ := variables["query"].(string)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1095,7 +1177,7 @@ func (f *ghProjectsFake) search(variables map[string]any) any {
 			continue
 		}
 		if f.loose || ghContainsAll(item.ticket.Body, phrases) {
-			nodes = append(nodes, f.issueJSON(item))
+			nodes = append(nodes, f.issueJSON(document, item))
 		}
 	}
 	return map[string]any{"nodes": nodes}
@@ -1165,7 +1247,7 @@ func (f *ghProjectsFake) createIssue(w http.ResponseWriter, query core.GraphQLQu
 	}
 	f.items = append(f.items, item)
 	f.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"createIssue": map[string]any{"issue": f.issueJSON(item)},
+		"createIssue": map[string]any{"issue": f.issueJSON(query.Query, item)},
 	}})
 }
 

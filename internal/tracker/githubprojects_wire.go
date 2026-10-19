@@ -370,6 +370,7 @@ const ghIssueFields = "id number title body url state stateReason closedAt updat
 	"repository{nameWithOwner} " +
 	"labels(first:" + ghLabelPage + "){nodes{name}} " +
 	"assignees(first:" + ghAssigneePage + "){nodes{login}} " +
+	"linkedBranches(first:" + ghBranchPage + "){nodes{ref{name}}} " +
 	"parent{number repository{nameWithOwner}}"
 
 // The inner page sizes, as they appear in the document. They are literals
@@ -378,6 +379,7 @@ const ghIssueFields = "id number title body url state stateReason closedAt updat
 const (
 	ghLabelPage     = "20"
 	ghAssigneePage  = "5"
+	ghBranchPage    = "10"
 	ghIssueItemPage = "10"
 )
 
@@ -488,6 +490,13 @@ type ghIssue struct {
 			Login string `json:"login"`
 		} `json:"nodes"`
 	} `json:"assignees"`
+	LinkedBranches struct {
+		Nodes []struct {
+			Ref *struct {
+				Name string `json:"name"`
+			} `json:"ref"`
+		} `json:"nodes"`
+	} `json:"linkedBranches"`
 	Parent *ghIssueRef `json:"parent"`
 }
 
@@ -621,6 +630,14 @@ func ghTicket(issue ghIssue, item ghItemFields, here string) core.Ticket {
 	for _, assignee := range issue.Assignees.Nodes {
 		if assignee.Login != "" {
 			ticket.Assignees = append(ticket.Assignees, assignee.Login)
+		}
+	}
+	// A linked branch whose ref is null is one somebody has since deleted:
+	// GitHub keeps the link and drops the reference. The work it stands for
+	// is over, and a branch flow cannot name is not a branch it can report.
+	for _, linked := range issue.LinkedBranches.Nodes {
+		if linked.Ref != nil && linked.Ref.Name != "" {
+			ticket.Branches = append(ticket.Branches, linked.Ref.Name)
 		}
 	}
 	if issue.Parent != nil && issue.Parent.Number > 0 {

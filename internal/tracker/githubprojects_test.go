@@ -1984,3 +1984,45 @@ func TestGitHubProjectsSearchesForEveryFieldSeparately(t *testing.T) {
 		}
 	}
 }
+
+// A branch somebody has deleted leaves the link behind: GitHub answers the
+// node with a null ref. The work it stood for is over, and a branch flow
+// cannot name is not one it can report or put in a sentence.
+func TestGitHubProjectsDropsALinkedBranchNobodyCanReachAnyMore(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	started := fake.item(t, coretest.ContractBranchedKey)
+	started.goneBranches = []string{"14-a-branch-long-gone"}
+	want := []string{coretest.ContractBranch}
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	ticket, err := adapter.Ticket(t.Context(), coretest.ContractBranchedKey)
+	if err != nil {
+		t.Fatalf("Ticket: %v", err)
+	}
+
+	if !slices.Equal(ticket.Branches, want) {
+		t.Errorf("Branches = %v, want %v: a link whose ref is null is a branch that is gone", ticket.Branches, want)
+	}
+}
+
+// The same fidelity [TestTheProjectsFakeAnswersOnlyWhatTheQueryAsked] buys for
+// an item, for the issue behind it: a fake that answers a field the document
+// never selected would let flow drop it from the query with every test green.
+func TestTheProjectsFakeAnswersOnlyTheIssueFieldsTheQueryAsked(t *testing.T) {
+	fake, _ := newGitHubProjectsServer(t, coretest.ContractTracker())
+	asked := []string{"number", "title", "body", "labels", "assignees", "linkedBranches"}
+
+	for _, document := range []string{ghItemsQuery(OwnerUser), ghIssueItemQuery} {
+		doc := fake.issueJSON(document, fake.items[0])
+		for _, field := range asked {
+			if _, ok := doc[field]; !ok {
+				t.Errorf("the fake left %s out of its answer to a query that selected it", field)
+			}
+		}
+	}
+
+	unasked := fake.issueJSON(strings.Replace(ghItemsQuery(OwnerUser), "linkedBranches(first:"+ghBranchPage+"){nodes{ref{name}}} ", "", 1), fake.items[0])
+	if _, ok := unasked["linkedBranches"]; ok {
+		t.Error("the fake volunteered linkedBranches to a query that did not select it, so no test could tell whether flow asks for it")
+	}
+}
