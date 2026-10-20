@@ -74,6 +74,14 @@ func (a *audit) transitionsFlow() Check {
 			var waiting int
 			var caught []Evidence
 			for _, ticket := range board {
+				// A sibling's ticket is not this flow's to move. Its work
+				// merged in a repository this run cannot see, so every
+				// reason to leave it alone is invisible here and the only
+				// transition flow could reach would be one made in
+				// ignorance (spec 03 §1).
+				if deliveredElsewhere(env.Config, ticket) != "" {
+					continue
+				}
 				theirs := work[ticketKey(ticket)]
 				if len(theirs) == 0 && !closedInWindow(env, ticket) && !branchStarted(env.Config, ticket) {
 					continue

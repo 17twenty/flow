@@ -600,6 +600,7 @@ type ghItemConnection struct {
 func ghTicket(issue ghIssue, item ghItemFields, here string) core.Ticket {
 	ticket := core.Ticket{
 		Key:       ghKey(issue.Repository.NameWithOwner, here, issue.Number),
+		Repo:      issue.Repository.NameWithOwner,
 		ID:        issue.ID,
 		URL:       issue.URL,
 		Title:     issue.Title,

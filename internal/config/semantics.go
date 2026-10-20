@@ -211,6 +211,36 @@ func (v *validator) tracker() {
 		v.trackerHasNoOwner()
 	}
 	v.webURL("tracker.url", tracker.URL)
+	v.sharedWith()
+}
+
+// sharedWith checks the repositories said to share this board.
+//
+// Naming this repository would say that its own work is audited somewhere
+// else, which is the opposite of what the key means, and a tracker that does
+// not record which repository a ticket belongs to can never match a name, so
+// a key written there would quietly do nothing.
+func (v *validator) sharedWith() {
+	shared := v.cfg.Tracker.SharedWith
+	if len(shared) == 0 {
+		return
+	}
+	if v.cfg.Tracker.Type != TrackerGitHubProjects {
+		v.add("tracker.shared_with is set, but %s does not record which repository a ticket belongs to, so flow could never tell a sibling's work from this repository's", v.cfg.Tracker.Type)
+		return
+	}
+	seen := make(map[string]bool, len(shared))
+	for i, repo := range shared {
+		switch {
+		case !repoRe.MatchString(repo):
+			v.add("tracker.shared_with[%d] is %q; it must be owner/name, with no spaces and exactly one slash", i, repo)
+		case strings.EqualFold(repo, v.cfg.Forge.Repo):
+			v.add("tracker.shared_with[%d] is %q, which is this repository; it names the others whose work this flow is not the one to judge", i, repo)
+		case seen[strings.ToLower(repo)]:
+			v.add("tracker.shared_with[%d] is %q, which is already named above", i, repo)
+		}
+		seen[strings.ToLower(repo)] = true
+	}
 }
 
 // trackerHasNoOwner reports owner keys set for a tracker that has no such

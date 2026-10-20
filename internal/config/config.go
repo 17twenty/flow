@@ -240,6 +240,14 @@ type Tracker struct {
 	// URL is the tracker's base URL, for providers like Jira Cloud whose host
 	// is per-tenant.
 	URL string `yaml:"url,omitempty"`
+	// SharedWith names the other repositories whose work appears on this
+	// board, as owner/name. A board shared by a frontend and a backend holds
+	// tickets this repository has no pull requests for, and the live-health
+	// audit would report every one of them as work that reached Done without
+	// a merge. Naming the sibling says that its tickets are audited by the
+	// flow running there; a ticket from a repository nobody named is still a
+	// finding, because nobody is watching it (spec 03 §1).
+	SharedWith []string `yaml:"shared_with,omitempty"`
 	// Auth names the credential's environment variables.
 	Auth Auth `yaml:"auth"`
 }

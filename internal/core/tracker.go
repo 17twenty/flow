@@ -29,6 +29,14 @@ type Status struct {
 type Ticket struct {
 	// Key is how people refer to it: #12 for GitHub, PROJ-12 for Jira.
 	Key string
+	// Repo is the repository the ticket belongs to, as owner/name, for
+	// trackers that record one. A board may gather work from several
+	// repositories, and flow can only judge a ticket against the pull
+	// requests of the repository it is running in; this is what says which
+	// those are. Trackers whose tickets belong to no repository at all —
+	// Jira, Linear — leave it empty, and a board of theirs is one repository's
+	// by assumption.
+	Repo string
 	// ID is the tracker's internal identifier, where it differs from the key.
 	ID string
 	// URL is its web address.

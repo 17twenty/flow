@@ -354,6 +354,29 @@ func TestValidate(t *testing.T) {
 			wantIn: "it must be between 20 and 200",
 		},
 		{
+			name:   "a sibling repository that is not a repository",
+			change: func(c *Config) { c.Tracker.SharedWith = []string{"acme"} },
+			wantIn: `tracker.shared_with[0] is "acme"`,
+		},
+		{
+			name:   "naming this repository as the one that audits it elsewhere",
+			change: func(c *Config) { c.Tracker.SharedWith = []string{c.Forge.Repo} },
+			wantIn: "which is this repository",
+		},
+		{
+			name:   "the same sibling twice",
+			change: func(c *Config) { c.Tracker.SharedWith = []string{"acme/web", "Acme/Web"} },
+			wantIn: "which is already named above",
+		},
+		{
+			name: "a shared board on a tracker that cannot say whose ticket is whose",
+			change: func(c *Config) {
+				c.Tracker = Tracker{Type: TrackerLinear, Project: Known("ENG"), Auth: Auth{TokenEnv: "LINEAR_API_KEY"}}
+				c.Tracker.SharedWith = []string{"acme/web"}
+			},
+			wantIn: "does not record which repository a ticket belongs to",
+		},
+		{
 			name:   "a health threshold that is not a percentage",
 			change: func(c *Config) { c.Health.FailBelow = 150 },
 			wantIn: "health.fail_below is 150",
