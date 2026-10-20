@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -647,6 +648,33 @@ func TestValidateRefusesAnAdapterThisBuildDoesNotShip(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no capability declaration") {
 		t.Errorf("error does not explain the missing declaration:\n%v", err)
+	}
+}
+
+// TestValidateRefusesAutoMergeAForgeCannotDo: a declaration flow ships is a
+// fact about the provider's API, so a configuration that contradicts one is
+// wrong when it is written and not at six in the morning when the gate first
+// tries to arm something.
+func TestValidateRefusesAutoMergeAForgeCannotDo(t *testing.T) {
+	cfg := presetConfig(t, PresetLeanKanban)
+	cfg.Forge.AutoMerge = true
+	if err := Validate(cfg, DefaultPath, testRegistry(t)); err != nil {
+		t.Fatalf("Validate refused auto-merge on a forge that can do it: %v", err)
+	}
+
+	registry := core.Registry{}
+	for adapter, set := range testRegistry(t) {
+		capabilities := maps.Clone(set.Capabilities)
+		capabilities[core.CapAutoMerge] = core.Capability{}
+		set.Capabilities = capabilities
+		registry[adapter] = set
+	}
+	err := Validate(cfg, DefaultPath, registry)
+	if err == nil {
+		t.Fatal("Validate accepted auto-merge on a forge that declares it cannot")
+	}
+	if !strings.Contains(err.Error(), "forge.auto_merge is set") {
+		t.Errorf("error does not name the key that cannot be honoured:\n%v", err)
 	}
 }
 

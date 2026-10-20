@@ -12,6 +12,7 @@ capabilities:
   required_status_checks: { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "Ultimate: external status check; else pipelines must succeed." }
   merge_settings:         { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
   squash_text:            { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "squash_commit_template on the project." }
+  auto_merge:             { set: true,  verify: true, requires: [developer], remediation: follow_up, notes: "PUT merge_requests/:iid/merge with merge_when_pipeline_succeeds; read back from the merge request. The project has no setting to switch it off." }
   file_proposal:          { set: true,  verify: true, requires: [developer], remediation: follow_up }
   pr_comments:            { set: true,  verify: true, requires: [developer], remediation: follow_up }
   deployments_read:       { set: false, verify: false, remediation: none, notes: "GitLab has an environments API; flow has no source that reads it. Use deploys.source: commit_status." }

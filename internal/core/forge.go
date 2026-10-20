@@ -24,6 +24,32 @@ const (
 	SquashMessageBlank = "blank"
 )
 
+// The merge methods a forge is asked to land a pull request with. They are
+// the strategies above, named as a verb rather than as a permission, because
+// arming auto-merge is telling the forge which one to use rather than which
+// ones to allow.
+const (
+	// MergeMethodSquash lands the branch as one commit.
+	MergeMethodSquash = "squash"
+	// MergeMethodMerge lands it behind a merge commit.
+	MergeMethodMerge = "merge"
+	// MergeMethodRebase replays its commits onto the trunk.
+	MergeMethodRebase = "rebase"
+)
+
+// ValidMergeMethod reports a method a forge can be asked to merge with. It is
+// here rather than in each adapter because the vocabulary is flow's: an
+// adapter translates it into the provider's own spelling, and a name flow
+// does not have is a caller's mistake before it is any provider's.
+func ValidMergeMethod(method string) bool {
+	switch method {
+	case MergeMethodSquash, MergeMethodMerge, MergeMethodRebase:
+		return true
+	default:
+		return false
+	}
+}
+
 // MergeSettings are the repository's merge strategies and the text a squash
 // merge takes its header and body from.
 type MergeSettings struct {
@@ -39,6 +65,12 @@ type MergeSettings struct {
 	SquashMessage string
 	// DeleteBranchOnMerge removes the head branch after a merge.
 	DeleteBranchOnMerge bool
+	// AllowAutoMerge permits a pull request to be set to merge itself once
+	// everything it is waiting for has gone green. It is a repository
+	// setting rather than a property of one pull request: a forge with it
+	// switched off refuses the arming, so flow asks for the setting in the
+	// plan and arms from the gate (spec 09 §1).
+	AllowAutoMerge bool
 }
 
 // RepoInfo is what flow needs to know about the repository itself.
@@ -330,6 +362,11 @@ type PullRequest struct {
 	ClosingIssues []string
 	// Files summarises what it changes.
 	Files FileSummary
+	// AutoMerge reports a pull request already set to merge itself when its
+	// checks pass. Like Mergeability it is a reading of an open pull
+	// request and nothing a listing carries, so only [Forge.PullRequest]
+	// fills it in — which is what keeps flow from arming what is armed.
+	AutoMerge bool
 	// Mergeability is what the forge says about landing it as it stands,
 	// one of the mergeability values above. Like Reviews it is a separate
 	// read: no forge puts a reading flow can rely on in a listing, and a

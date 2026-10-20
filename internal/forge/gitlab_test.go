@@ -922,6 +922,7 @@ func TestGitLabWritesTheSquashTemplate(t *testing.T) {
 		SquashTitle:         core.SquashTitlePR,
 		SquashMessage:       core.SquashMessagePRBody,
 		DeleteBranchOnMerge: true,
+		AllowAutoMerge:      true,
 	}
 	if err := gitlab.SetMergeSettings(t.Context(), want); err != nil {
 		t.Fatalf("SetMergeSettings: %v", err)
@@ -1251,6 +1252,78 @@ func TestGitLabReadsEveryMergeStatusItIsAnsweredWith(t *testing.T) {
 			if got := mergeabilityFromGitLab(row.detailed, row.coarse); got != row.want {
 				t.Errorf("mergeabilityFromGitLab(%q, %q) = %q, want %q",
 					row.detailed, row.coarse, got, row.want)
+			}
+		})
+	}
+}
+
+// gitLabArmable stands up a project whose trunk insists on its pipeline, so
+// that an arming is an arrangement rather than a merge.
+func gitLabArmable(t *testing.T) (*gitLabFake, *GitLab) {
+	t.Helper()
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Draft = false
+	protection := fx.Protections[fx.Repo.DefaultBranch]
+	protection.StrictChecks = true
+	fx.Protections[fx.Repo.DefaultBranch] = protection
+	fake, srv := newGitLabServer(t, fx)
+	return fake, newGitLabAdapter(t, srv, fx, nil)
+}
+
+// TestGitLabWillNotArmWhereArmingWouldMerge.
+//
+// GitLab's merge endpoint is the same one that merges now, and the flag only
+// changes what happens when there is something left to wait for. A project
+// that does not require its pipeline to pass has nothing to wait for, so the
+// arming lands the branch on the spot — from a gate, that is flow merging
+// work nobody asked it to merge. The contract cannot ask this: its fixture
+// has the pipeline required, because otherwise there would be no arrangement
+// to test anywhere.
+func TestGitLabWillNotArmWhereArmingWouldMerge(t *testing.T) {
+	fake, gitlab := gitLabFixture(t) // the ordinary fixture: no pipeline required
+
+	err := gitlab.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash)
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("ArmAutoMerge = %v, want %v", err, core.ErrValidation)
+	}
+	if !strings.Contains(err.Error(), "does not require a pipeline") {
+		t.Errorf("the refusal does not say why arming would merge:\n%v", err)
+	}
+	if calls := countGitLabCalls(fake, http.MethodPut, "/api/v4/projects/acme%2Fwidget/merge_requests/1/merge"); calls != 0 {
+		t.Errorf("flow asked GitLab to merge !1 %d times; the point of the refusal is that the call is never made", calls)
+	}
+}
+
+// TestGitLabReadsAnArmingFromEitherNameForIt: 17.11 renamed the field and
+// went on sending the old one, so an installation on either side of that
+// release answers only one of the two — and both answers are the same fact.
+// An adapter that read only the new name would arm an armed merge request on
+// every push of every older GitLab there is.
+func TestGitLabReadsAnArmingFromEitherNameForIt(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "17.11 and after"
+		if legacy {
+			name = "before 17.11"
+		}
+		t.Run(name, func(t *testing.T) {
+			fake, gitlab := gitLabArmable(t)
+			fake.legacyAutoMerge = legacy
+
+			if err := gitlab.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); err != nil {
+				t.Fatalf("ArmAutoMerge: %v", err)
+			}
+			pr, err := gitlab.PullRequest(t.Context(), 1)
+			if err != nil {
+				t.Fatalf("PullRequest: %v", err)
+			}
+			if !pr.AutoMerge {
+				t.Fatal("!1 is armed and the adapter says it is not, so the next push arms it again")
+			}
+			if err := gitlab.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); err != nil {
+				t.Fatalf("arming again: %v", err)
+			}
+			if calls := countGitLabCalls(fake, http.MethodPut, "/api/v4/projects/acme%2Fwidget/merge_requests/1/merge"); calls != 1 {
+				t.Errorf("flow armed !1 %d times, want 1: the second run read the arrangement and left it alone", calls)
 			}
 		})
 	}

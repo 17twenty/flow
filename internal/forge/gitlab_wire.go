@@ -146,6 +146,10 @@ func (p glProject) toRepoInfo() core.RepoInfo {
 			SquashTitle:         title,
 			SquashMessage:       message,
 			DeleteBranchOnMerge: p.RemoveSourceBranch,
+			// GitLab has no project setting that forbids a merge
+			// request from landing itself, so every project permits
+			// it and anything else here would be an invention.
+			AllowAutoMerge: true,
 		},
 	}
 }
@@ -295,6 +299,16 @@ type glMergeRequest struct {
 	// more than nothing.
 	DetailedMergeStatus string `json:"detailed_merge_status"`
 	MergeStatus         string `json:"merge_status"`
+
+	// AutoMergeEnabled is GitLab 17.11's name for a merge request already
+	// set to land itself, and MergeWhenPipelineSucceeds the older one it
+	// replaced. Both are read, where the arming sends only the older name,
+	// because the two directions fail differently: a parameter an
+	// installation does not know is a refusal flow sees, and a field it has
+	// stopped answering is a false "nothing is armed" that nobody sees
+	// (spec 10 §4).
+	AutoMergeEnabled          bool `json:"auto_merge_enabled"`
+	MergeWhenPipelineSucceeds bool `json:"merge_when_pipeline_succeeds"`
 }
 
 // The detailed_merge_status values flow has a use for.
@@ -404,6 +418,7 @@ func (m glMergeRequest) toPullRequest() core.PullRequest {
 	}
 	if pr.State == core.PRStateOpen {
 		pr.Mergeability = mergeabilityFromGitLab(m.DetailedMergeStatus, m.MergeStatus)
+		pr.AutoMerge = m.AutoMergeEnabled || m.MergeWhenPipelineSucceeds
 	}
 	return pr
 }
@@ -779,6 +794,21 @@ type glFileRequest struct {
 	Content       string `json:"content"`
 	Encoding      string `json:"encoding"`
 	CommitMessage string `json:"commit_message"`
+}
+
+// glMergeNow is the body of PUT /projects/{id}/merge_requests/{iid}/merge.
+// Flow only ever sends it to arm the merge request, never to merge it: the
+// same endpoint does both, and which one it does turns on this one field.
+//
+// The field keeps its older spelling. 17.11 renamed it to `auto_merge` and
+// deprecated this one, and a deprecated v4 parameter is removed when v4 is —
+// so for as long as flow speaks `/api/v4` the old name reaches every
+// installation and the new one reaches no installation the old one does not
+// (spec 10 §4). Reading is the other way round, and [glMergeRequest] says
+// why.
+type glMergeNow struct {
+	MergeWhenPipelineSucceeds bool   `json:"merge_when_pipeline_succeeds"`
+	SHA                       string `json:"sha,omitempty"`
 }
 
 // glMergeRequestCreate is POST /projects/{id}/merge_requests.

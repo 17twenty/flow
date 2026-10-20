@@ -48,11 +48,12 @@ const (
 
 // Merge settings fields, named after [core.MergeSettings]'s members.
 const (
-	FieldAllowSquash   = "allow_squash"
-	FieldAllowMerge    = "allow_merge"
-	FieldAllowRebase   = "allow_rebase"
-	FieldSquashTitle   = "squash_title"
-	FieldSquashMessage = "squash_message"
+	FieldAllowSquash    = "allow_squash"
+	FieldAllowMerge     = "allow_merge"
+	FieldAllowRebase    = "allow_rebase"
+	FieldSquashTitle    = "squash_title"
+	FieldSquashMessage  = "squash_message"
+	FieldAllowAutoMerge = "allow_auto_merge"
 )
 
 // Singleton item names, for the things a provider has exactly one of.
@@ -453,6 +454,12 @@ func requiredContexts(cfg *config.Config) []string {
 
 // forgeMergeSettings allows the one strategy the team configured and refuses
 // the rest, so that one pull request lands as one commit of a known shape.
+//
+// Auto-merge is asked for only when the team wants it. It is the one field
+// here that some forges have no switch for at all — Gitea and GitLab arm a
+// pull request without any repository setting standing in the way — so a
+// configuration that does not want it must ask for nothing rather than ask
+// for a "no" those forges can never say (spec 06 §4).
 func forgeMergeSettings(cfg *config.Config) DesiredItem {
 	strategy := cfg.Commits.MergeStrategy
 	if strategy == "" {
@@ -462,6 +469,9 @@ func forgeMergeSettings(cfg *config.Config) DesiredItem {
 		FieldAllowSquash: strconv.FormatBool(strategy == config.MergeSquash),
 		FieldAllowMerge:  strconv.FormatBool(strategy == config.MergeCommit),
 		FieldAllowRebase: strconv.FormatBool(strategy == config.MergeRebase),
+	}
+	if cfg.Forge.AutoMerge {
+		fields[FieldAllowAutoMerge] = "true"
 	}
 	return DesiredItem{
 		ID:         core.ItemForgeMergeSettings,

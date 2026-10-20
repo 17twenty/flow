@@ -393,6 +393,36 @@ func TestApplyBlocksOnlyDependants(t *testing.T) {
 	}
 }
 
+// TestApplyTurnsOnTheSettingThePlanAskedFor: the merge settings are written
+// whole, out of the desired items, so a field the plan asked for and the call
+// did not carry would be a plan that says it will do something and an apply
+// that quietly does not. Auto-merge is the field with somewhere to hide — it
+// is the one flow leaves out when nobody wants it — so it is the one worth
+// following all the way to the forge.
+func TestApplyTurnsOnTheSettingThePlanAskedFor(t *testing.T) {
+	w := githubProjectsWorld(t)
+	cfg := preset(t, config.PresetLeanKanban)
+	cfg.Forge.AutoMerge = true
+	state := desired(t, cfg)
+
+	applied, _ := applyTo(t, w, engine.ApplyInput{
+		Plan:    planWith(t, w, cfg),
+		Desired: state,
+		Config:  cfg,
+	})
+	if merge := item(t, applied, core.ItemForgeMergeSettings); !merge.Done() {
+		t.Fatalf("the merge settings were not written: %v %s", merge.Err, merge.Skipped)
+	}
+
+	repo, err := w.forge.Repo(context.Background())
+	if err != nil {
+		t.Fatalf("read the repository back: %v", err)
+	}
+	if !repo.Merge.AllowAutoMerge {
+		t.Error("the plan asked for auto-merge and the repository still refuses it, so every gate from here arms nothing")
+	}
+}
+
 // TestApplySkipsWhatIsNotFlowsToDo states the rule that keeps apply honest:
 // only a native outcome is carried out. A compensated item is enforced
 // elsewhere, an attested one is a human's word, and an unsupported one is

@@ -56,6 +56,9 @@ const (
 	CapSquashText = "squash_text"
 	// CapFileProposal is proposing a file change as a pull request.
 	CapFileProposal = "file_proposal"
+	// CapAutoMerge is arming a pull request to land itself once the checks
+	// it is waiting for have passed.
+	CapAutoMerge = "auto_merge"
 	// CapPRComments is flow's own marked comments on a pull request.
 	CapPRComments = "pr_comments"
 	// CapDeploymentsRead is reading deployment records.
@@ -113,6 +116,7 @@ var forgeCapabilities = []string{
 	CapRequiredStatusChecks,
 	CapMergeSettings,
 	CapSquashText,
+	CapAutoMerge,
 	CapFileProposal,
 	CapPRComments,
 	CapDeploymentsRead,

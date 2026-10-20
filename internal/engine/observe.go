@@ -234,12 +234,19 @@ func dormantNotes(p core.Protection) []core.Note {
 	return notes
 }
 
-// mergeObservation transcribes the strategies the repository allows.
+// mergeObservation transcribes the strategies the repository allows, and
+// whether a pull request may be left to land itself.
+//
+// Auto-merge is always transcribed, including by a forge that has no setting
+// for it: such a forge permits the arming unconditionally, so "true" is what
+// it would say if it were asked. An observation that left the field out would
+// read as a repository refusing something it has never refused anybody.
 func mergeObservation(m core.MergeSettings) core.Observation {
 	return core.Observation{Exists: true, Items: []core.Item{{Name: NameMerge, Fields: map[string]string{
-		FieldAllowSquash: strconv.FormatBool(m.AllowSquash),
-		FieldAllowMerge:  strconv.FormatBool(m.AllowMerge),
-		FieldAllowRebase: strconv.FormatBool(m.AllowRebase),
+		FieldAllowSquash:    strconv.FormatBool(m.AllowSquash),
+		FieldAllowMerge:     strconv.FormatBool(m.AllowMerge),
+		FieldAllowRebase:    strconv.FormatBool(m.AllowRebase),
+		FieldAllowAutoMerge: strconv.FormatBool(m.AllowAutoMerge),
 	}}}}
 }
 
@@ -332,11 +339,12 @@ func (o *observer) deploys(ctx context.Context, item DesiredItem) (core.Observat
 // of it would turn the other half off.
 func MergeSettingsFor(strategies, text core.Item) core.MergeSettings {
 	return core.MergeSettings{
-		AllowSquash:   strategies.Field(FieldAllowSquash) == "true",
-		AllowMerge:    strategies.Field(FieldAllowMerge) == "true",
-		AllowRebase:   strategies.Field(FieldAllowRebase) == "true",
-		SquashTitle:   text.Field(FieldSquashTitle),
-		SquashMessage: text.Field(FieldSquashMessage),
+		AllowSquash:    strategies.Field(FieldAllowSquash) == "true",
+		AllowMerge:     strategies.Field(FieldAllowMerge) == "true",
+		AllowRebase:    strategies.Field(FieldAllowRebase) == "true",
+		AllowAutoMerge: strategies.Field(FieldAllowAutoMerge) == "true",
+		SquashTitle:    text.Field(FieldSquashTitle),
+		SquashMessage:  text.Field(FieldSquashMessage),
 	}
 }
 

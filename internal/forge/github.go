@@ -684,10 +684,77 @@ func (g *GitHub) SetMergeSettings(ctx context.Context, s core.MergeSettings) err
 	if _, err := g.do(ctx, req); err != nil {
 		return core.Explain(err, "set the merge settings of %s", g.Slug())
 	}
-	if got := payload.toRepoInfo().Merge; got != s {
+	got := payload.toRepoInfo().Merge
+	if !s.AllowAutoMerge {
+		// Flow asked for nothing here, so there is nothing to have
+		// been kept or refused: a repository that permitted a pull
+		// request to land itself before flow ever saw it goes on
+		// permitting it (spec 06 §4).
+		got.AllowAutoMerge = false
+	}
+	if got != s {
 		return core.Errorf(core.ErrConflict, "set the merge settings of %s", g.Slug()).
 			WithWhy("GitHub kept %+v rather than %+v", got, s).
 			WithFix("check whether an organisation policy fixes the merge strategies")
+	}
+	return nil
+}
+
+// gitHubAutoMergeState asks for the node id of a pull request and whether it
+// is already set to merge itself. The id is what the mutation takes — GraphQL
+// has no notion of a number — and the pending request comes back in the same
+// round trip, so flow never arms what is armed and never pays a second call
+// to find out.
+const gitHubAutoMergeState = `query($owner:String!,$repo:String!,$number:Int!){` +
+	`repository(owner:$owner,name:$repo){` +
+	`pullRequest(number:$number){id autoMergeRequest{enabledAt}}}}`
+
+// gitHubEnableAutoMerge arms it. There is no REST equivalent: REST's merge
+// endpoint merges now, which is a different thing entirely and not one flow
+// has any business doing from a gate.
+const gitHubEnableAutoMerge = `mutation($pr:ID!,$method:PullRequestMergeMethod!){` +
+	`enablePullRequestAutoMerge(input:{pullRequestId:$pr,mergeMethod:$method}){` +
+	`pullRequest{autoMergeRequest{enabledAt}}}}`
+
+// ArmAutoMerge sets a pull request to land itself once everything it is
+// waiting for is satisfied (spec 09 §1).
+//
+// GitHub refuses the arming for reasons only GitHub knows — the repository
+// setting is off, the pull request is a draft, nothing is left for it to wait
+// for — and all of them come back as an UNPROCESSABLE error, which flow
+// reports as invalid input rather than as a provider that is unwell. The
+// caller decides whether a refusal is worth failing over; from here it is
+// simply what the forge said.
+func (g *GitHub) ArmAutoMerge(ctx context.Context, number int, method string) error {
+	merge, ok := gitHubMergeMethod(method)
+	if !ok {
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d of %s", number, g.Slug()).
+			WithWhy("%q is not a merge method", method).
+			WithFix("ask for squash, merge or rebase")
+	}
+
+	state, err := graphQL[ghAutoMergeState](ctx, g, gitHubAutoMergeState, map[string]any{
+		"owner": g.owner, "repo": g.repo, "number": number,
+	})
+	if err != nil {
+		return core.Explain(err, "read what pull request #%d of %s is waiting for", number, g.Slug())
+	}
+	pull := state.Repository.PullRequest
+	if pull == nil || pull.ID == "" {
+		return core.Errorf(core.ErrNotFound, "arm auto-merge on #%d of %s", number, g.Slug()).
+			WithWhy("GitHub has no such pull request")
+	}
+	if pull.AutoMergeRequest != nil {
+		return nil
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	if _, err := graphQL[ghEnableAutoMerge](ctx, g, gitHubEnableAutoMerge, map[string]any{
+		"pr": pull.ID, "method": merge,
+	}); err != nil {
+		return core.Explain(err, "arm auto-merge on #%d of %s", number, g.Slug())
 	}
 	return nil
 }
@@ -1137,7 +1204,20 @@ func paginate[T any](ctx context.Context, a restAdapter, req core.Request, visit
 // [core.Forge.PullRequest] and of nothing else.
 func listed(pr core.PullRequest) core.PullRequest {
 	pr.Mergeability = core.MergeabilityUnknown
+	pr.AutoMerge = false
 	return pr
+}
+
+// refusedCondition reads the provider's own words out of a failed request, so
+// that an adapter rewriting what a refusal means keeps the sentence that said
+// it. Without it the new error would explain only what flow was attempting,
+// which the caller already knew.
+func refusedCondition(err error) string {
+	var user *core.UserError
+	if errors.As(err, &user) && user.Why != "" {
+		return user.Why
+	}
+	return err.Error()
 }
 
 // graphQL sends one GraphQL query and returns its data, through the shared

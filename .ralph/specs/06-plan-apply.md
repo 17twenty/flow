@@ -318,3 +318,31 @@ each successful mutation (atomic) and at the end. Summary.
   nobody can act on. The refusal names the key in its *reason* and not only
   in its remedy, because an apply reports an item's failure by the message
   alone.
+
+- **§4 The merge settings ask for auto-merge only when the team wants it
+  (issue #167).** Every other field of `forge.merge_settings` is stated both
+  ways round — the strategy the team chose is allowed and the rest are
+  refused — because leaving one on is a way for a commit of the wrong shape
+  to land. Auto-merge is not like that: GitHub has a repository setting for
+  it, and Gitea and GitLab have none at all, so a desired `false` would be
+  drift that nobody on those forges could ever clear. A configuration that
+  does not want it therefore asks for nothing rather than asking for a "no"
+  two of the three providers can never say.
+
+- **§4 A forge with no setting observes auto-merge as permitted.** Gitea and
+  GitLab let any pull request be armed and offer nothing to forbid it, so
+  `true` is what each would answer if it could be asked. An observation that
+  left the field out, or wrote `false`, would describe a refusal no such
+  forge has ever made and have flow propose a change to a setting that does
+  not exist.
+
+- **§4 Auto-merge is asked for additively, so an apply never withdraws it.**
+  The merge settings are written as a whole — one call carries the strategies
+  and the squash text together, because a forge told only half would undo the
+  other half — and a field flow does not want is therefore a field flow would
+  be writing `false` into. For auto-merge that is wrong: the configuration
+  that does not ask for it has not asked for its absence either, and a
+  repository that permitted a pull request to land itself before flow ever
+  saw it goes on permitting it. The GitHub adapter leaves the field out of
+  the payload altogether, and ignores it when checking what the provider
+  kept.

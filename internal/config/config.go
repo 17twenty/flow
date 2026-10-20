@@ -220,6 +220,13 @@ type Forge struct {
 	// beyond flow's own gate, such as the build. Flow asks for them
 	// additively, so a check nobody wrote here is left alone (spec 03 §1).
 	RequiredChecks []string `yaml:"required_checks,omitempty"`
+	// AutoMerge lets a pull request land itself once everything it is
+	// waiting for has gone green: the repository setting is asked for in
+	// the plan, and `flow check pr` arms each pull request it judges. It is
+	// off unless the team says otherwise, because merging unattended is a
+	// decision about who is accountable rather than a convenience (spec 09
+	// §1).
+	AutoMerge bool `yaml:"auto_merge,omitempty"`
 	// Auth names the credential's environment variables.
 	Auth Auth `yaml:"auth"`
 }

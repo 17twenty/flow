@@ -33,6 +33,7 @@ type ghRepo struct {
 	SquashMergeCommitTitle   string `json:"squash_merge_commit_title"`
 	SquashMergeCommitMessage string `json:"squash_merge_commit_message"`
 	DeleteBranchOnMerge      bool   `json:"delete_branch_on_merge"`
+	AllowAutoMerge           bool   `json:"allow_auto_merge"`
 }
 
 // toRepoInfo converts the payload.
@@ -50,6 +51,7 @@ func (r ghRepo) toRepoInfo() core.RepoInfo {
 			SquashTitle:         squashTitleFromGitHub(r.SquashMergeCommitTitle),
 			SquashMessage:       squashMessageFromGitHub(r.SquashMergeCommitMessage),
 			DeleteBranchOnMerge: r.DeleteBranchOnMerge,
+			AllowAutoMerge:      r.AllowAutoMerge,
 		},
 	}
 }
@@ -124,6 +126,12 @@ type ghPull struct {
 	// "not said" are different answers and only one of them is a finding.
 	Mergeable      *bool  `json:"mergeable"`
 	MergeableState string `json:"mergeable_state"`
+	// AutoMerge is the pending request to land this pull request when its
+	// checks pass, and null when there is none. Like Mergeable it is absent
+	// from a listing, which is why nothing reads it from one.
+	AutoMerge *struct {
+		MergeMethod string `json:"merge_method"`
+	} `json:"auto_merge"`
 }
 
 // GitHub's mergeable_state values flow has a use for. The rest — clean,
@@ -212,6 +220,7 @@ func (p ghPull) toPullRequest() core.PullRequest {
 		// computed, and a merged pull request reported as conflicted is
 		// a reading that can only mislead whoever acts on it.
 		pr.Mergeability = mergeabilityFromGitHub(p.Mergeable, p.MergeableState)
+		pr.AutoMerge = p.AutoMerge != nil
 	}
 	return pr
 }
@@ -694,7 +703,20 @@ func mergeRequest(s core.MergeSettings) ghRepoRequest {
 		SquashMergeCommitTitle:   squashTitleToGitHub(s.SquashTitle),
 		SquashMergeCommitMessage: squashMessageToGitHub(s.SquashMessage),
 		DeleteBranchOnMerge:      s.DeleteBranchOnMerge,
+		AllowAutoMerge:           asked(s.AllowAutoMerge),
 	}
+}
+
+// asked renders a setting flow only ever turns on. A configuration that does
+// not want auto-merge asks for nothing rather than for a "no" (spec 06 §4),
+// so a false here is the absence of a request and not a request for the
+// absence — and a field left out of the payload is a setting GitHub leaves
+// exactly as it found it.
+func asked(on bool) *bool {
+	if !on {
+		return nil
+	}
+	return &on
 }
 
 // ghRef is GET /repos/{owner}/{repo}/git/ref/{ref}.
@@ -771,6 +793,7 @@ type ghRepoRequest struct {
 	SquashMergeCommitTitle   string `json:"squash_merge_commit_title,omitempty"`
 	SquashMergeCommitMessage string `json:"squash_merge_commit_message,omitempty"`
 	DeleteBranchOnMerge      bool   `json:"delete_branch_on_merge"`
+	AllowAutoMerge           *bool  `json:"allow_auto_merge,omitempty"`
 }
 
 // The rest of this file is GraphQL's, not REST's. The envelope itself is
@@ -791,9 +814,59 @@ func gitHubGraphQLSentinel(errType string) error {
 		return core.ErrPermission
 	case "RATE_LIMITED":
 		return core.ErrRateLimited
+	case "UNPROCESSABLE":
+		// The query was understood and the thing asked for cannot be
+		// done to this subject: a repository with auto-merge switched
+		// off, a draft that has nothing to wait for. It is the caller's
+		// request that is wrong, not the provider that is unavailable,
+		// and only the provider could have known.
+		return core.ErrValidation
 	default:
 		return core.ErrUnavailable
 	}
+}
+
+// GitHub's PullRequestMergeMethod enum, which is the merge strategies again
+// in capitals. The mapping is written out rather than upper-cased, so that a
+// strategy flow grows a name for does not silently become a GraphQL value
+// that does not exist.
+func gitHubMergeMethod(method string) (string, bool) {
+	switch method {
+	case core.MergeMethodSquash:
+		return "SQUASH", true
+	case core.MergeMethodMerge:
+		return "MERGE", true
+	case core.MergeMethodRebase:
+		return "REBASE", true
+	default:
+		return "", false
+	}
+}
+
+// ghAutoMergeState is the data of the auto-merge query: the node id the
+// mutation needs, and the pending request if there already is one.
+type ghAutoMergeState struct {
+	Repository struct {
+		PullRequest *struct {
+			ID               string `json:"id"`
+			AutoMergeRequest *struct {
+				EnabledAt string `json:"enabledAt"`
+			} `json:"autoMergeRequest"`
+		} `json:"pullRequest"`
+	} `json:"repository"`
+}
+
+// ghEnableAutoMerge is the data of the arming mutation. Nothing reads it: the
+// absence of an error is the answer, and a type is still wanted because the
+// GraphQL helper decodes into one.
+type ghEnableAutoMerge struct {
+	EnablePullRequestAutoMerge struct {
+		PullRequest struct {
+			AutoMergeRequest *struct {
+				EnabledAt string `json:"enabledAt"`
+			} `json:"autoMergeRequest"`
+		} `json:"pullRequest"`
+	} `json:"enablePullRequestAutoMerge"`
 }
 
 // ghClosingIssues is the data of the closingIssuesReferences query: the

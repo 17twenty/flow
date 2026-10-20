@@ -38,6 +38,11 @@ const (
 	GateDryRun = "dry-run"
 	// GateReadOnly means the credential may not write here (spec 09 §1).
 	GateReadOnly = "read-only"
+	// GateUnsupported means this provider has no such thing to do.
+	GateUnsupported = "unsupported"
+	// GateRefused means the provider was asked and said no, for a reason
+	// only it could know.
+	GateRefused = "refused"
 )
 
 // GateInput is everything `flow check pr` needs to judge one pull request and
@@ -72,6 +77,9 @@ type Gate struct {
 	// StatusOutcome and CommentOutcome are what became of them.
 	StatusOutcome  string
 	CommentOutcome string
+	// ArmOutcome is what became of auto-merge: whether this pull request
+	// was left set to land itself once the gate goes green.
+	ArmOutcome string
 	// Moves are the ticket transitions this run considered, in the order the
 	// tickets were linked.
 	Moves []TicketMove
@@ -100,6 +108,9 @@ func RunGate(ctx context.Context, in GateInput) (Gate, error) {
 		return gate, err
 	}
 	if err := gate.move(ctx, in, snapshot); err != nil {
+		return gate, err
+	}
+	if err := gate.arm(ctx, in, snapshot); err != nil {
 		return gate, err
 	}
 	return gate, nil
@@ -319,6 +330,58 @@ func (g *Gate) publish(ctx context.Context, in GateInput) error {
 	return nil
 }
 
+// arm leaves the pull request set to land itself once everything it is
+// waiting for has gone green (spec 09 §1).
+//
+// It is the last thing the run does, and that is the whole reason it is a
+// separate step. An armed pull request whose gate is already passing merges
+// on the spot, so arming before the status, the comment and the transitions
+// would race flow against itself: the branch would be gone, and the writes
+// still to come would be aimed at a pull request the forge had closed.
+//
+// Nothing here fails the gate. A forge with no auto-merge, a repository with
+// it switched off, a credential that may not write: each is a reason this
+// pull request will wait for a person, which is what it would have done
+// anyway. The verdict is about the change, not about what flow managed to
+// arrange afterwards.
+func (g *Gate) arm(ctx context.Context, in GateInput, snapshot PolicySnapshot) error {
+	switch {
+	case !in.Config.Forge.AutoMerge:
+		g.ArmOutcome = GateNone
+		return nil
+	case !in.Adapters.Forge.Capabilities().Can(core.CapAutoMerge):
+		g.ArmOutcome = GateUnsupported
+		return nil
+	case snapshot.PR.State != core.PRStateOpen || snapshot.PR.Draft:
+		g.ArmOutcome = GateNone
+		return nil
+	case snapshot.PR.AutoMerge:
+		g.ArmOutcome = GateUnchanged
+		return nil
+	case in.DryRun:
+		g.ArmOutcome = GateDryRun
+		return nil
+	case g.ReadOnly:
+		g.ArmOutcome = GateReadOnly
+		return nil
+	}
+
+	err := in.Adapters.Forge.ArmAutoMerge(ctx, in.PR, in.Config.Commits.MergeStrategy)
+	switch {
+	case err == nil:
+		g.ArmOutcome = GatePosted
+	case errors.Is(err, core.ErrPermission):
+		g.ReadOnly, g.ArmOutcome = true, GateReadOnly
+	case errors.Is(err, core.ErrUnsupported):
+		g.ArmOutcome = GateUnsupported
+	case errors.Is(err, core.ErrValidation):
+		g.ArmOutcome = GateRefused
+	default:
+		return core.Explain(err, "arm auto-merge on #%d", in.PR)
+	}
+	return nil
+}
+
 // statusAlreadySaid reports whether one of the statuses already on the commit
 // is flow's, and says exactly what flow is about to say (spec 09 §2).
 func statusAlreadySaid(latest []core.CommitStatus, want core.CommitStatus) bool {
@@ -476,6 +539,7 @@ type gateDoc struct {
 	Status      string       `json:"status"`
 	Comment     string       `json:"comment"`
 	ReadOnly    bool         `json:"read_only,omitempty"`
+	AutoMerge   string       `json:"auto_merge"`
 	Moves       []TicketMove `json:"moves,omitempty"`
 }
 
@@ -493,6 +557,7 @@ func (g Gate) JSON() ([]byte, error) {
 		Status:      g.StatusOutcome,
 		Comment:     g.CommentOutcome,
 		ReadOnly:    g.ReadOnly,
+		AutoMerge:   g.ArmOutcome,
 		Moves:       g.Moves,
 	}
 	if doc.Findings == nil {
@@ -521,6 +586,10 @@ func (g Gate) Text() string {
 		out.WriteString(line)
 		out.WriteString("\n")
 	}
+	if line := armedText(g); line != "" {
+		out.WriteString(line)
+		out.WriteString("\n")
+	}
 	return out.String()
 }
 
@@ -540,6 +609,25 @@ func publishedText(g Gate) string {
 		return "status not posted: this credential may not write here"
 	case g.StatusOutcome == GateDryRun:
 		return "dry run: nothing was posted"
+	default:
+		return ""
+	}
+}
+
+// armedText is the one line about auto-merge, and nothing at all when there
+// was nothing to arrange. A pull request that was already armed says nothing
+// either: the gate runs on every push, and a line repeating an arrangement
+// nobody changed is noise in every log it appears in.
+func armedText(g Gate) string {
+	switch g.ArmOutcome {
+	case GatePosted:
+		return "auto-merge armed: this will land itself once the gate is green"
+	case GateDryRun:
+		return "dry run: auto-merge was not armed"
+	case GateUnsupported:
+		return "auto-merge not armed: this forge cannot do it"
+	case GateRefused:
+		return "auto-merge not armed: the forge would not have it"
 	default:
 		return ""
 	}

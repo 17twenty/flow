@@ -329,7 +329,7 @@
       "why": "flow can set it through the provider's API",
       "exists": true,
       "desired_hash": "sha256:cc05493d1be9aa9463003439689f72b2bb069931924dc0ede8b86b8b64e9a7b2",
-      "observed_hash": "sha256:68171ec3b673876509cbf6302f3aedd23819afb54fb4176575282e9d136e98b1",
+      "observed_hash": "sha256:525b5c154daad3b7668b62db8cee216e3febdc64222dca672280a4a3a95fee73",
       "changes": [
         {
           "what": "forge.merge_settings",

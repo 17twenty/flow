@@ -313,6 +313,10 @@
           },
           "additionalProperties": false
         },
+        "auto_merge": {
+          "description": "Let a pull request land itself once its gate and checks are green.",
+          "type": "boolean"
+        },
         "repo": {
           "description": "The repository, as owner/name.",
           "type": "string",

@@ -48,6 +48,16 @@ type Forge interface {
 	SetProtection(ctx context.Context, branch string, p Protection) error
 	// SetMergeSettings sets the repository's merge strategies.
 	SetMergeSettings(ctx context.Context, s MergeSettings) error
+	// ArmAutoMerge asks the forge to land this pull request with that merge
+	// method as soon as everything it is waiting for is satisfied, so that
+	// an approval given while nobody is watching is not a queue that stops.
+	//
+	// It is idempotent: arming a pull request already armed does nothing.
+	// It is refused with ErrUnsupported by a forge that has no such thing,
+	// and with ErrValidation by one whose repository has it switched off or
+	// whose pull request is a draft — a caller cannot tell those apart
+	// beforehand, because only the forge knows.
+	ArmAutoMerge(ctx context.Context, number int, method string) error
 
 	// CommitStatuses returns the statuses on a commit, newest first.
 	CommitStatuses(ctx context.Context, sha string) ([]CommitStatus, error)
