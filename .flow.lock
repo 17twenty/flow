@@ -6,26 +6,26 @@ resolved:
   tracker.project: "2"
 observed:
   deploys.records:
-    hash: sha256:c16a106658c692aef62bcc6976feb26e1734fe946da7fab76bdd6e4b4209a07f
-    at: 2026-10-18T11:13:09Z
+    hash: sha256:49e88f4843c7d991b87e2fbfb855178f5c4066e7290b511a7abc1d8365eef622
+    at: 2026-10-20T11:44:28Z
   forge.default_branch:
     hash: sha256:130df5095e47e6e2c56f9c91ad73a8b737f6ff9c8e8324706428f39b931452a8
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   forge.files:
     hash: sha256:4bacc448415959b11dfc28afd82bf77bebd5c34b52fa5d234c5c279d88c0b152
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   forge.merge_settings:
     hash: sha256:3dc89b6d949fae72eac4a59298967ab06cddf6811758d7b58d314ec4c00fd768
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   forge.protection:
     hash: sha256:5fdfb934de062dc7d218daa5926b003ad017403d1c879ba60c32921596e8ff80
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   forge.required_status:
     hash: sha256:4a57c2d10ad9e0764e780d8beb8645be796868abf8bc1ecdb153012d50914538
     at: 2026-10-12T11:55:30Z
   forge.squash_text:
     hash: sha256:9d4f4579a4fc383b44d3d988823f2329416c2d4e74d062271abde04c2026a4f5
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   tracker.expedite:
     hash: sha256:9e3701f050c719a5c0074fdbe48fb7cf4c318e2a32d66155226ca70d7944ba86
     at: 2026-10-12T11:55:30Z
@@ -43,13 +43,13 @@ observed:
     at: 2026-10-12T11:55:30Z
   tracker.project:
     hash: sha256:b64103142ecdb9b5f5bdafb274ed68243a671f6eaf5e309a364268b39e7af02d
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   tracker.status_options:
     hash: sha256:145ddda1edac6d1736ba0ad026c3525c81f5d9153bc01c7d4e2398249cc2f8eb
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
   tracker.wip:
     hash: sha256:a1ead70a22e79e2479b9dd9eda54b011b2db47c626268f6882cd5608a1c17c71
-    at: 2026-10-17T21:51:19Z
+    at: 2026-10-20T11:44:28Z
 created:
   - kind: forge.file
     name: .github/workflows/flow.yml
@@ -72,5 +72,5 @@ followups:
     ticket: '#91'
     owner: 17twenty
     opened_at: 2026-10-12T11:55:58Z
-    nudged_at: 2026-10-12T23:39:31Z
+    nudged_at: 2026-10-20T11:46:16Z
     state: open
