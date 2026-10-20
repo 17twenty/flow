@@ -228,3 +228,13 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   `permissions.push` are GitHub's words and `main.go` is a file. Grading them
   would make the cookbook unwritable, and the names flow owns are exactly the
   ones that rot when flow renames something.
+- **A test that reads a rendering must fix the width that rendering is made
+  at.** kong asks the environment how wide the terminal is, so the same
+  `--help` is one line on a developer's machine and three on the runner — and
+  a wrapped line can open with something that reads like a flag. `flow plan
+  --help` ends "for a later flow apply --plan.", which CI believed was a flag
+  of `flow plan` and this machine never saw. The reading now takes the column
+  a dash sits in as what makes a flag a flag, and `COLUMNS` is pinned narrow
+  so every run wraps: with the width left to the environment, deleting that
+  guard passes on a wide terminal and fails on the runner, which is the same
+  defect one layer up.

@@ -139,10 +139,25 @@ func schemaHas(schema map[string]any, path string) bool {
 // is one flag and prints as two.
 var negatable = regexp.MustCompile(`--\[no-]([a-z][a-z-]+)`)
 
+// flagColumn is how far into a line kong will start a flag: two spaces, and
+// four more where there is no short form to sit in. Help text is wrapped into
+// a column far to the right of it.
+const flagColumn = 6
+
+// helpWidth is narrow enough that kong wraps every description it prints.
+// Without it the width comes from the environment, so the same help is one
+// line on a developer's terminal and three on the runner — and a wrapped line
+// can open with something that reads like a flag: `flow plan --help` says
+// "for a later flow apply --plan.", which this test once believed was a flag
+// of `flow plan`. Wrapping always, everywhere, is what makes the reading below
+// answer the same thing in both places.
+const helpWidth = "80"
+
 // helpFlags is every flag a command accepts, read from kong's own help so that
 // the grammar answers rather than a list in a test.
 func helpFlags(t *testing.T, command []string) []string {
 	t.Helper()
+	t.Setenv("COLUMNS", helpWidth)
 	code, stdout, stderr := exec(t, append(slices.Clone(command), "--help")...)
 	if code != core.ExitOK {
 		t.Fatalf("flow %s --help exits %d: %s", strings.Join(command, " "), code, stderr)
@@ -153,12 +168,17 @@ func helpFlags(t *testing.T, command []string) []string {
 	}
 	var names []string
 	for _, line := range strings.Split(flags, "\n") {
-		line = strings.TrimSpace(line)
-		if match := negatable.FindStringSubmatch(line); match != nil {
-			names = append(names, "--"+match[1], "--no-"+match[1])
+		// Where the dash is says whether this line declares a flag or
+		// continues the one above it.
+		if dash := strings.IndexByte(line, '-'); dash < 0 || dash > flagColumn {
 			continue
 		}
+		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "-") {
+			continue
+		}
+		if match := negatable.FindStringSubmatch(line); match != nil {
+			names = append(names, "--"+match[1], "--no-"+match[1])
 			continue
 		}
 		if _, flag, ok := strings.Cut(line, "--"); ok {
