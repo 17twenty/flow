@@ -172,6 +172,14 @@ type gtPull struct {
 	Additions    int    `json:"additions"`
 	Deletions    int    `json:"deletions"`
 	HTMLURL      string `json:"html_url"`
+
+	// Mergeable is Gitea's whole answer about landing it: one bool, with
+	// no way to say "still working it out" and no separate word for a
+	// branch that has fallen behind. Gitea computes it from the conflict
+	// status alone — `block_on_outdated_branch` is applied at merge time
+	// and never shows up here — so flow reads it as conflicted or not and
+	// never reports `behind` for a Gitea pull request.
+	Mergeable bool `json:"mergeable"`
 }
 
 // toPullRequest converts the payload.
@@ -220,6 +228,12 @@ func (p gtPull) toPullRequest(reference string) core.PullRequest {
 	if p.Merged || p.MergedAt != nil {
 		pr.State = core.PRStateMerged
 		pr.MergeSHA = p.MergeCommitSHA
+	}
+	if pr.State == core.PRStateOpen {
+		pr.Mergeability = core.MergeabilityConflicted
+		if p.Mergeable {
+			pr.Mergeability = core.MergeabilityClean
+		}
 	}
 	return pr
 }

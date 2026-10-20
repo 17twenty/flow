@@ -197,6 +197,8 @@ func liveCheckIDs() []string {
 		engine.CheckLiveTicketsDoneMerged,
 		engine.CheckLiveTicketsDoneDeployed,
 		engine.CheckLiveTicketsReviewHasPR,
+		engine.CheckLiveTicketsReviewStuck,
+		engine.CheckLiveTicketsReviewStale,
 		engine.CheckLiveTicketsProgressStale,
 		engine.CheckLiveTicketsReadyDoR,
 		engine.CheckLiveTicketsBlockedExplained,
@@ -235,6 +237,19 @@ func TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt(t *testing.T) {
 			if !slices.Contains(reachable, on) {
 				t.Errorf("%s waits for %s, which is not one of the checks that prove a provider answers", id, on)
 			}
+		}
+	}
+
+	// And the other way round. The list above is this suite's index of
+	// spec 07 §6: every property the live audit has is asserted by walking
+	// it, so a check registered and left out of it is a check nothing in
+	// here is saying anything about.
+	for _, check := range registry.Checks() {
+		if check.Category != engine.CategoryLive {
+			continue
+		}
+		if !slices.Contains(liveCheckIDs(), check.ID) {
+			t.Errorf("the registry runs %s and liveCheckIDs does not name it, so every property this suite holds the live audit to skips it", check.ID)
 		}
 	}
 }

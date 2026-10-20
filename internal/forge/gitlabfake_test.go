@@ -1100,7 +1100,33 @@ func (f *gitLabFake) mergeRequest(pr core.PullRequest) glMergeRequest {
 		at := pr.ClosedAt
 		out.ClosedAt = &at
 	}
+	out.DetailedMergeStatus, out.MergeStatus = gitLabMergeStatus(pr)
 	return out
+}
+
+// gitLabMergeStatus is the pair GitLab answers mergeability with, in both the
+// listing and the merge request's own payload — unlike GitHub, GitLab sends
+// it in a list, which is what makes the contract's "a listing says nothing"
+// a test of the adapter rather than of the fake.
+//
+// A merge request that is no longer open answers `not_open`, a value flow has
+// no name for and would otherwise read as "nothing in the way".
+func gitLabMergeStatus(pr core.PullRequest) (detailed, coarse string) {
+	if pr.State != core.PRStateOpen {
+		return "not_open", glMergeStatusCan
+	}
+	switch pr.Mergeability {
+	case core.MergeabilityClean:
+		return glMergeMergeable, glMergeStatusCan
+	case core.MergeabilityConflicted:
+		return glMergeConflict, glMergeStatusCannot
+	case core.MergeabilityBehind:
+		// Nothing conflicts: the merge method wants it rebased, so the
+		// coarse field GitLab deprecated still says it can be merged.
+		return glMergeNeedRebase, glMergeStatusCan
+	default:
+		return "checking", "checking"
+	}
 }
 
 // gitLabChangesCount is `changes_count`, which GitLab sends as text and caps

@@ -180,6 +180,7 @@ func ConfigSchema() *Schema {
 				"fail_below":      percentage("The percentage of items a live check must see hold before it fails rather than warns. Omitted means 90."),
 				"flag_max_age":    duration("How long a feature flag may stand before the audit asks about it, measured from the commit that announced it. Omitted means 90d."),
 				"flag_kept_label": str("The label on a cleanup ticket that says the flag stays on purpose. Omitted means flag-kept."),
+				"stale_after":     count("How many working days work may sit in a column with nothing happening to it before the audit says so. Omitted means 5."),
 			}),
 		}, "version")
 

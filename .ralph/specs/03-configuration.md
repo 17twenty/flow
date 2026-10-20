@@ -104,6 +104,7 @@ health:
   fail_below: 90                  # doctor: a live check below this % fails rather than warns
   flag_max_age: 90d               # doctor: how long a feature flag may stand before it is asked about
   flag_kept_label: flag-kept      # the label on a cleanup ticket that says the flag stays on purpose
+  stale_after: 5                  # doctor: working days work may sit in a column before the audit says so
 ```
 
 ### 1.1 Semantic validation (`flow doctor` check `config.semantics`)
@@ -511,3 +512,8 @@ gate, relaxed policy).
   is how an absent key reads, so it cannot also mean "every flag is too old
   the day it is announced"; the default is written down once, in the engine,
   for the reason `fail_below`'s is.
+- **§1 `health.stale_after` is a whole number of working days (issue #156).**
+  Spec 07 §6 counted five of them in the engine, as a constant, and the
+  review column had no patience at all. The key is optional, defaults to 5,
+  must not be negative and has no upper bound: a team that waits a quarter has
+  said so deliberately, and the checks that read it only ever warn.

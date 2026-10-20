@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +41,12 @@ const (
 	// CheckLiveTicketsReviewHasPR is whether everything waiting for review
 	// has something to review.
 	CheckLiveTicketsReviewHasPR = "live.tickets.review_has_pr"
+	// CheckLiveTicketsReviewStuck is whether anything that has been
+	// approved is being held up by something only a push can fix.
+	CheckLiveTicketsReviewStuck = "live.tickets.review_stuck"
+	// CheckLiveTicketsReviewStale is whether anything has been waiting for
+	// review longer than the team's patience.
+	CheckLiveTicketsReviewStale = "live.tickets.review_stale"
 	// CheckLiveTicketsProgressStale is whether anything in progress has
 	// stopped moving.
 	CheckLiveTicketsProgressStale = "live.tickets.progress_stale"
@@ -48,11 +56,6 @@ const (
 	// says why it stopped.
 	CheckLiveTicketsBlockedExplained = "live.tickets.blocked_explained"
 )
-
-// StaleAfter is how long a ticket may sit in progress with nothing happening
-// to it or to its pull requests before doctor mentions it, in working days
-// (spec 07 §6).
-const StaleAfter = 5
 
 // errNoTracker is what a board check reports when there is no tracker to ask.
 // Like [errNoForge] it cannot happen through doctor, where `auth.tracker`
@@ -70,6 +73,8 @@ func (a *audit) ticketChecks() []Check {
 		a.ticketsDoneMerged(),
 		a.ticketsDoneDeployed(),
 		a.ticketsReviewHasPR(),
+		a.ticketsReviewStuck(),
+		a.ticketsReviewStale(),
 		a.ticketsProgressStale(),
 		a.ticketsReadyDoR(),
 		a.ticketsBlockedExplained(),
@@ -352,6 +357,195 @@ func (a *audit) ticketsReviewHasPR() Check {
 	}
 }
 
+// ticketsReviewStuck asks whether anything that has been approved is being
+// held up by something only a push can fix.
+//
+// This is the failure the board hides best. A pull request that conflicts, or
+// that has fallen behind a trunk the protection requires it to be level with,
+// is finished as far as everybody involved is concerned: it is approved, its
+// checks are green — computed on a head that has not moved and green there for
+// ever — and no forge sends anybody mail about it. The card sits in the review
+// column saying the work is moving.
+//
+// Only approved work is judged, for two reasons. Falling behind the trunk is
+// the ordinary condition of every pull request in a queue the moment one of
+// them merges, and a check that failed for each of those would be noise about
+// nothing. And a forge that reports one blocker at a time reports the
+// approvals it is missing before it reports anything else, so until the
+// approval is there, "what is in the way" is not a question it has answered.
+func (a *audit) ticketsReviewStuck() Check {
+	return Check{
+		ID:        CheckLiveTicketsReviewStuck,
+		Title:     "Nothing approved is stuck in review",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := columnFor(env.Config, config.EventPRReadyForReview)
+			if !named {
+				return Skip("nothing in the workflow says which column work waits for review in")
+			}
+			waiting, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			open, err := a.inFlight(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, open)
+			var t tally
+			for _, ticket := range waiting {
+				approved := approvedWork(work[ticketKey(ticket)])
+				if len(approved) == 0 {
+					// Nothing has been approved, so nothing is
+					// waiting on a push rather than on a person.
+					continue
+				}
+				// One ticket counts once however many pull
+				// requests are behind it, because the tally is
+				// the board: a message reading "2 of 1 tickets"
+				// is what counting both at once gets.
+				var blocked []string
+				var link string
+				for _, pr := range approved {
+					why, stuck := pr.Stuck()
+					if !stuck {
+						continue
+					}
+					blocked = append(blocked, fmt.Sprintf("#%d %s", pr.Number, why))
+					if link == "" {
+						link = pr.URL
+					}
+				}
+				if len(blocked) == 0 {
+					t.held()
+					continue
+				}
+				t.broke(link, "%s %s — approved and cannot merge: %s",
+					ticket.Key, ticket.Title, strings.Join(blocked, "; "))
+			}
+			result := t.grade(env, false)
+			switch {
+			case t.counts.Total == 0:
+				return result.Said("nothing in %s has been approved yet", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d approved %s in %s could be merged now",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name)
+			}
+			return result.Said("%d of %d approved tickets in %s cannot be merged",
+				t.missed(), t.counts.Total, column.Name).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "work that is finished and cannot land is the queue stopping without anything going red",
+					Steps: []string{
+						"rebase or merge the trunk into each branch named above, and push",
+						"nothing here is a flow finding to clear: the checks on these are green, computed on a head that has not changed",
+						"a trunk with strict required status checks puts every open pull request behind it each time one merges, so merge the queue in order rather than letting it build",
+					},
+				})
+		},
+	}
+}
+
+// ticketsReviewStale asks whether anything has been waiting for review longer
+// than the team's patience.
+//
+// It warns and never fails, for the same reason [audit.ticketsProgressStale]
+// does: a review that has not happened is a fact about what people had time
+// for, and a repository marked unhealthy for it would teach the team that red
+// means nothing. What it is for is the question nobody asks out loud, which is
+// whose turn it is.
+func (a *audit) ticketsReviewStale() Check {
+	return Check{
+		ID:        CheckLiveTicketsReviewStale,
+		Title:     "Nothing has been waiting for review too long",
+		Category:  CategoryLive,
+		DependsOn: []string{CheckAuthTracker, CheckForgeRepo},
+		Run: func(ctx context.Context, env *Env) Result {
+			column, named := columnFor(env.Config, config.EventPRReadyForReview)
+			if !named {
+				return Skip("nothing in the workflow says which column work waits for review in")
+			}
+			waiting, err := a.inColumn(ctx, env, column.ID)
+			if err != nil {
+				return Failed(err)
+			}
+			open, err := a.inFlight(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			work := prsByTicket(env, open)
+			patience := env.Patience()
+			cutoff := workingDaysBefore(env.Now(), patience)
+			var t tally
+			for _, ticket := range waiting {
+				last := lastTouched(ticket, work[ticketKey(ticket)])
+				if last.IsZero() {
+					continue
+				}
+				if !last.Before(cutoff) {
+					t.held()
+					continue
+				}
+				t.broke(ticket.URL, "%s %s — waiting for review since %s",
+					ticket.Key, ticket.Title, day(last))
+			}
+			result := t.gradeWarning(env)
+			switch {
+			case t.counts.Total == 0 && len(waiting) == 0:
+				return result.Said("nothing is in %s", column.Name)
+			case t.counts.Total == 0:
+				return result.Said("nothing in %s has a date to judge it by", column.Name)
+			case result.State == StatePass:
+				return result.Said("all %d %s in %s have moved within %d working days",
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, patience)
+			}
+			return result.Said("%d of %d tickets in %s have been waiting more than %d working days",
+				t.missed(), t.counts.Total, column.Name, patience).
+				Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "a review nobody has done is the slowest part of most workflows, and the only one nothing measures",
+					Steps: []string{
+						"review these, or say who will",
+						"check the WIP limit on " + column.Name + ": a review queue longer than the team reads is work finished and not delivered",
+						"health.stale_after sets how long is too long; it is " + strconv.Itoa(patience) + " working days here",
+					},
+				})
+		},
+	}
+}
+
+// approvedWork is the pull requests somebody has approved and nobody has since
+// asked for changes on. A draft is not among them whatever its reviews say:
+// offering it for review is the act that puts it in the queue at all.
+func approvedWork(prs []core.PullRequest) []core.PullRequest {
+	var out []core.PullRequest
+	for _, pr := range prs {
+		if pr.Draft || pr.ChangesRequested() || len(pr.Approvals()) == 0 {
+			continue
+		}
+		out = append(out, pr)
+	}
+	return out
+}
+
+// lastTouched is the most recent thing to happen to a ticket or to any of the
+// pull requests for it.
+//
+// Both halves are read because either alone is wrong: a tracker's own date
+// does not move when somebody pushes, and a pull request's does not move when
+// somebody writes on the card. A zero means nothing could be dated, which is
+// not the same as nothing having happened.
+func lastTouched(ticket core.Ticket, prs []core.PullRequest) time.Time {
+	last := ticket.UpdatedAt
+	for _, pr := range prs {
+		if pr.UpdatedAt.After(last) {
+			last = pr.UpdatedAt
+		}
+	}
+	return last
+}
+
 // ticketsProgressStale asks whether anything in progress has stopped moving.
 //
 // It only ever warns. Work goes quiet for reasons flow cannot see — leave,
@@ -378,15 +572,11 @@ func (a *audit) ticketsProgressStale() Check {
 				return Failed(err)
 			}
 			work := prsByTicket(env, open)
-			cutoff := workingDaysBefore(env.Now(), StaleAfter)
+			patience := env.Patience()
+			cutoff := workingDaysBefore(env.Now(), patience)
 			var t tally
 			for _, ticket := range started {
-				last := ticket.UpdatedAt
-				for _, pr := range work[ticketKey(ticket)] {
-					if pr.UpdatedAt.After(last) {
-						last = pr.UpdatedAt
-					}
-				}
+				last := lastTouched(ticket, work[ticketKey(ticket)])
 				if last.IsZero() {
 					// A tracker that will not say when an item last moved
 					// cannot be asked whether it has stopped moving, and
@@ -408,10 +598,10 @@ func (a *audit) ticketsProgressStale() Check {
 				return result.Said("nothing in %s has a date to judge it by", column.Name)
 			case result.State == StatePass:
 				return result.Said("all %d %s in %s have moved within %d working days",
-					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, StaleAfter)
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, patience)
 			}
 			return result.Said("%d of %d tickets in %s have not moved in %d working days",
-				t.missed(), t.counts.Total, column.Name, StaleAfter).
+				t.missed(), t.counts.Total, column.Name, patience).
 				Fix(Remediation{
 					Kind:    RemedyManual,
 					Summary: "ask whoever has these whether they are really still in flight",

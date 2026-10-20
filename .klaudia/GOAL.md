@@ -1229,7 +1229,53 @@ name types `commits.types` actually allows — advising somebody to unlink
 `docs` when the team never writes `docs` sends them to the wrong key — and
 nothing had asked whether the doctor's refusal reached stderr at all.
 
-**Single best next step:** rebase #151 onto this once it lands and let the
-next `--ci --fix` run retitle it in place; then the four `flow attest`
-commands in `docs/cookbook.md` §6.1, which are still the only thing standing
-between this repository and the first of fourteen green days.
+
+### Work that cannot land, and the board that says it is moving (issue #156)
+
+When #154 merged, #155 became unmergeable. Nothing reported it. No forge
+sends mail about a conflict, and no check goes red — `test` and `flow/policy`
+were computed on a head that has not changed and stay green there for ever.
+The card stayed in **In review**, approved, with every doctor check passing.
+That is the audit's one claim, that the board is true, failing quietly.
+
+**flow asks the forge instead of guessing.** `core.PullRequest.Mergeability`
+is `clean`, `conflicted`, `behind`, or nothing at all — and nothing at all is
+the absence of a reading, not a reading that nothing is wrong. GitHub
+computes it in the background and answers `null` until it has; treating
+silence as a refusal would make the check fail hardest on the pull request
+somebody opened a moment ago.
+
+**Only `Forge.PullRequest` fills it, and only for an open one.** Every forge
+goes on answering about work it has finished with, against a base that has
+moved on, which for anything merged is a refusal — and "this merged pull
+request conflicts" can only mislead whoever acts on it. A listing never
+carries it either, including GitLab's and Gitea's, which do: an engine
+written against a listing would answer "nothing is stuck" on GitHub and the
+truth everywhere else, a difference between providers nothing would catch.
+
+**`live.tickets.review_stuck` fails; `live.tickets.review_stale` warns.** The
+first is a queue that has stopped and names which of the two reasons it is —
+a conflict needs a resolution, a stale branch needs a push, and sending
+somebody to resolve one that is not there wastes the half hour the check
+saved. It asks only of approved work: falling behind the trunk is the
+ordinary condition of every pull request in a queue the moment one of them
+merges. The second is the column `progress_stale` never watched, warning
+because a slow review is a fact about what people had time for.
+
+**One patience, not one per column.** The five working days were a constant
+in the engine; they are `health.stale_after` now, applied in `Env.Patience()`
+alone so the number the report prints and the number it judged by cannot come
+apart.
+
+**Twenty-five mutants, three survivors, all three real.** A rule written as
+two clauses is only tested by a fixture the clauses disagree about —
+`ChangesRequested() || len(Approvals()) == 0` needed a *second* reviewer,
+because `Approvals()` already drops one the same person overtook. The forge
+fixture's merged pull request carried no mergeability, so the rule that drops
+it for finished work could be deleted with the suite green. And GitHub's
+`mergeable == nil` was load-bearing in a way the fake never showed: without
+it, a state flow has no name for would have been read through a null pointer.
+
+**Single best next step:** the four `flow attest` commands in
+`docs/cookbook.md` §6.1, which are still the only thing standing between this
+repository and the first of fourteen green days.

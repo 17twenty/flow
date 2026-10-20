@@ -86,7 +86,9 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.tickets.done_merged` | Is every ticket moved to Done in the window linked to a merged PR (or closed as not planned)? | tracker + forge |
 | `live.tickets.done_deployed` | (`done_on: deployed`) Is every Done ticket's PR deployed? | tracker + deploys |
 | `live.tickets.review_has_pr` | Does every ticket in `in_review` have an open, ready PR? | tracker + forge |
-| `live.tickets.progress_stale` | Any ticket in `in_progress` with no linked PR activity for > 5 working days? (warn only) | tracker + forge |
+| `live.tickets.review_stuck` | Any approved PR in `in_review` the forge would not take — conflicted, or behind a trunk the protection requires it to be level with? | tracker + forge |
+| `live.tickets.review_stale` | Any ticket in `in_review` with no activity for > `health.stale_after` working days? (warn only) | tracker + forge |
+| `live.tickets.progress_stale` | Any ticket in `in_progress` with no linked PR activity for > `health.stale_after` working days (default 5)? (warn only) | tracker + forge |
 | `live.tickets.ready_dor` | Do tickets in `ready` pass DoR? | tracker |
 | `live.tickets.blocked_explained` | (`workflow.blocked.require_comment`) Does every open blocked ticket carry a comment somebody other than flow wrote? | tracker |
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
@@ -1011,3 +1013,39 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   have already dropped is asking them to tidy history. The tracker's own
   blocked flag counts beside the label, because a board that uses a Jira flag
   or a Linear blocking relation and no label at all has still stopped the work.
+
+- **§6 work that cannot land is a finding of its own (issue #156).** A pull
+  request that conflicts, or that has fallen behind a trunk whose protection
+  requires it to be level, goes wrong without anything going red: the checks
+  that passed were computed on a head that has not moved and stay green there
+  for ever, and no forge sends mail about it. `review_has_pr` does not see it
+  — a conflicted pull request is open and ready — so the board says the work
+  is moving when it stopped. `live.tickets.review_stuck` asks the forge
+  instead of guessing, and fails rather than warns: unlike a slow review this
+  is not a fact about what people had time for, it is a queue that has
+  stopped.
+
+- **§6 only approved work is asked whether it is stuck.** Falling behind the
+  trunk is the ordinary condition of every pull request in a queue the moment
+  one of them merges, so a check that failed for each of those would be noise
+  about nothing. And a forge that reports one blocker at a time reports the
+  approvals it is missing before anything else, so until the approval is
+  there "what is in the way" is not a question it has answered. A draft is
+  never among them whatever its reviews say.
+
+- **§6 the review column has a patience too (issue #156).** `progress_stale`
+  watched the column `pr_opened_draft` lands in, so the column work waits in
+  afterwards had no staleness rule at all — the one place a queue silently
+  grows. `live.tickets.review_stale` is the same check against the column
+  `pr_ready_for_review` lands in, warning and never failing for the reason
+  `progress_stale` does. Both date a ticket by the latest of its own update
+  and its pull requests': a tracker's date does not move when somebody
+  pushes, and a pull request's does not move when somebody writes on the card.
+
+- **§6 one patience, not one per column (issue #156).** The five working days
+  `progress_stale` counted were a constant in the engine; they are now
+  `health.stale_after`, defaulting to 5 and applied in `Env.Patience()` alone
+  so the number the report prints and the number it judged by cannot come
+  apart. One key covers every column that has a patience: a team has one
+  answer to "how long is too long", and two keys would mostly be set to the
+  same thing and occasionally be set to different things by accident.

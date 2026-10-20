@@ -1447,3 +1447,108 @@ func TestGitHubProbeReadsVisibilityRatherThanPrivacy(t *testing.T) {
 		})
 	}
 }
+
+// TestGitHubReadsABranchThatOnlyFellBehindAsExactlyThat: GitHub says a pull
+// request whose base has moved is still `mergeable`, because nothing
+// conflicts — it is the strict required status checks that will not take it
+// until it is level. An adapter reading the bool and ignoring the state would
+// call it clean; one reading the state as a conflict would send somebody to
+// resolve one that is not there.
+func TestGitHubReadsABranchThatOnlyFellBehindAsExactlyThat(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Mergeability = core.MergeabilityBehind
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityBehind {
+		t.Fatalf("Mergeability = %q, want %q", pr.Mergeability, core.MergeabilityBehind)
+	}
+	why, stuck := pr.Stuck()
+	if !stuck || !strings.Contains(why, "level") {
+		t.Errorf("Stuck() = %q/%v, want it to say the branch has to be level with its base", why, stuck)
+	}
+}
+
+// TestGitHubDoesNotReadSilenceAsApproval: GitHub computes mergeability in the
+// background and answers null until it has. An adapter that read that as
+// "nothing is in the way" would make the check that asks fail hardest on the
+// pull request somebody opened a moment ago.
+func TestGitHubDoesNotReadSilenceAsApproval(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Mergeability = core.MergeabilityUnknown
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityUnknown {
+		t.Errorf("Mergeability = %q, want nothing at all: GitHub said null", pr.Mergeability)
+	}
+	if _, stuck := pr.Stuck(); stuck {
+		t.Error("a pull request GitHub has not finished looking at reads as stuck")
+	}
+}
+
+// TestGitHubTrustsTheBoolOverAStateItHasNoNameFor: `mergeable_state` grows
+// values with GitHub's features, and one flow has never heard of alongside
+// `mergeable: false` is still a refusal as far as anybody acting on it is
+// concerned.
+func TestGitHubTrustsTheBoolOverAStateItHasNoNameFor(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.mergeableState = "some_new_thing"
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityConflicted {
+		t.Errorf("Mergeability = %q, want %q: GitHub said it does not merge", pr.Mergeability, core.MergeabilityConflicted)
+	}
+}
+
+// TestGitHubDoesNotReadThroughANullItWasHandedAnyway: GitHub sends
+// `mergeable: null` while it works the answer out, and does not promise the
+// state beside it is `unknown` while it does. A mapping that reached for the
+// bool because the state was a word it did not recognise would panic on a
+// payload the provider is entitled to send.
+func TestGitHubDoesNotReadThroughANullItWasHandedAnyway(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.mergeableState, fake.mergeableNull = "some_new_thing", true
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityUnknown {
+		t.Errorf("Mergeability = %q, want nothing at all: GitHub answered null", pr.Mergeability)
+	}
+}
+
+// TestGitHubBelievesAConflictEvenWhileItIsStillThinking: `dirty` is a
+// definite answer, and GitHub sends it next to a null bool while it recomputes
+// after a push to the base. Reading the pair as "no answer yet" would hide the
+// conflict for exactly as long as it takes somebody to stop looking.
+func TestGitHubBelievesAConflictEvenWhileItIsStillThinking(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.mergeableState, fake.mergeableNull = "dirty", true
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityConflicted {
+		t.Errorf("Mergeability = %q, want %q", pr.Mergeability, core.MergeabilityConflicted)
+	}
+}

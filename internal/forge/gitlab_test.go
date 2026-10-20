@@ -1195,3 +1195,63 @@ func TestGitLabAsksForTheStateItWasAskedFor(t *testing.T) {
 		})
 	}
 }
+
+// TestGitLabReadsAMergeRequestThatNeedsRebasingAsBehind: a project whose
+// merge method is fast-forward or semi-linear needs the branch rebased
+// whenever the target moves, and GitLab says so in its own word. It is a
+// push, not a resolution, and the two readings have to stay apart.
+func TestGitLabReadsAMergeRequestThatNeedsRebasingAsBehind(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Mergeability = core.MergeabilityBehind
+	_, srv := newGitLabServer(t, fx)
+	adapter := newGitLabAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityBehind {
+		t.Fatalf("Mergeability = %q, want %q", pr.Mergeability, core.MergeabilityBehind)
+	}
+	why, stuck := pr.Stuck()
+	if !stuck || !strings.Contains(why, "level") {
+		t.Errorf("Stuck() = %q/%v, want it to say the branch has to be level with its base", why, stuck)
+	}
+}
+
+// TestGitLabReadsEveryMergeStatusItIsAnsweredWith is the vocabulary itself.
+//
+// GitLab reports the *first* failing merge check rather than all of them, so
+// most of these values mean "blocked on a person" and only three mean
+// "blocked on the branch". An installation older than 15.6 answers only the
+// coarse field, which cannot tell a conflict from a rebase and so never says
+// `behind` — a forge that has said something coarse has still said more than
+// nothing.
+func TestGitLabReadsEveryMergeStatusItIsAnsweredWith(t *testing.T) {
+	for _, row := range []struct {
+		name     string
+		detailed string
+		coarse   string
+		want     string
+	}{
+		{"every check passing", glMergeMergeable, glMergeStatusCan, core.MergeabilityClean},
+		{"the branches conflict", glMergeConflict, glMergeStatusCannot, core.MergeabilityConflicted},
+		{"a conflict GitLab could not describe", glMergeBroken, glMergeStatusCannot, core.MergeabilityConflicted},
+		{"the merge method wants a rebase", glMergeNeedRebase, glMergeStatusCan, core.MergeabilityBehind},
+		{"GitLab is still working it out", "checking", "checking", core.MergeabilityUnknown},
+		{"GitLab has not started", "unchecked", "", core.MergeabilityUnknown},
+		{"waiting on a person, not on a push", "not_approved", glMergeStatusCan, core.MergeabilityClean},
+		{"a blocker flow has no name for", "jira_association_missing", glMergeStatusCan, core.MergeabilityClean},
+		{"an old installation that can merge it", "", glMergeStatusCan, core.MergeabilityClean},
+		{"an old installation that cannot", "", glMergeStatusCannot, core.MergeabilityConflicted},
+		{"an old installation still checking", "", "checking", core.MergeabilityUnknown},
+		{"an installation that said nothing", "", "", core.MergeabilityUnknown},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			if got := mergeabilityFromGitLab(row.detailed, row.coarse); got != row.want {
+				t.Errorf("mergeabilityFromGitLab(%q, %q) = %q, want %q",
+					row.detailed, row.coarse, got, row.want)
+			}
+		})
+	}
+}

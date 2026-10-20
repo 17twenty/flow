@@ -618,6 +618,13 @@ func (v *validator) health() {
 	if age := v.cfg.Health.FlagMaxAge; age < 0 {
 		v.add("health.flag_max_age is %s; it must be a length of time, not a negative one", age)
 	}
+	// A patience of nought working days would report everything on the
+	// board as stale the moment it arrived, and a negative one is not a
+	// length of time. There is no upper bound: a team that waits a quarter
+	// has said so deliberately, and the check only ever warns.
+	if after := v.cfg.Health.StaleAfter; after < 0 {
+		v.add("health.stale_after is %d; it must be a number of working days above nought", after)
+	}
 }
 
 // checkSecrets reports any scalar in the document that looks like a credential.

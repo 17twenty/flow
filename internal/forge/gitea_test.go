@@ -793,3 +793,45 @@ func TestGiteaDoesNotClaimAForcePushSettingGiteaHasNot(t *testing.T) {
 		t.Error("the branch reads as force-pushable: Gitea has no such setting, so a true here was invented")
 	}
 }
+
+// TestGiteaNeverCallsABranchThatFellBehindAConflict: Gitea computes
+// `mergeable` from conflicts alone and applies `block_on_outdated_branch`
+// when somebody presses merge, saying nothing about it beforehand. flow
+// therefore never reports `behind` for a Gitea pull request, and must not
+// invent it — sending somebody to resolve a conflict that is not there is
+// worse than saying nothing.
+func TestGiteaNeverCallsABranchThatFellBehindAConflict(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Mergeability = core.MergeabilityBehind
+	_, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	if pr.Mergeability != core.MergeabilityClean {
+		t.Errorf("Mergeability = %q, want %q: Gitea said it merges", pr.Mergeability, core.MergeabilityClean)
+	}
+	if why, stuck := pr.Stuck(); stuck {
+		t.Errorf("Stuck() = %q, and Gitea never said anything of the sort", why)
+	}
+}
+
+// TestGiteaReadsItsOneBoolAsTheConflictItMeans: the other half. Gitea has no
+// way to say "still working it out", so false is an answer and not a silence.
+func TestGiteaReadsItsOneBoolAsTheConflictItMeans(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.PullRequests[0].Mergeability = core.MergeabilityConflicted
+	_, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+
+	pr, err := adapter.PullRequest(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("PullRequest: %v", err)
+	}
+	why, stuck := pr.Stuck()
+	if !stuck || !strings.Contains(why, "conflicts with main") {
+		t.Errorf("Stuck() = %q/%v, want it to name the conflict and the branch", why, stuck)
+	}
+}
