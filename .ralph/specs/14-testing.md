@@ -9,7 +9,7 @@
 | Layer | Scope |
 |---|---|
 | Unit | parser/linter, DoR, policy rules, outcome resolution, diff/canonical hashing, placeholder parsing, config validation, linkage, live-check evaluators (pure over fetched data) |
-| Fuzz | `FuzzParse`, `FuzzConfigDecode`, `FuzzMarkerParse` |
+| Fuzz | `FuzzParse` (commit headers and `.flow.yaml`), `FuzzParseDuration`, `FuzzFix`, `FuzzMarkerParse`, `FuzzADFRoundTrip` |
 | Golden | plan/doctor/policy renders (plain, md, JSON), init output per preset, lock writer |
 | Contract | Forge/Tracker/Deploy contract suites vs HTTP fakes (`httptest`) built from documented API shapes |
 | Engine | plan/apply/doctor/check flows vs in-memory fakes with fault injection |
@@ -206,3 +206,25 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   is pinned a second time anywhere, which is what makes a one-line change
   enough — and it is why the first symptom of an advisory is a red gate on
   somebody's unrelated work rather than a notification nobody reads.
+- **A list a spec keeps by hand is read by a test, in both directions (issue
+  #168).** The specs name their checks, their rules, their flags, their files
+  and their fuzz targets in lists a person maintains, and the code registers
+  the same things somewhere else entirely; nothing compared the two, which is
+  how the README came to promise auto-merge for a fortnight while two specs
+  reasoned about it and no code did it. `specs_test.go` now reads spec 02 §1–2
+  against kong's own help, spec 07 §5–6 against every check `flow doctor`
+  registers over every configuration flow ships, spec 09 §2 against
+  `engine.PolicyRuleIDs` *in order*, spec 03's worked example against the
+  decoder and the schema, spec 14's fuzz list against the tree, and every path
+  any spec points at against the filesystem. Each reads both ways round: a
+  promise with nothing behind it and an implementation nobody agreed to are
+  the same defect seen from two ends. `prose_test.go` reads every shipped
+  document — the README, `docs/`, `skills/` — for the commands it invokes, the
+  flags beside them and the dotted names in its prose, which is the reading
+  `skill_test.go` had alone since item 8.3.
+- **A document's words about somebody else's product are not flow's to
+  judge.** The prose reading only grades a dotted name whose first word is a
+  rule, a check or a top-level configuration key of flow's; `author.login` and
+  `permissions.push` are GitHub's words and `main.go` is a file. Grading them
+  would make the cookbook unwritable, and the names flow owns are exactly the
+  ones that rot when flow renames something.

@@ -1,7 +1,7 @@
 # 16 — Release (of flow itself) — delegated, verified
 
 flow does not version or release itself with flow commands (non-goal). The
-release workflow (`dogfood/.github/workflows/release.yml`) uses external tools:
+release workflow (`.github/workflows/release.yml`) uses external tools:
 
 1. On push to `main`: run tests.
 2. Compute next version from conventional commits with an external tool (svu or

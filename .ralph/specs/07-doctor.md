@@ -61,6 +61,7 @@ no longer required: comment + close.
 `config.syntax`, `config.semantics`, `config.secrets`, `lock.consistent`,
 `local.git`, `local.hook` (skip if hooks disabled), `auth.forge`, `auth.tracker`,
 `forge.repo`, `forge.protection`, `forge.required_status`, `forge.merge_settings`,
+`forge.squash_text` (the squash commit says what the pull request said),
 `forge.files` (CI workflow present on default branch and runs `flow check pr`;
 `flow check deploy` when done_on: deployed), `tracker.project`,
 `tracker.status_options`, `tracker.labels`, `tracker.native.<event>` (per native
@@ -92,8 +93,9 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.tickets.progress_stale` | Any ticket in `in_progress` with no linked PR activity for > `health.stale_after` working days (default 5)? (warn only) | tracker + forge |
 | `live.tickets.ready_dor` | Do tickets in `ready` pass DoR? | tracker |
 | `live.tickets.blocked_explained` | (`workflow.blocked.require_comment`) Does every open blocked ticket carry a comment somebody other than flow wrote? | tracker |
+| `live.transitions.flow` | For each flow-owned transition: is any ticket somewhere flow should have moved it from? (`--fix` catches it up) | tracker + forge + the transition engine |
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
-| `live.wip` | Days in window where any WIP limit was exceeded (warn) | tracker snapshot now + PR timeline approximation |
+| `live.wip` | Days in window where any WIP limit was exceeded (warn) — **not built: [#172](https://github.com/17twenty/flow/issues/172)** | tracker snapshot now + PR timeline approximation |
 | `live.flags.cleanup` | Every `Flag-Added: <name>` trailer merged in window has an open or done cleanup ticket (marker `flow:flag name=<name>`) — created by doctor `--fix` if missing | git log trailers (git's trailer format; parsed with `git interpret-trailers --parse`, no regex) |
 | `live.flags.age` | Every open cleanup ticket whose flag is older than `health.flag_max_age` (90d) carries `health.flag_kept_label`, i.e. the flag went or the team said it stays | tracker (the marker's `added=` day, written from the commit) |
 | `live.agents.rework` | How much agent work merged in the window, and how much of it was asked for changes at least once before it did (reported, never graded) | forge PRs merged in window + reviews |
@@ -1089,3 +1091,16 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   "Add it to `tracker.shared_with`" is a sentence anybody could have written;
   the repository's name is the part the team does not have. Sorting is what
   makes two runs of the same board give the same instruction.
+- **A check this spec names and nobody wrote carries the issue that will write
+  it (issue #168).** §6's table is read by a test against the checks `flow
+  doctor` actually registers, so a row with no code behind it fails the build
+  — which is the point, since `live.wip` sat in that table unbuilt for the
+  whole of v1. A gap that somebody has decided to leave open is marked in the
+  row itself as `not built: [#N]`, and the test fails in the other direction
+  too, the day the check is built and the annotation does not come off. A
+  decision is a sentence with a ticket behind it; a shrug is what this
+  replaces.
+- **A family of checks is one row.** `tracker.native.<event>` and
+  `live.transitions.native` produce one id per configured event, and the
+  configuration decides the members, so the spec names the shape and the test
+  folds the ids back into it before comparing.

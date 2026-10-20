@@ -111,36 +111,9 @@ func TestTheDeliveryBoardDocumentPrintsAConfigurationFlowAccepts(t *testing.T) {
 	}
 }
 
-// Every dotted name in the prose is a policy rule flow publishes, a check it
-// runs, or a key it reads. A verification that recommends a key flow has never
-// had costs somebody an afternoon, and it rots by itself when flow renames
-// something.
-func TestTheDeliveryBoardDocumentNamesRealRulesChecksAndKeys(t *testing.T) {
-	prose := fence.ReplaceAllString(readDeliveryBoard(t), "")
-	schema := readConfigSchema(t)
-	rules := engine.PolicyRuleIDs()
-	checks := deliveryBoardCheckIDs(t)
-
-	var sawRules, sawChecks, sawKeys int
-	for _, match := range dottedName.FindAllStringSubmatch(prose, -1) {
-		name := match[1]
-		switch {
-		case slices.Contains(rules, name):
-			sawRules++
-		case slices.Contains(checks, name):
-			sawChecks++
-		case schemaHas(schema, name):
-			sawKeys++
-		default:
-			t.Errorf("%s names %q, which is no rule, no check and no configuration key",
-				deliveryBoardDoc, name)
-		}
-	}
-	if sawRules == 0 || sawChecks == 0 || sawKeys == 0 {
-		t.Errorf("the document named %d rules, %d checks and %d keys; this test is not testing anything",
-			sawRules, sawChecks, sawKeys)
-	}
-}
+// The delivery board document is read for the rules, checks and keys it
+// names by TestEveryDocumentNamesRealRulesChecksAndKeys, which reads every
+// document flow ships the same way.
 
 // The three rules the proposal's own words rest on are named in the document,
 // so that a reader can find what enforces them. A table that lists a
@@ -318,23 +291,6 @@ func answeredExitRules(section string) int {
 		}
 	}
 	return answered
-}
-
-// deliveryBoardCheckIDs is every check `flow doctor` would run for the
-// document's own configuration.
-func deliveryBoardCheckIDs(t *testing.T) []string {
-	t.Helper()
-	registry, err := engine.DoctorRegistry(engine.SetupInput{
-		Config: deliveryBoardConfig(t), ConfigPath: deliveryBoardDoc,
-	})
-	if err != nil {
-		t.Fatalf("DoctorRegistry: %v", err)
-	}
-	var ids []string
-	for _, check := range registry.Checks() {
-		ids = append(ids, check.ID)
-	}
-	return ids
 }
 
 // A verification nobody is told about is a file. The README is where a reader

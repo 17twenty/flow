@@ -22,7 +22,10 @@ var valuePatterns = []valuePattern{
 	{"github_pat", regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`)},
 	{"github_token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{16,}`)},
 	{"gitlab_token", regexp.MustCompile(`glpat-[A-Za-z0-9_-]{16,}`)},
-	{"linear_key", regexp.MustCompile(`lin_api_[A-Za-z0-9]{16,}`)},
+	// Linear spells a personal API key and an OAuth access token
+	// differently, and flow accepts both (spec 11 §4), so both are
+	// credentials to keep out of a log.
+	{"linear_key", regexp.MustCompile(`lin_(?:api|oauth)_[A-Za-z0-9]{16,}`)},
 	{"atlassian_token", regexp.MustCompile(`ATATT[A-Za-z0-9_=.-]{16,}`)},
 	{"jwt", regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*`)},
 }

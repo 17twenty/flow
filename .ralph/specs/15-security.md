@@ -13,8 +13,9 @@
 ## 2. Redaction (`internal/core/redact.go`)
 slog handler + error-string redactor: keys matching
 `token|secret|password|authorization|api[_-]?key|cookie|session`; values matching
-`gh[pousr]_…`, `github_pat_…`, `glpat-…`, `lin_api_…`, `ATATT…`, JWT-like; URL
-query params `key|token|access_token|private_token`. Replacement `[REDACTED:<kind>]`.
+`gh[pousr]_…`, `github_pat_…`, `glpat-…`, `lin_api_…`, `lin_oauth_…`, `ATATT…`,
+JWT-like; URL query params `key|token|access_token|private_token`.
+Replacement `[REDACTED:<kind>]`.
 
 ## 3. Least privilege (dogfood defaults)
 | Credential | Scopes |
@@ -81,3 +82,10 @@ User config 0600; cache dir 0700. TLS always verified; `SSL_CERT_FILE`,
   write and the file to write it in, which is the user's own config and never
   the repository's. They differ only in the reason, because "you said no" and
   "nobody could be asked" are different situations with the same remedy.
+- **Every credential shape an adapter accepts is a shape redaction knows
+  (issue #168).** Linear spells a personal API key `lin_api_…` and an OAuth
+  access token `lin_oauth_…`, and item 7.2 taught flow to send both; only the
+  first was ever redacted, so the one flow had to treat specially in
+  `Authorization` was the one it would have logged. The value patterns above
+  are the list, and an adapter that learns a new credential shape adds it
+  there in the same change.

@@ -77,6 +77,8 @@ Lint one commit message (spec 08). Used by the optional hook. Exit 1 on errors.
 ### `flow hook install|uninstall`
 Optional local commit-msg hook calling `flow check commit --fix "$1"`.
 Detects hook managers (lefthook, husky, pre-commit) and prints snippets instead.
+`--force` installs anyway: replaces an existing commit-msg hook and ignores a
+hook manager.
 
 ### `flow schema [--kind config|lock|plan|doctor|policy]`
 ### `flow version`
@@ -283,3 +285,12 @@ Secrets never printed.
   neither was kept, and the wizard asks both questions where their answer
   actually lives — at `--preset`. The plain equivalent survives intact: every
   question the screen asks is still one of the flags above.
+- **This spec is the whole flag surface, and a test holds it to that (issue
+  #168).** §1's table and §2's sections are read against kong's own `--help`
+  in both directions: a flag the grammar offers and no section names is a
+  surface nobody agreed to ship, and a flag this spec gives a command and kong
+  does not have is a promise to a reader. Two shapes are allowed for: a
+  negatable flag is one flag that prints as two, so naming either form names
+  it; and a whole invocation written in code inside a section — the hook
+  section says it runs `flow check commit --fix` — belongs to the command it
+  names, not to the section it sits in.
