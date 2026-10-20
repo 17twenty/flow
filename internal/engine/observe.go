@@ -337,14 +337,44 @@ func (o *observer) deploys(ctx context.Context, item DesiredItem) (core.Observat
 // second time. They are two items because they are two capabilities, and one
 // call because the forge has one setting: an adapter that is given only half
 // of it would turn the other half off.
-func MergeSettingsFor(strategies, text core.Item) core.MergeSettings {
-	return core.MergeSettings{
-		AllowSquash:    strategies.Field(FieldAllowSquash) == "true",
-		AllowMerge:     strategies.Field(FieldAllowMerge) == "true",
-		AllowRebase:    strategies.Field(FieldAllowRebase) == "true",
-		AllowAutoMerge: strategies.Field(FieldAllowAutoMerge) == "true",
-		SquashTitle:    text.Field(FieldSquashTitle),
-		SquashMessage:  text.Field(FieldSquashMessage),
+//
+// The setting the repository has now is where the answer starts, and only the
+// fields a desired item actually names are written over it. A merge setting
+// is written whole — GitHub's repository PATCH carries every field of it,
+// whatever flow meant to change — so a field no desired item mentions would
+// otherwise be set to its zero value by a write made for some other reason. A
+// plan that does not say it will turn "delete the branch after merging" off
+// must not turn it off (spec 06 §4).
+//
+// Presence decides, not value: a desired item naming a field as "false" means
+// false, and one not naming it at all means flow has no opinion about it.
+// That is also what lets a setting be asked for additively — a configuration
+// that wants nothing of one leaves it out, rather than asking a forge for a
+// "no" it may have no way to say.
+func MergeSettingsFor(current core.MergeSettings, strategies, text core.Item) core.MergeSettings {
+	wanted := current
+	overlayBool(strategies, FieldAllowSquash, &wanted.AllowSquash)
+	overlayBool(strategies, FieldAllowMerge, &wanted.AllowMerge)
+	overlayBool(strategies, FieldAllowRebase, &wanted.AllowRebase)
+	overlayBool(strategies, FieldAllowAutoMerge, &wanted.AllowAutoMerge)
+	overlayText(text, FieldSquashTitle, &wanted.SquashTitle)
+	overlayText(text, FieldSquashMessage, &wanted.SquashMessage)
+	return wanted
+}
+
+// overlayBool writes a flag onto the setting when the item names it, and
+// leaves the setting alone when it does not.
+func overlayBool(item core.Item, field string, target *bool) {
+	if value, named := item.Fields[field]; named {
+		*target = value == "true"
+	}
+}
+
+// overlayText is [overlayBool] for a field whose value is a word rather than
+// a flag.
+func overlayText(item core.Item, field string, target *string) {
+	if value, named := item.Fields[field]; named {
+		*target = value
 	}
 }
 

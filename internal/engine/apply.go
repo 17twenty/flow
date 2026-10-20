@@ -452,6 +452,11 @@ func (a *applier) protect(ctx context.Context) (string, error) {
 // and both are written together — a forge told only which strategies to allow
 // would read the rest of the call as "take the squash title from the first
 // commit" and quietly undo the other half.
+//
+// The same is true of the fields no desired item names at all, which is why
+// the repository is read first and written back over. Reading it costs
+// nothing here: apply has already asked whether the repository takes writes,
+// and that answer is kept.
 func (a *applier) mergeSettings(ctx context.Context) (string, error) {
 	var strategies, text core.Item
 	wanted, ok := a.in.Desired.Find(core.ItemForgeMergeSettings)
@@ -462,7 +467,11 @@ func (a *applier) mergeSettings(ctx context.Context) (string, error) {
 	if squash, ok := a.in.Desired.Find(core.ItemForgeSquashText); ok && len(squash.Items) > 0 {
 		text = squash.Items[0]
 	}
-	if err := a.in.Adapters.Forge.SetMergeSettings(ctx, MergeSettingsFor(strategies, text)); err != nil {
+	repo, err := a.repoInfo(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := a.in.Adapters.Forge.SetMergeSettings(ctx, MergeSettingsFor(repo.Merge, strategies, text)); err != nil {
 		return "", err
 	}
 	if text.Field(FieldSquashTitle) == "" {
