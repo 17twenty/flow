@@ -26,6 +26,13 @@ and their tracker. flow appears as a PR check and a scheduled health report.
   do natively, and only as part of the CI step that already runs (§4 P11).
 - Not a deployment tool. It reads deployment facts the forge already holds.
 - Not a ticket tracker, CI system or flag service.
+- **Not a product or discovery board.** flow works one board of one project:
+  the delivery board, moved by Git events. The product board of epics
+  (Idea → Discovery → Shaped → Building → Rolling out → Live) is a product
+  owner's, and its exit rules are answered by people, a flag service and a
+  metrics tool. flow supplies the facts it holds — the delivery board itself,
+  and the flag cleanup tickets — and displays none of them.
+  See `docs/delivery-board.md` §4.
 
 ## 3. The proof: flow is built with flow
 
@@ -101,3 +108,17 @@ their change via API and closes it, or reopens it with evidence.
 | Placeholder | `${pending:name}` value resolved by doctor. |
 | Lock | `.flow.lock`: resolved IDs, observations, follow-ups, attestations. |
 | Deployment record | Forge-held fact: (repo, sha, environment, state, time). |
+
+## Decisions
+
+- **§2 the product board is somebody else's (issue #143).** The proposal flow
+  was built from describes two boards, and flow implements the delivery one.
+  Of the product board's six exit rules, exactly one — "all stories are Done"
+  — is a fact flow holds; the others are a product owner's judgement, a flag
+  service's percentage, a metrics tool's reading, and whether a flag is still
+  in the code, which flow cannot read and which is why it never closes a flag
+  cleanup ticket. Modelling the board would mean displaying six columns and
+  owning one of them, against P5. flow therefore keeps supplying the facts
+  — the delivery board, `live.flags.cleanup`, `live.flags.age` — and the
+  configuration keeps one `workflow` and one `tracker.project`: a team that
+  wants the product board makes it a second project and moves it itself.
