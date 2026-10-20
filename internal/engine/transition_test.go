@@ -785,3 +785,141 @@ func TestTransitionText(t *testing.T) {
 		t.Errorf("Text() = %q, want the skip and its reason", got)
 	}
 }
+
+// startsOnABranch is the workflow the proposal asks for: the work begins when
+// somebody cuts a branch for the ticket, before any pull request exists.
+func startsOnABranch(t *testing.T) *config.Config {
+	t.Helper()
+	cfg := preset(t, "lean-kanban")
+	cfg.Workflow.Transitions[config.EventBranchCreated] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
+	return cfg
+}
+
+// branched is a snapshot of a ticket the tracker links some branches to.
+func branched(cfg *config.Config, column string, branches []string, prs ...engine.LinkedPR) engine.TransitionSnapshot {
+	snap := work(cfg, column, prs...)
+	snap.Ticket.Branches = branches
+	return snap
+}
+
+func TestTransitionStartsTheWorkWhenABranchIsCut(t *testing.T) {
+	cfg := startsOnABranch(t)
+
+	move := engine.Transition(branched(cfg, "ready", []string{"12-tidy-the-icons"}))
+
+	if !move.Moves() {
+		t.Fatalf("a branch did not start the work: %+v", move)
+	}
+	if move.From != "ready" || move.To != "in_progress" {
+		t.Errorf("moved %s → %s, want ready → in_progress", move.From, move.To)
+	}
+	if move.Event != config.EventBranchCreated {
+		t.Errorf("event = %s, want %s", move.Event, config.EventBranchCreated)
+	}
+}
+
+// A branch is the one thing a ticket can have that is not a pull request, so
+// a ticket the tracker links no branch to must not be asked about as though
+// it had one.
+func TestTransitionAsksNothingAboutABranchTheTrackerNamesNone(t *testing.T) {
+	cfg := startsOnABranch(t)
+
+	move := engine.Transition(branched(cfg, "ready", nil))
+
+	if move.Moves() {
+		t.Fatalf("a ticket with no branch was moved to %s", move.To)
+	}
+	if got := events(move); slices.Contains(got, config.EventBranchCreated) {
+		t.Errorf("events = %v, want branch_created not to be among them", got)
+	}
+}
+
+// The event is configuration like any other: a team that has not asked for it
+// gets the first pull request as the start of the work, however many branches
+// the tracker knows about.
+func TestTransitionIgnoresABranchTheWorkflowDoesNotAskAbout(t *testing.T) {
+	cfg := preset(t, "lean-kanban")
+
+	move := engine.Transition(branched(cfg, "ready", []string{"12-tidy-the-icons"}))
+
+	if move.Moves() {
+		t.Fatalf("a branch moved the ticket to %s under a workflow that configures no branch_created", move.To)
+	}
+	if got := step(t, move, config.EventBranchCreated); got.Reason != engine.ReasonUnconfigured {
+		t.Errorf("reason = %q, want %q", got.Reason, engine.ReasonUnconfigured)
+	}
+}
+
+// Rule 4 (spec 04 §5): the branch is one opinion among the pull requests' and
+// never an override of them, so work already in review stays in review.
+func TestTransitionLetsAPullRequestOverruleTheBranchItCameFrom(t *testing.T) {
+	cfg := startsOnABranch(t)
+
+	move := engine.Transition(branched(cfg, "ready", []string{"12-tidy-the-icons"}, linked(openPR(7))))
+
+	if move.To != "in_review" {
+		t.Fatalf("to = %q, want in_review (%+v)", move.To, move.Steps)
+	}
+	got := step(t, move, config.EventBranchCreated)
+	if got.Moved || got.Reason != engine.ReasonOverruled {
+		t.Fatalf("the branch step is %+v, want it overruled by the pull request", got)
+	}
+	if !strings.Contains(got.Why, "#7") {
+		t.Errorf("why = %q, want it to name #7 as the request that held the ticket further on", got.Why)
+	}
+}
+
+// And the other way round: the last pull request was abandoned, but somebody's
+// branch is still there, so the work has not gone back to Ready.
+func TestTransitionKeepsWorkStartedWhileTheBranchIsStillThere(t *testing.T) {
+	cfg := startsOnABranch(t)
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "ready", Owner: config.OwnerFlow}
+
+	move := engine.Transition(branched(cfg, "in_progress", []string{"12-tidy-the-icons"}, linked(closedPR(7))))
+
+	if move.Moves() {
+		t.Fatalf("the work went back to %s while its branch still existed", move.To)
+	}
+	got := step(t, move, config.EventPRClosedUnmerged)
+	if got.Moved || got.Reason != engine.ReasonOverruled {
+		t.Fatalf("the abandoned pull request's step is %+v, want it overruled by the branch", got)
+	}
+	if !strings.Contains(got.Why, "the branch 12-tidy-the-icons") {
+		t.Errorf("why = %q, want it to name the branch that held the work where it is", got.Why)
+	}
+}
+
+// Several branches are counted rather than listed: which of them it was is
+// nobody's decision, and five names say less than the number does.
+func TestTransitionCountsBranchesRatherThanListingThem(t *testing.T) {
+	cfg := startsOnABranch(t)
+	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "ready", Owner: config.OwnerFlow}
+	branches := []string{"12-tidy-the-icons", "12-tidy-the-icons-again"}
+
+	move := engine.Transition(branched(cfg, "in_progress", branches, linked(closedPR(7))))
+
+	got := step(t, move, config.EventPRClosedUnmerged)
+	if !strings.Contains(got.Why, "2 branches") {
+		t.Errorf("why = %q, want it to count the branches", got.Why)
+	}
+	for _, branch := range branches {
+		if strings.Contains(got.Why, branch) {
+			t.Errorf("why = %q, want it not to name %q", got.Why, branch)
+		}
+	}
+}
+
+// A branch outlives the start of the work, so a ticket past In progress must
+// not be dragged back to it every time the audit looks (spec 04 §5 rule 2).
+func TestTransitionDoesNotTakeWorkBackToTheBranchItStartedOn(t *testing.T) {
+	cfg := startsOnABranch(t)
+
+	move := engine.Transition(branched(cfg, "in_review", []string{"12-tidy-the-icons"}))
+
+	if move.Moves() {
+		t.Fatalf("a branch took work in review back to %s", move.To)
+	}
+	if got := step(t, move, config.EventBranchCreated); got.Reason != engine.ReasonBackwards {
+		t.Errorf("reason = %q, want %q", got.Reason, engine.ReasonBackwards)
+	}
+}

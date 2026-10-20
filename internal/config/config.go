@@ -82,6 +82,10 @@ const (
 
 // Event vocabulary (spec 04 §4). These are the keys of workflow.transitions.
 const (
+	// EventBranchCreated is somebody starting a branch for a ticket. Its
+	// source is the tracker's own link between the two, never a branch name
+	// flow read a key out of (P12, spec 04 §3).
+	EventBranchCreated = "branch_created"
 	// EventPROpenedDraft is a pull request opened as a draft.
 	EventPROpenedDraft = "pr_opened_draft"
 	// EventPROpened is a pull request opened ready for review, which counts
@@ -107,6 +111,7 @@ const (
 
 // Events is the whole event vocabulary, in the order spec 04 §4 lists it.
 var Events = []string{
+	EventBranchCreated,
 	EventPROpenedDraft,
 	EventPROpened,
 	EventPRReadyForReview,

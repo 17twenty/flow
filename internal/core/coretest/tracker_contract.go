@@ -51,6 +51,7 @@ func TrackerContractCases() []TrackerContractCase {
 		{Name: "a ticket is closed, and closing it again is no work", Run: trackerClose},
 		{Name: "a closed ticket is reopened", Run: trackerReopen},
 		{Name: "linkage uses the forge's own link", Run: trackerLinkedKeys},
+		{Name: "a ticket says which branches the tracker links to it", Run: trackerBranches},
 	}
 }
 
@@ -879,4 +880,57 @@ func sameObservation(a, b core.Observation) bool {
 		}
 	}
 	return true
+}
+
+// trackerBranches: a ticket carries the branches the tracker itself links to
+// it, in both readings of a ticket.
+//
+// It is the tracker's link and never the branch's name: flow will not read a
+// ticket key out of a branch (P12, spec 04 §3), so a tracker with no such link
+// declares none and reports nothing, and the workflow event that rests on it
+// is refused in configuration rather than failing quietly at six in the
+// morning (spec 04 §4).
+//
+// Both readings matter for the same reason archiving does: the board listing
+// is what doctor's catch-up walks and the lookup by key is what `flow check
+// pr` reads, and a link present in one and missing from the other would make
+// the work look started depending on who asked.
+func trackerBranches(t *testing.T, newTracker NewTracker) {
+	fx := ContractTracker()
+	tracker := newTracker(t, &fx)
+	if !tracker.Capabilities().CanVerify(core.CapLinkedBranchesRead) {
+		one, err := tracker.Ticket(t.Context(), fx.Key(ContractBranchedKey))
+		if err != nil {
+			t.Fatalf("Ticket(%s): %v", ContractBranchedKey, err)
+		}
+		if len(one.Branches) > 0 {
+			t.Errorf("%s declares it cannot read linked branches and reported %v: a declaration and an answer disagreeing is worse than either",
+				tracker.Kind(), one.Branches)
+		}
+		return
+	}
+
+	one, err := tracker.Ticket(t.Context(), fx.Key(ContractBranchedKey))
+	if err != nil {
+		t.Fatalf("Ticket(%s): %v", ContractBranchedKey, err)
+	}
+	if !slices.Contains(one.Branches, ContractBranch) {
+		t.Errorf("Ticket(%s).Branches = %v, want it to hold %q", ContractBranchedKey, one.Branches, ContractBranch)
+	}
+
+	listing, err := tracker.Tickets(t.Context(), core.TicketQuery{})
+	if err != nil {
+		t.Fatalf("Tickets: %v", err)
+	}
+	for _, ticket := range listing {
+		if !sameKey(ticket.Key, fx.Key(ContractBranchedKey)) {
+			continue
+		}
+		if !slices.Contains(ticket.Branches, ContractBranch) {
+			t.Errorf("the board's %s has Branches %v, want it to hold %q as the lookup by key does",
+				ContractBranchedKey, ticket.Branches, ContractBranch)
+		}
+		return
+	}
+	t.Errorf("the board does not list %s at all", ContractBranchedKey)
 }

@@ -246,6 +246,7 @@ func ContractTracker() TrackerFixture {
 				Body:      "## Acceptance criteria\n\n- the icons are tidy\n",
 				Status:    core.Status{ID: string(ColumnReady), Name: "Ready"},
 				ColumnID:  ColumnReady,
+				Branches:  []string{"14-tidy-the-icons"},
 				Size:      4 * time.Hour,
 				UpdatedAt: ContractNow.Add(-2 * 24 * time.Hour),
 			},
@@ -272,6 +273,14 @@ func ContractTracker() TrackerFixture {
 func ContractFollowUpMarker() core.Marker {
 	return core.NewMarker(core.MarkerFollowUp, "check", "tracker.wip", "repo", "acme/widget")
 }
+
+// ContractBranchedKey is the contract tracker's ticket somebody has started a
+// branch for: it is in Ready, nothing is open for it yet, and the tracker's
+// own link to the branch is the only evidence flow has that the work began.
+const ContractBranchedKey = "#14"
+
+// ContractBranch is the branch ContractBranchedKey is linked to.
+const ContractBranch = "14-tidy-the-icons"
 
 // ContractArchivedKey is the contract tracker's archived item: an issue the
 // project still holds and the board no longer shows.

@@ -16,6 +16,8 @@ capabilities:
   labels:             { set: false, verify: false, remediation: attest, notes: "Free-form: a label exists the moment an issue carries one, and there is no registry to create one in or to read one from." }
   follow_up_tickets:  { set: true,  verify: true,  requires: [create_issues], remediation: none }
   ticket_move:        { set: true,  verify: true,  requires: [transition_issues], remediation: follow_up, notes: "A move is a workflow transition, so a column the workflow does not reach from here is refused." }
+  linked_branches_read: { set: false, verify: false, remediation: none,
+                        notes: "Development information (branches, commits) has no public API; the dev-status endpoint is internal." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: attest }
   native_transition_changes_requested:   { set: false, verify: false, remediation: attest }

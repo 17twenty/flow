@@ -1049,3 +1049,14 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   apart. One key covers every column that has a patience: a team has one
   answer to "how long is too long", and two keys would mostly be set to the
   same thing and occasionally be set to different things by accident.
+
+- **§6 the catch-up performs `branch_created`, and nothing else ever does
+  (issue #144).** It is the one event with no event behind it: no forge
+  announces a branch through the APIs flow uses, no tracker dates the link,
+  and `flow check pr` cannot see it because the whole point is that no pull
+  request exists yet. So the catch-up looks at tickets with no pull requests
+  at all — which nothing else in the audit does — and dates the move at the
+  grace deadline rather than waiting out a grace period against a date that
+  does not exist. The grace is there to let an in-flight CI run settle a move
+  first, and here there is no run to wait for. A board that dates nothing at
+  all still has its work started.

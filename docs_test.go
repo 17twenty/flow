@@ -174,8 +174,12 @@ func TestTheDeliveryBoardDocumentPointsAtWhatEnforcesTheProposal(t *testing.T) {
 			t.Errorf("%s records a gap with no issue behind it: %q", deliveryBoardDoc, line)
 		}
 	}
-	if bullets == 0 {
-		t.Errorf("%s lists no gap at all, which is either a finished product or a reading that broke",
+	// An empty list is the good outcome and a broken reading looks exactly
+	// like it, so the document has to say in words that it meant to be
+	// empty. The heading alone is not enough: it survives a rename of
+	// everything under it.
+	if bullets == 0 && !strings.Contains(gaps, "Nothing is left on it.") {
+		t.Errorf("%s lists no gap and does not say the list is meant to be empty, which is a reading that broke",
 			deliveryBoardDoc)
 	}
 }

@@ -48,6 +48,11 @@ type Ticket struct {
 	// Parent is the key of the epic, sub-issue parent or project above it,
 	// empty when it has none. The Definition of Ready reads it (spec 04 §7).
 	Parent string
+	// Branches are the branches the tracker itself says are for this ticket,
+	// as the tracker names them. It is the tracker's own structured link and
+	// never a guess made out of a branch name (P12, spec 04 §3), so it is
+	// empty for a tracker that does not offer one.
+	Branches []string
 	// Blocked reports a ticket the team has marked as unable to move.
 	Blocked bool
 	// Closed reports a ticket the tracker considers finished.

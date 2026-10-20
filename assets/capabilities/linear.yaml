@@ -18,6 +18,8 @@ capabilities:
   labels:             { set: true,  verify: true, remediation: follow_up, notes: "issueLabelCreate on the team; a workspace label is readable and not this board's." }
   follow_up_tickets:  { set: true,  verify: true, remediation: none }
   ticket_move:        { set: true,  verify: true, remediation: follow_up, notes: "issueUpdate stateId; an archived issue takes no change." }
+  linked_branches_read: { set: false, verify: false, remediation: none,
+                        notes: "Issue.branchName is the suggested name, not evidence a branch exists; the Git integration records pull requests as attachments." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Team PR automation (UI)." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: attest }
   native_transition_changes_requested:   { set: false, verify: false, remediation: none }

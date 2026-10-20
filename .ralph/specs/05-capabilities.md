@@ -26,7 +26,7 @@ capabilities:
 
 Tracker: `project`, `status_options` (columns/statuses), `status_categories`,
 `wip_limits`, `expedite_view`, `labels`, `follow_up_tickets`, `ticket_move`,
-`native_transition_pr_opened_draft`, `native_transition_pr_ready_for_review`,
+`linked_branches_read`, `native_transition_pr_opened_draft`, `native_transition_pr_ready_for_review`,
 `native_transition_changes_requested`, `native_transition_pr_merged`,
 `native_transition_issue_closed`, `native_transition_deployed`.
 

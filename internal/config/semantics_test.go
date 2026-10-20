@@ -272,6 +272,25 @@ func TestValidate(t *testing.T) {
 			wantIn: "no tracker offers an automation for approved",
 		},
 		{
+			name: "starting the work on a branch the tracker cannot see",
+			change: func(c *Config) {
+				c.Tracker.Type = TrackerLinear
+				c.Tracker.Owner, c.Tracker.OwnerType = "", ""
+				c.Workflow.Transitions = map[string]Transition{
+					EventBranchCreated: {To: "in_progress", Owner: OwnerFlow},
+					EventPRMerged:      {To: "done", Owner: OwnerFlow},
+				}
+			},
+			wantIn: "cannot say which branches a ticket has",
+		},
+		{
+			name: "native ownership of a branch no tracker automates",
+			change: func(c *Config) {
+				c.Workflow.Transitions[EventBranchCreated] = Transition{To: "in_progress", Owner: OwnerNative}
+			},
+			wantIn: "no tracker offers an automation for branch_created",
+		},
+		{
 			name:   "a done that is neither merged nor deployed",
 			change: func(c *Config) { c.Workflow.DoneOn = "released" },
 			wantIn: `workflow.done_on is "released"`,
@@ -509,6 +528,39 @@ func TestAnExcusedTypeIsJudgedAgainstWhatTheTeamNarrowedTo(t *testing.T) {
 				t.Fatalf("Validate refused a type the convention allows:\n%v", err)
 			}
 		})
+	}
+}
+
+// TestABranchIsAStartTheTrackerHasToVouchFor: a workflow may move work when
+// somebody cuts a branch, but only on a tracker that keeps the link itself.
+// flow will not read a ticket key out of a branch name (P12, spec 04 §3), so
+// the capability is the whole of the event's source, and a workflow that
+// rests on one the tracker does not have is refused here rather than silently
+// never firing.
+func TestABranchIsAStartTheTrackerHasToVouchFor(t *testing.T) {
+	cfg := presetConfig(t, PresetLeanKanban)
+	cfg.Workflow.Transitions[EventBranchCreated] = Transition{To: "in_progress", Owner: OwnerFlow}
+
+	if err := Validate(cfg, DefaultPath, testRegistry(t)); err != nil {
+		t.Fatalf("Validate refused a branch_created transition on a tracker that links branches:\n%v", err)
+	}
+}
+
+// And the capability is asked about for that event alone: a tracker that
+// cannot see branches is perfectly able to own every other transition, and a
+// question asked of all of them would make Linear and Jira unconfigurable.
+func TestABranchBlindTrackerStillOwnsEverythingElse(t *testing.T) {
+	cfg := presetConfig(t, PresetLeanKanban)
+	cfg.Tracker.Type = TrackerLinear
+	cfg.Tracker.Owner, cfg.Tracker.OwnerType = "", ""
+	cfg.Workflow.Transitions = map[string]Transition{
+		EventPROpenedDraft:    {To: "in_progress", Owner: OwnerFlow},
+		EventPRReadyForReview: {To: "in_review", Owner: OwnerFlow},
+		EventPRMerged:         {To: "done", Owner: OwnerFlow},
+	}
+
+	if err := Validate(cfg, DefaultPath, testRegistry(t)); err != nil {
+		t.Fatalf("Validate refused a workflow that never mentions a branch:\n%v", err)
 	}
 }
 

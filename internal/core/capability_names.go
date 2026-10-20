@@ -31,6 +31,12 @@ const (
 	CapFollowUpTickets = "follow_up_tickets"
 	// CapTicketMove is moving an item to another column.
 	CapTicketMove = "ticket_move"
+	// CapLinkedBranchesRead is the tracker's own link between a ticket and
+	// the branches somebody started for it. It is a reading capability: a
+	// tracker that does not offer one leaves flow with nothing but the
+	// branch's name, and guessing a ticket out of a branch name is the user
+	// regex P12 refuses.
+	CapLinkedBranchesRead = "linked_branches_read"
 )
 
 // Forge capability names (spec 05 §2).
@@ -91,6 +97,7 @@ var trackerCapabilities = []string{
 	CapLabels,
 	CapFollowUpTickets,
 	CapTicketMove,
+	CapLinkedBranchesRead,
 	CapNativeTransitionPROpenedDraft,
 	CapNativeTransitionPRReadyForReview,
 	CapNativeTransitionChangesRequested,

@@ -191,12 +191,32 @@ func Transition(s TransitionSnapshot) TicketMove {
 
 	f := fold{cfg: s.Config, snap: s, at: at, move: move}
 	var requests []request
+	// Starting the work is considered first and on its own, because it is
+	// the only thing a ticket can have that is not a pull request: somebody
+	// cut a branch for it. It is one opinion among the pull requests' —
+	// never an override of them — so it goes through the same fold and the
+	// same rule 4, and a ticket whose work is already in review stays there.
+	if len(s.Ticket.Branches) > 0 {
+		f.at, f.asked, f.event = at, false, ""
+		first := len(f.move.Steps)
+		f.step(config.EventBranchCreated, 0)
+		if f.asked {
+			requests = append(requests, request{
+				who:   branched(s.Ticket),
+				to:    f.at,
+				event: f.event,
+				first: first,
+				last:  len(f.move.Steps),
+			})
+		}
+	}
 	for _, linked := range sortedPRs(s.PRs) {
 		f.at, f.asked, f.event = at, false, ""
 		first := len(f.move.Steps)
 		f.pullRequest(linked)
 		if f.asked {
 			requests = append(requests, request{
+				who:   fmt.Sprintf("#%d", linked.PR.Number),
 				pr:    linked.PR.Number,
 				to:    f.at,
 				event: f.event,
@@ -233,6 +253,9 @@ func Transition(s TransitionSnapshot) TicketMove {
 // request is where one pull request would have the ticket, and which of the
 // decision's steps were its.
 type request struct {
+	// who is the request in the words of a sentence about it: the pull
+	// request's number, or the branch that started the work.
+	who         string
 	pr          int
 	to          int
 	event       string
@@ -268,7 +291,7 @@ func (f *fold) overrule(requests []request, winner int) {
 			}
 			step.Moved = false
 			step.Reason = ReasonOverruled
-			step.Why = fmt.Sprintf("#%d has the ticket in %s, which is further on", requests[winner].pr, f.cfg.Workflow.Columns[best].Name)
+			step.Why = fmt.Sprintf("%s has the ticket in %s, which is further on", requests[winner].who, f.cfg.Workflow.Columns[best].Name)
 		}
 	}
 }
@@ -535,6 +558,17 @@ func prList(prs []LinkedPR, pick func(LinkedPR) bool) string {
 		}
 	}
 	return joinWords(numbers)
+}
+
+// branched names the work somebody started, for a sentence that has to say
+// which request held the ticket where. One branch is named; several are
+// counted, because the names are nobody's decision and a line listing five of
+// them says less than the number does.
+func branched(ticket core.Ticket) string {
+	if len(ticket.Branches) == 1 {
+		return "the branch " + ticket.Branches[0]
+	}
+	return fmt.Sprintf("%d branches", len(ticket.Branches))
 }
 
 // sortedPRs puts the pull requests in number order, which is what makes the

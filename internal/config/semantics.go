@@ -365,10 +365,36 @@ func (v *validator) transitions() {
 				v.add("%s.to is %q, which is not a column id in workflow.columns", at, transition.To)
 			}
 		}
-		if !v.oneOf(at+".owner", transition.Owner, owners) || transition.Owner != OwnerNative {
+		if !v.oneOf(at+".owner", transition.Owner, owners) {
+			continue
+		}
+		if transition.Owner != OwnerNative {
+			if event == EventBranchCreated {
+				v.branchLinkage(at)
+			}
 			continue
 		}
 		v.nativeOwnership(at, event)
+	}
+}
+
+// branchLinkage checks that the tracker can say which branches a ticket has.
+//
+// flow performs branch_created from the tracker's own link between a ticket
+// and a branch, because reading a ticket key out of a branch name is the user
+// regex P12 refuses. A tracker that offers no such link leaves the event with
+// no source at all: nothing would ever fire it, and a workflow whose first
+// column never empties is worse than one that starts at the pull request.
+func (v *validator) branchLinkage(at string) {
+	if v.registry == nil || v.cfg.Tracker.Type == "" {
+		return
+	}
+	set, err := v.registry.Of(v.cfg.Tracker.Type)
+	if err != nil {
+		return
+	}
+	if !set.CanVerify(core.CapLinkedBranchesRead) {
+		v.add("%s asks flow to move tickets when a branch is created, but %s cannot say which branches a ticket has, and flow will not read a ticket key out of a branch name (spec 04 §3); remove %s", at, v.cfg.Tracker.Type, at)
 	}
 }
 
