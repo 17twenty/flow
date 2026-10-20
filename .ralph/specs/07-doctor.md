@@ -95,7 +95,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.tickets.blocked_explained` | (`workflow.blocked.require_comment`) Does every open blocked ticket carry a comment somebody other than flow wrote? | tracker |
 | `live.transitions.flow` | For each flow-owned transition: is any ticket somewhere flow should have moved it from? (`--fix` catches it up) | tracker + forge + the transition engine |
 | `live.transitions.native` | For each native transition: did the tracker move tickets within 15 min of the event? | tracker field history where available (GitHub Projects: item `updatedAt` + current status vs event time; Jira: changelog; Linear: issue history) |
-| `live.wip` | Days in window where any WIP limit was exceeded (warn) — **not built: [#172](https://github.com/17twenty/flow/issues/172)** | tracker snapshot now + PR timeline approximation |
+| `live.wip` | Days in window where any WIP limit was exceeded (warn) | tracker snapshot now + PR timeline approximation |
 | `live.flags.cleanup` | Every `Flag-Added: <name>` trailer merged in window has an open or done cleanup ticket (marker `flow:flag name=<name>`) — created by doctor `--fix` if missing | git log trailers (git's trailer format; parsed with `git interpret-trailers --parse`, no regex) |
 | `live.flags.age` | Every open cleanup ticket whose flag is older than `health.flag_max_age` (90d) carries `health.flag_kept_label`, i.e. the flag went or the team said it stays | tracker (the marker's `added=` day, written from the commit) |
 | `live.agents.rework` | How much agent work merged in the window, and how much of it was asked for changes at least once before it did (reported, never graded) | forge PRs merged in window + reviews |
@@ -1104,3 +1104,50 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   `live.transitions.native` produce one id per configured event, and the
   configuration decides the members, so the spec names the shape and the test
   folds the ids back into it before comparing.
+- **§6 `live.wip` is registered whether or not any column carries a limit, and
+  skips with a sentence when none does.** A check that is absent from the
+  report is indistinguishable from a check nobody wrote — which is exactly how
+  this one went missing for a whole phase — so the registry carries it always
+  and the report carries its reason. Every other live check does the same, and
+  a registration that read the configuration would be a second place where a
+  check can disappear.
+
+- **§6 The unit `live.wip` counts is a day, and the window is every UTC
+  calendar day from `--window` to today inclusive.** Spec §6 asks for "days in
+  window where any WIP limit was exceeded", so the denominator is days rather
+  than tickets, and a day begins somewhere that does not move with whoever is
+  reading the report. A day on which both limits were broken is one day: the
+  question is how often the team was carrying too much, and counting breaches
+  would make a team look worse the more limits it set.
+
+- **§6 Today is read from the board; every earlier day is reconstructed from
+  the pull requests.** The board carries one moment, the one it is read in —
+  no tracker will say what a column held last Tuesday — so the last day of the
+  window is a reading, bucketed by the same code the gate's WIP rules use, and
+  the days before it are an approximation. The two are not two answers to one
+  question: one is what is true now and the other is what can be inferred
+  about then.
+
+- **§6 The reconstruction counts a pull request for every day between its
+  opening and its merge, in the column its state now puts it in.** The day
+  work entered a column is precisely what nothing records, and the forge will
+  only say whether a pull request is a draft *now* — so a draft is read as
+  somebody's work in progress for its whole life, and anything else as waiting
+  for review for its whole life. A pull request that spent a week as a draft
+  and a day in review therefore reads as a week in review. That is an upper
+  bound and not a measurement, which is why spec §6 marks the check warn only
+  and why the approximation is stated in the check's own evidence rather than
+  left for a reader to discover.
+
+- **§6 A pull request abandoned mid-window is not counted.** The audit reads
+  what merged in the window and what is open now, which is two listings two
+  other checks already pay for; a third listing of every closed pull request
+  would buy a reading nobody would act on. The days it was open are therefore
+  counted one short, which is the right way round for a check that warns: it
+  says less than happened rather than more.
+
+- **§6 Expedited work is outside the limits here exactly as it is in
+  `wip.review`.** The label is read from the pull request and from its linked
+  tickets, because the gate reads both — and the same work being the agreed
+  exception on Monday and a finding on Tuesday would be flow arguing with the
+  configuration.

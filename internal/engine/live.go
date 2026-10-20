@@ -72,7 +72,7 @@ func LiveChecks(cfg *config.Config) []Check {
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)
 	checks = append(checks, a.transitionChecks(cfg)...)
-	checks = append(checks, a.transitionsFlow(), a.flagsCleanup(), a.flagsAge())
+	checks = append(checks, a.transitionsFlow(), a.wip(), a.flagsCleanup(), a.flagsAge())
 	return append(checks, a.agentsRework())
 }
 
