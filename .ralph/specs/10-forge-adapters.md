@@ -631,3 +631,18 @@ duplicate-pipeline hazards). MR closing issues: `GET
   from the project's own settings, which `forge.merge_settings` already asks
   for. GitLab still refuses a name flow does not have, so a caller's mistake
   is a mistake on every provider rather than on two of them.
+
+- **A pull request's line counts are gone (item 3.1, revisited).** Every
+  adapter filled `core.FileSummary.Additions` and `Deletions` from the
+  provider's payload, the contract fixture carried them, and in the whole of
+  v1 no rule, check or rendering ever read either. A field three adapters pay
+  to fill and nothing asks a question of is a promise flow is not keeping, so
+  it is dropped rather than left to look load-bearing. What the gate reads of
+  a change's shape is `Changed` and `Paths`: `agents.unreviewed_types` refuses
+  to excuse a pull request whose files flow cannot enumerate (spec 09 §2), and
+  that comparison needs a count and a list, not a diffstat. Should flow ever
+  have an opinion about the *size* of a change — the Definition of Ready has
+  `max_size` for a ticket and nothing for the change that answers one — it
+  arrives as a rule in spec 09 with a configured threshold, and the counts
+  come back with the rule that reads them. Nothing is lost meanwhile: the
+  numbers are on every pull request page the forge already serves.

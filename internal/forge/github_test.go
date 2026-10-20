@@ -237,8 +237,7 @@ func TestGitHubReadsOnePullRequestWholeAndDropsAReviewNobodySubmitted(t *testing
 	if pr.Reviews[0].State != core.ReviewChangesRequested || pr.Reviews[1].State != core.ReviewApproved {
 		t.Errorf("reviews = %+v, want them oldest first", pr.Reviews)
 	}
-	if pr.Files.Changed != want.Files.Changed || pr.Files.Additions != want.Files.Additions ||
-		pr.Files.Deletions != want.Files.Deletions || !slices.Equal(pr.Files.Paths, want.Files.Paths) {
+	if pr.Files.Changed != want.Files.Changed || !slices.Equal(pr.Files.Paths, want.Files.Paths) {
 		t.Errorf("Files = %+v, want %+v (paths sorted, counts from the pull request)", pr.Files, want.Files)
 	}
 	if !pr.MergedAt.Equal(want.MergedAt) || !pr.ClosedAt.Equal(want.ClosedAt) {
