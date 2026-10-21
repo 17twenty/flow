@@ -77,7 +77,6 @@ workflow:
   transitions:
     pr_opened_draft:     { to: in_progress, owner: flow }
     pr_ready_for_review: { to: in_review,   owner: flow }
-    changes_requested:   { to: in_progress, owner: native }
     pr_merged:           { to: done,        owner: native }
     issue_closed:        { to: done,        owner: native }
   expedite: { labels: [incident], max: 1 }
@@ -89,10 +88,10 @@ commits:
   header_max: 72
   merge_strategy: squash
   scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, ralph, deps] }
-  unlinked_types: [ci, build, docs]
+  unlinked_types: [ci, build, docs, chore]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
-agents:  { authors: ['flow-bot-gh'], labels: [agent], require_human_review: true }
+agents:  { authors: ['flow-bot-gh'], labels: [agent], require_human_review: true, unreviewed_types: [chore] }
 followups:
   labels: [flow-followup]
   owners: { default: '@17twenty', tracker_admin: '@17twenty', forge_admin: '@17twenty', platform: '@17twenty' }
@@ -395,3 +394,24 @@ Each iteration, as the agent identity:
   that cannot see the gate is the one thing §7's fourteen green runs must not
   be able to mean. The first scheduled runs failed this way and said so
   loudly, which is the behaviour to keep.
+
+- **A transition this repository does not perform is not in this repository's
+  configuration (§4, revisited).** §4 named `changes_requested` with
+  `owner: native`, and `flow doctor` therefore asked a person to vouch for the
+  Projects built-in "Code changes requested". GraphQL lists a project's
+  configured workflows by name with an `enabled` flag, and on Project 2 that
+  one is not among them: seven are on, and it is not one of the seven. The
+  attestation would have been a false statement, and `live.transitions.native
+  .changes_requested` had never caught it because no reviewer in any window
+  had asked for changes. The transition is removed from §4 rather than
+  attested. The presets keep it — a team whose board does perform it should
+  say so — but what this repository claims is now only what its board does.
+  (The alternative, `owner: flow`, is what `docs/delivery-board.md` proposes
+  and is a change of behaviour, not a correction; it is not made here.)
+- **§4 is this repository's configuration, not `flow init`'s output
+  (revisited).** It has diverged from the `lean-kanban` preset three times
+  now — `chore` is an unlinked type, `agents.unreviewed_types` is set, and
+  `changes_requested` is gone — each for a reason recorded here. §4 tracks the
+  file; the acceptance criterion about reproducing it with `flow init --force`
+  is about the shape `init` writes, not about a file a live repository has
+  since edited.
