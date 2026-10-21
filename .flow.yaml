@@ -25,7 +25,6 @@ workflow:
   transitions:
     pr_opened_draft:     { to: in_progress, owner: flow }
     pr_ready_for_review: { to: in_review,   owner: flow }
-    changes_requested:   { to: in_progress, owner: native }
     pr_merged:           { to: done,        owner: native }
     issue_closed:        { to: done,        owner: native }
   expedite: { labels: [incident], max: 1 }

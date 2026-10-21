@@ -290,7 +290,7 @@ The honest summary: creating accounts and clicking Project workflow toggles
 cannot be automated today. Everything else on this page is a one-off `curl`
 that flow either performs itself or checks.
 
-### 6.1 The four this repository owes
+### 6.1 The three this repository owes
 
 `flow doctor` on `17twenty/flow` reports these as `attest`, and an unattested
 check is worth exit 2 (spec 07 §2), so the Stage C streak cannot start until a
@@ -299,7 +299,6 @@ human has looked and said so:
 ```sh
 flow attest tracker.native.pr_merged          --note "Project workflow 'Pull request merged' is on and sets Status: Done"
 flow attest tracker.native.issue_closed       --note "Project workflow 'Item closed' is on and sets Status: Done"
-flow attest tracker.native.changes_requested  --note "Project workflow 'Code changes requested' is on and sets Status: In progress"
 flow attest tracker.expedite                  --note "<what the board does with expedited work, and how you checked>"
 ```
 
@@ -308,6 +307,12 @@ not a way to make a check quiet (spec 07 §8). There is no URL for the
 workflows panel: it is an overlay, not a page. Open
 <https://github.com/users/17twenty/projects/2>, click the **…** menu at the
 top right, and choose **Workflows**.
+
+There were four. `changes_requested` was dropped from `.flow.yaml` instead of
+attested, because the workflow it named is not one of the seven this project
+has switched on — asking GraphQL for `projectV2 { workflows { name enabled } }`
+is a quicker way to read the overlay than opening it, and the only way to find
+out that a promise was never kept.
 
 Each command writes one entry to `.flow.lock`, which is committed, so they
 land through a pull request like anything else and the word stands for thirty
