@@ -374,7 +374,7 @@ func (c *InitCmd) write(app *Context, root string, source []byte) ([]initFile, e
 	if c.NoTemplates {
 		return files, nil
 	}
-	templates, err := assets.Templates()
+	templates, err := assets.Templates(buildVersion())
 	if err != nil {
 		return nil, core.Errorf(core.ErrNotFound, "read the shipped templates").WithWhy("%s", err)
 	}

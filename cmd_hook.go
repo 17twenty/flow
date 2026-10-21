@@ -268,7 +268,7 @@ func foreignHook(path, verb string) error {
 // hookScript returns the embedded hook, which must carry the marker flow later
 // recognises itself by.
 func hookScript() (string, error) {
-	templates, err := assets.Templates()
+	templates, err := assets.Templates(buildVersion())
 	if err != nil {
 		return "", core.Errorf(core.ErrValidation, "read the hook template").WithWhy("%v", err)
 	}
@@ -323,7 +323,7 @@ func detectHookManagers(app *Context, repo *git.Repo) ([]hookManagerReport, erro
 	}
 	configured = filepath.ToSlash(strings.TrimSuffix(filepath.Clean(configured), "/"))
 
-	templates, err := assets.Templates()
+	templates, err := assets.Templates(buildVersion())
 	if err != nil {
 		return nil, core.Errorf(core.ErrValidation, "read the hook manager templates").WithWhy("%v", err)
 	}

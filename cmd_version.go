@@ -36,6 +36,20 @@ type versionDoc struct {
 // devVersion is the version reported when no release tag was injected.
 const devVersion = "dev"
 
+// readBuildInfo is where flow learns what it was built from. It is a variable
+// so that a test can hand it a build it did not make: nothing else can say
+// what an installed binary, as opposed to this test binary, reports.
+var readBuildInfo = debug.ReadBuildInfo
+
+// buildVersion is the version this build reports of itself. It is what flow
+// version prints, and what the workflow flow writes tells its jobs to
+// install: a gate judging a pull request should be the flow that set the
+// repository up, and one answer to "which flow is this" is all there can be.
+func buildVersion() string {
+	info, ok := readBuildInfo()
+	return buildDetails(version, info, ok).Version
+}
+
 // buildDetails derives the version document from the ldflags-injected version
 // and the embedded build info. The injected version always wins; otherwise the
 // module version is used, and failing that the build is reported as "dev".
@@ -78,7 +92,7 @@ func buildDetails(injected string, info *debug.BuildInfo, ok bool) versionDoc {
 
 // Run implements the version command.
 func (c *VersionCmd) Run(app *Context) error {
-	info, ok := debug.ReadBuildInfo()
+	info, ok := readBuildInfo()
 	doc := buildDetails(version, info, ok)
 
 	if app.CLI.JSON {

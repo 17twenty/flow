@@ -24,13 +24,14 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT: 'project', plus 'repo' for the daily audit
   FLOW_LOG_FORMAT: json
-  FLOW_VERSION: v0.0.0            # pin; bump deliberately
+  FLOW_VERSION: latest            # init writes the build that wrote this; bump deliberately
 
 jobs:
   gate:
     if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}
@@ -40,6 +41,7 @@ jobs:
     if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}

@@ -1321,8 +1321,48 @@ person looked. And GitLab's newer `auto_merge` spelling reaches no
 installation the deprecated one does not, for as long as flow speaks
 `/api/v4`, so the write sends the old name and only the reading takes either.
 
-**Single best next step:** the four `flow attest` commands in
-`docs/cookbook.md` §6.1, which are still the only thing standing between this
-repository and the first of fourteen green days. After them, `allow_auto_merge`
-on this repository (§9 of the cookbook, and a person's to do: the machine user
-has `push`) and the one-line `.flow.yaml` that turns it on.
+
+### The workflow nobody had ever run (issues #186, #188, #189)
+
+A greenfield repository, `17twenty/flow-demo-web`, was initialised with `flow
+init` and had `flow apply` set its board up. Then its gate was asked to judge
+its first pull request, and it could not take a single step.
+
+**The template installed a version nobody had tagged.** `FLOW_VERSION:
+v0.0.0`, written before any release existed and never looked at again, so
+every job died at `go install`. This repository could not have told you: its
+own workflow builds `./bin/flow` from the checkout, deliberately, so that a
+change to the gate is judged by the gate it changes — and it therefore
+installs no release at all. A build that knows its release now pins to it, and
+a build with no release behind it leaves the `latest` spec 16 guarantees. The
+pin is applied to the whole template tree, not the one file, because a
+workflow reaches a repository two ways: `init` copies it in, and the
+`forge.files` proposal carries the same bytes for `apply` to write when it is
+missing.
+
+**Then it ran flow outside a repository.** With the install fixed, the next
+line of the log said so. The `gate` and `deploy` jobs had `setup-go`, an
+install and nothing else; every flow command reads `.flow.yaml` out of the
+working tree. The same blindness, twice: a repository whose every job has the
+checkout for its own reasons cannot notice that it never asked for one.
+
+**And the board had two of the same column.** A new GitHub project ships with
+`Todo`, `In Progress` and `Done`. `flow apply` matched `Done`, and created `In
+progress` one space-bar away from the option already there. The two halves of
+flow already disagreed about this — a move resolves a column with `EqualFold`,
+an observation finds one with `==` — so flow will happily move to a column it
+has just made a duplicate of. It showed on the first real ticket: GitHub's own
+automation put the work in `In Progress`, a column flow has never heard of,
+and flow made no move at all. Whether two names are the same name turns out to
+be the provider's question about that set, not one the engine can answer for
+labels, file paths and status checks alike. That is issue #189, and it is the
+next thing to build.
+
+**What the greenfield test is actually for.** Three defects in an hour, none
+of them reachable from this repository, all of them on the path every adopter
+walks and this one never does. The demo now has a green `flow/policy` of its
+own.
+
+**Single best next step:** issue #189, the column flow duplicates. After it,
+the four `flow attest` commands in `docs/cookbook.md` §6.1 and admin for the
+machine user on the demo repository, which are the two things a person holds.

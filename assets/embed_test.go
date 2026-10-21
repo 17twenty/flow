@@ -69,7 +69,7 @@ func TestAccessors(t *testing.T) {
 	accessors := map[string]func() (fs.FS, error){
 		"capabilities": assets.Capabilities,
 		"presets":      assets.Presets,
-		"templates":    assets.Templates,
+		"templates":    func() (fs.FS, error) { return assets.Templates("dev") },
 		"schema":       assets.Schema,
 	}
 	for dir, accessor := range accessors {
