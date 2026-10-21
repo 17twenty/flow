@@ -270,6 +270,13 @@ type Note struct {
 	// adapter writes it because the mechanism is the adapter's own: only
 	// the GitHub adapter knows that a ruleset has an enforcement switch.
 	Fix string `json:"fix,omitempty"`
+	// Refutes says the provider found the item to be untrue, rather than
+	// merely remarking on it. Most notes are advice beside a verdict flow
+	// reached some other way; this one is the verdict. A provider sets it
+	// only for something it saw, and what it saw then outranks a person's
+	// word: an attestation cannot settle a question the provider has
+	// already answered no (spec 07 §8).
+	Refutes bool `json:"refutes,omitempty"`
 }
 
 // Canonical returns the observation with its items in a fixed order: by name,

@@ -3,6 +3,7 @@ package tracker
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -49,6 +50,12 @@ type ghProjectsFake struct {
 	// on from rather than a board that cannot answer.
 	repo    string
 	columns map[string]string
+
+	// workflows is the Workflows panel: the built-in automations the board
+	// has configured, and whether each is switched on. A name with no entry
+	// is one GitHub leaves out of the connection altogether, which is what
+	// a workflow nobody ever touched looks like.
+	workflows map[string]bool
 
 	// totalItems overrides how many items the board reports holding, for
 	// a test about a board larger than one can be built in memory.
@@ -167,6 +174,14 @@ func newGitHubProjectsServer(t *testing.T, fx coretest.TrackerFixture) (*ghProje
 		commentPageSize: 1,
 		scopes:          ghScopesOf(fx.Permissions),
 		now:             coretest.ContractNow,
+		// What GitHub switches on for a new project, and nothing more:
+		// "Code changes requested" is one of the four a person has to
+		// turn on themselves, and a fake that had it on would make the
+		// commonest board in the world unreachable from the tests.
+		workflows: map[string]bool{
+			"Item closed":         true,
+			"Pull request merged": true,
+		},
 	}
 	for i, candidate := range fx.Candidates[core.ItemTrackerProject] {
 		node := ghProjectNode{
@@ -365,7 +380,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		})
 	case strings.Contains(query.Query, "projectV2("):
 		f.writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{field: map[string]any{"projectV2": f.project(query.Variables)}},
+			"data": map[string]any{field: map[string]any{"projectV2": f.project(query.Query, query.Variables)}},
 		})
 	default:
 		f.refuse(w, "NOT_IMPLEMENTED", "the fake knows no such query")
@@ -405,7 +420,7 @@ func (f *ghProjectsFake) page(variables map[string]any) map[string]any {
 
 // project renders one board and its Status field, or null when the owner has
 // no project with that number.
-func (f *ghProjectsFake) project(variables map[string]any) any {
+func (f *ghProjectsFake) project(document string, variables map[string]any) any {
 	raw, ok := variables["number"].(float64)
 	if !ok {
 		return nil
@@ -419,6 +434,16 @@ func (f *ghProjectsFake) project(variables map[string]any) any {
 		}
 		doc := ghNodeJSON(node)
 		doc["items"] = map[string]any{"totalCount": f.count()}
+		// Only what the document asked for: a fake that volunteers the
+		// workflows connection answers a query that forgot to select it,
+		// and the adapter would then read every board as fully automated.
+		if strings.Contains(document, "workflows(") {
+			nodes := make([]any, 0, len(f.workflows))
+			for _, name := range slices.Sorted(maps.Keys(f.workflows)) {
+				nodes = append(nodes, map[string]any{"name": name, "enabled": f.workflows[name]})
+			}
+			doc["workflows"] = map[string]any{"nodes": nodes}
+		}
 		doc["field"] = nil
 		if options, ok := f.options[number]; ok {
 			values := make([]any, 0, len(options))

@@ -401,13 +401,12 @@ func TestGitHubProjectsObservesABoardWithNoStatusField(t *testing.T) {
 func TestGitHubProjectsObservesNothingItCannotSee(t *testing.T) {
 	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
 	adapter := newGitHubProjectsAdapter(t, srv, nil)
+	// What a built-in workflow does is not something the Projects API will
+	// say either, so a person's word is still the only evidence at setup
+	// and the live audit is what watches the cards afterwards (spec 07 §6).
+	// Those cost a query — whether the switch is on is answerable — so they
+	// are not in this list, which is about the ones that cost nothing.
 	unobservable := []string{core.ItemTrackerWIP, core.ItemTrackerExpedite}
-	// Whether a built-in workflow is on is not something the Projects API
-	// will say either, so a person's word is the only evidence at setup and
-	// the live audit is what watches the cards afterwards (spec 07 §6).
-	for _, event := range []string{"changes_requested", "pr_merged", "issue_closed"} {
-		unobservable = append(unobservable, core.NativeItem(event))
-	}
 	for _, what := range unobservable {
 		observation, err := adapter.Observe(t.Context(), what)
 		if err != nil {
@@ -2059,5 +2058,135 @@ func TestTheProjectsFakeAnswersOnlyTheIssueFieldsTheQueryAsked(t *testing.T) {
 	unasked := fake.issueJSON(strings.Replace(ghItemsQuery(OwnerUser), "linkedBranches(first:"+ghBranchPage+"){nodes{ref{name}}} ", "", 1), fake.items[0])
 	if _, ok := unasked["linkedBranches"]; ok {
 		t.Error("the fake volunteered linkedBranches to a query that did not select it, so no test could tell whether flow asks for it")
+	}
+}
+
+// A promise about a workflow nobody switched on is one the board cannot keep,
+// and GraphQL will say so: the connection answers with the workflows the
+// project has configured, so a name that is missing is a name nobody turned
+// on. Flow still cannot see which column the workflow moves a card to, which
+// is why the note refutes the attestation rather than replacing it.
+func TestGitHubProjectsSaysWhichWorkflowIsNotSwitchedOn(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	observation, err := adapter.Observe(t.Context(), core.NativeItem("changes_requested"))
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if len(observation.Notes) != 1 {
+		t.Fatalf("Observe notes = %+v, want one", observation.Notes)
+	}
+	note := observation.Notes[0]
+	if !note.Refutes {
+		t.Errorf("note = %+v, want one that refutes the item", note)
+	}
+	for _, want := range []string{"Code changes requested", "not switched on"} {
+		if !strings.Contains(note.Text, want) {
+			t.Errorf("note text %q does not mention %q", note.Text, want)
+		}
+	}
+	if !strings.Contains(note.Fix, "Code changes requested") || note.URL == "" {
+		t.Errorf("note = %+v, want a fix naming the workflow and somewhere to do it", note)
+	}
+}
+
+// The two GitHub switches on for a new project are the two this board has,
+// and a promise the board is keeping is left for a person to vouch for in the
+// ordinary way: no note, nothing refuted.
+func TestGitHubProjectsSaysNothingAboutAWorkflowThatIsOn(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	for _, event := range []string{"pr_merged", "issue_closed"} {
+		observation, err := adapter.Observe(t.Context(), core.NativeItem(event))
+		if err != nil {
+			t.Fatalf("Observe(%s): %v", event, err)
+		}
+		if len(observation.Notes) != 0 {
+			t.Errorf("Observe(%s) notes = %+v, want none", event, observation.Notes)
+		}
+	}
+}
+
+// An event GitHub has no built-in for has nothing to refute, and flow does
+// not pay a query to find that out: the declaration already answers it with
+// remediation none, and a board this configuration never relied on should
+// not be read to say so.
+func TestGitHubProjectsDoesNotLookForAWorkflowGitHubHasNot(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	for _, event := range []string{"pr_opened_draft", "pr_ready_for_review", "deployed"} {
+		observation, err := adapter.Observe(t.Context(), core.NativeItem(event))
+		if err != nil {
+			t.Fatalf("Observe(%s): %v", event, err)
+		}
+		if len(observation.Notes) != 0 || observation.Exists {
+			t.Errorf("Observe(%s) = %+v, want nothing", event, observation)
+		}
+	}
+	if fake.asked() != 0 {
+		t.Errorf("the adapter asked %d questions about workflows GitHub does not have", fake.asked())
+	}
+}
+
+// A workflow the panel lists and nobody switched on is the same answer as one
+// the panel does not list at all. GitHub reports the first as enabled false
+// and leaves the second out, and flow must not read the first as a promise
+// being kept.
+func TestGitHubProjectsReadsAWorkflowListedAndOffAsOff(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.workflows["Pull request merged"] = false
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	observation, err := adapter.Observe(t.Context(), core.NativeItem("pr_merged"))
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if len(observation.Notes) != 1 || !observation.Notes[0].Refutes {
+		t.Errorf("Observe notes = %+v, want one that refutes the item", observation.Notes)
+	}
+}
+
+// A board nobody has switched nothing on, and saying so would be flow
+// reporting a workflow of a project that is not there. The board's own check
+// is where a missing board is a finding; every other check about it waits on
+// that one, and a second complaint underneath it is noise.
+func TestGitHubProjectsSaysNothingAboutTheWorkflowsOfABoardNobodyHas(t *testing.T) {
+	_, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	adapter := newGitHubProjectsAdapter(t, srv, func(o *GitHubProjectsOptions) { o.Number = 404 })
+
+	observation, err := adapter.Observe(t.Context(), core.NativeItem("changes_requested"))
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if len(observation.Notes) != 0 {
+		t.Errorf("Observe notes = %+v, want nothing said about a board nobody has", observation.Notes)
+	}
+}
+
+// The same fidelity [TestTheProjectsFakeAnswersOnlyWhatTheQueryAsked] buys for
+// an item, for the board itself: a fake that volunteers the workflows
+// connection would answer a query that had stopped selecting it, and flow
+// would read every board as fully automated with the suite green.
+func TestTheProjectsFakeAnswersOnlyTheBoardFieldsTheQueryAsked(t *testing.T) {
+	fake, _ := newGitHubProjectsServer(t, coretest.ContractTracker())
+	variables := map[string]any{"number": float64(1)}
+
+	asked, ok := fake.project(ghProjectQuery(OwnerUser), variables).(map[string]any)
+	if !ok {
+		t.Fatalf("the fake answered %T for a board it has", asked)
+	}
+	if _, selected := asked["workflows"]; !selected {
+		t.Error("the fake left workflows out of its answer to a query that selected it")
+	}
+
+	unasked, ok := fake.project("query{projectV2(number:$number){id number}}", variables).(map[string]any)
+	if !ok {
+		t.Fatalf("the fake answered %T for a board it has", unasked)
+	}
+	if _, selected := unasked["workflows"]; selected {
+		t.Error("the fake volunteered workflows to a query that did not select it, so no test could tell whether flow asks for them")
 	}
 }
