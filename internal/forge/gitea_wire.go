@@ -202,8 +202,6 @@ type gtPull struct {
 	Labels []gtLabel `json:"labels"`
 
 	ChangedFiles int    `json:"changed_files"`
-	Additions    int    `json:"additions"`
-	Deletions    int    `json:"deletions"`
 	HTMLURL      string `json:"html_url"`
 
 	// Mergeable is Gitea's whole answer about landing it: one bool, with
@@ -238,11 +236,7 @@ func (p gtPull) toPullRequest(reference string) core.PullRequest {
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,
 		URL:          p.HTMLURL,
-		Files: core.FileSummary{
-			Changed:   p.ChangedFiles,
-			Additions: p.Additions,
-			Deletions: p.Deletions,
-		},
+		Files:        core.FileSummary{Changed: p.ChangedFiles},
 	}
 	for _, label := range p.Labels {
 		pr.Labels = append(pr.Labels, label.Name)

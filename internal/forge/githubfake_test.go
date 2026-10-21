@@ -1443,8 +1443,6 @@ func ghPullJSON(pr core.PullRequest, detail bool) map[string]any {
 			doc["auto_merge"] = map[string]any{"merge_method": "squash"}
 		}
 		doc["changed_files"] = pr.Files.Changed
-		doc["additions"] = pr.Files.Additions
-		doc["deletions"] = pr.Files.Deletions
 		mergeable, mergeableState := ghMergeabilityJSON(pr)
 		doc["mergeable"] = mergeable
 		doc["mergeable_state"] = mergeableState

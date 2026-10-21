@@ -118,8 +118,6 @@ type ghPull struct {
 		Name string `json:"name"`
 	} `json:"labels"`
 	ChangedFiles int    `json:"changed_files"`
-	Additions    int    `json:"additions"`
-	Deletions    int    `json:"deletions"`
 	HTMLURL      string `json:"html_url"`
 	// Mergeable is null until GitHub has worked it out in the background,
 	// and absent from a listing altogether, so it is a pointer: false and
@@ -196,11 +194,7 @@ func (p ghPull) toPullRequest() core.PullRequest {
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,
 		URL:          p.HTMLURL,
-		Files: core.FileSummary{
-			Changed:   p.ChangedFiles,
-			Additions: p.Additions,
-			Deletions: p.Deletions,
-		},
+		Files:        core.FileSummary{Changed: p.ChangedFiles},
 	}
 	for _, label := range p.Labels {
 		pr.Labels = append(pr.Labels, label.Name)

@@ -1047,8 +1047,6 @@ func gtPullJSON(pr core.PullRequest, detail bool) map[string]any {
 	doc["labels"] = labels
 	if detail {
 		doc["changed_files"] = pr.Files.Changed
-		doc["additions"] = pr.Files.Additions
-		doc["deletions"] = pr.Files.Deletions
 	}
 	return doc
 }

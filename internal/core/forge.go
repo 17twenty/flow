@@ -311,9 +311,6 @@ type Review struct {
 type FileSummary struct {
 	// Changed is how many files it touches.
 	Changed int
-	// Additions and Deletions are the lines added and removed.
-	Additions int
-	Deletions int
 	// Paths are the files it touches, in sorted order. A forge that caps the
 	// list returns the first page only.
 	Paths []string
