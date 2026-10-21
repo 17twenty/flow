@@ -346,3 +346,23 @@ each successful mutation (atomic) and at the end. Summary.
   saw it goes on permitting it. The GitHub adapter leaves the field out of
   the payload altogether, and ignores it when checking what the provider
   kept.
+
+- **§4 a setting is written whole, so flow reads it before writing it (issue
+  #169).** `engine.MergeSettingsFor` builds the whole of
+  `core.MergeSettings`, and a forge takes the whole of it in one call: GitHub's
+  repository PATCH carries every field whatever flow meant to change. A field
+  no desired item names was therefore written as its zero value by a write made
+  for some other reason — `delete_branch_on_merge` was switched off by any
+  drift in a merge strategy, silently, because the plan never said it would.
+  Apply now reads the repository's current settings and writes the plan over
+  them, overlaying only the fields a desired item actually names. The reading
+  costs nothing: apply has already asked whether the repository takes writes
+  at all, and keeps that answer.
+- **§4 presence decides, not value (issue #169).** A desired item naming a
+  field as `false` means false; an item not naming it means flow has no
+  opinion about it. That is the simpler of the two readings the issue offered
+  — flow desires nothing it was not configured to desire — and it is also what
+  lets a setting be asked for additively, by a configuration that leaves it
+  out rather than asking a forge for a "no" it may have no way to say. A
+  configuration that does not squash asks nothing about where a squash
+  commit's words come from, and keeps whatever the repository had.
