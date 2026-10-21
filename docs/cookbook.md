@@ -465,7 +465,8 @@ curl -s -X PATCH -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rep
 `flow plan` asks for this under `forge.merge_settings` and `flow apply` sets
 it where the credential has admin. Where it does not — which is this
 repository, whose machine user has `push` and no more — flow files a
-follow-up ticket naming the step instead. Gitea and GitLab have no such
+follow-up ticket naming the step instead, and a person ticks the box. That is
+how it was turned on here, on 2026-10-21. Gitea and GitLab have no such
 setting: they let any pull request be armed, and flow observes them as
 permitting it.
 

@@ -6,6 +6,7 @@ forge:
   type: github
   repo: 17twenty/flow
   required_checks: [test]         # the build, by the name the check run goes by (not "ci / test", which is the UI's label)
+  auto_merge: true                # land an approved pull request without waiting for somebody to come back
   auth: { token_env: GITHUB_TOKEN }
 tracker:
   type: github-projects
