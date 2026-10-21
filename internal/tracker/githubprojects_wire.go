@@ -121,6 +121,7 @@ func ghProjectQuery(ownerType string) string {
 	return "query($login:String!,$number:Int!){" +
 		ghOwnerField(ownerType) + "(login:$login){" +
 		"projectV2(number:$number){id number title shortDescription closed items{totalCount} " +
+		"workflows(first:50){nodes{name enabled}} " +
 		`field(name:"Status"){...on ProjectV2SingleSelectField{id name options{id name color description}}}` +
 		"}}}"
 }
@@ -238,7 +239,36 @@ type ghProject struct {
 	ShortDescription string         `json:"shortDescription"`
 	Closed           bool           `json:"closed"`
 	Items            ghItemCount    `json:"items"`
+	Workflows        ghWorkflowList `json:"workflows"`
 	Status           *ghStatusField `json:"field"`
+}
+
+// ghWorkflowList is the project's own automation, as GraphQL reports it.
+type ghWorkflowList struct {
+	Nodes []ghWorkflow `json:"nodes"`
+}
+
+// ghWorkflow is one of the built-in workflows of the Projects Workflows
+// panel: the things that move a card when something happens to its issue.
+//
+// GitHub answers with the ones the project has configured, and the panel
+// shows the rest greyed out, so a name that is missing altogether and a name
+// answered with enabled false mean the same thing — nobody switched it on.
+type ghWorkflow struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
+// on reports whether the workflow of that name is switched on. Names are
+// GitHub's own and fixed; they are matched without regard to case because a
+// label in a panel is not an identifier.
+func (l ghWorkflowList) on(name string) bool {
+	for _, workflow := range l.Nodes {
+		if strings.EqualFold(workflow.Name, name) {
+			return workflow.Enabled
+		}
+	}
+	return false
 }
 
 // item is the board as one observed item. A project is identified by its

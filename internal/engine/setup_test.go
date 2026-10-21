@@ -990,6 +990,80 @@ var dormantNote = core.Note{
 	Fix:  `switch the rule "Flow" on - it is already written`,
 }
 
+// refutingNote is what the Projects adapter volunteers about a built-in
+// workflow the configuration relies on and nobody switched on. Unlike the
+// dormant ruleset above, it does not explain a finding flow reached some
+// other way: it is the finding.
+var refutingNote = core.Note{
+	Text:    `the "Pull request merged" workflow of 17twenty/projects/2 is not switched on`,
+	URL:     "https://tracker.test/users/17twenty/projects/2",
+	Fix:     `switch on "Pull request merged" in the project's Workflows panel`,
+	Refutes: true,
+}
+
+// An attestation is how flow takes somebody's account of a thing it cannot
+// see. Where the provider has said outright that the thing is not so, there
+// is nothing left to take on trust, and asking for a signature would be
+// asking for a false statement.
+func TestAProviderThatSaidNoIsNotAskingForSomebodysWord(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.NativeItem("pr_merged"),
+		Target:  engine.TargetTracker,
+		Outcome: engine.OutcomeAttest,
+		Why:     "flow cannot see which column the board's own automation moves a card to",
+		Notes:   []core.Note{refutingNote},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.NativeItem("pr_merged"))
+
+	wantState(t, result, engine.StateFail)
+	if result.Remediation.Kind != engine.RemedyManual {
+		t.Errorf("remedy is %q, want a person to switch it on rather than vouch for it", result.Remediation.Kind)
+	}
+	if result.Remediation.Command != "" {
+		t.Errorf("the remedy offers %q, which would record a false statement", result.Remediation.Command)
+	}
+	if len(result.Remediation.Steps) == 0 || !strings.Contains(result.Remediation.Steps[0], refutingNote.Fix) {
+		t.Errorf("the steps do not say what to switch on: %v", result.Remediation.Steps)
+	}
+	if !hasEvidence(result, "is not switched on") {
+		t.Errorf("the finding does not say what the provider saw:\n%+v", result.Evidence)
+	}
+}
+
+// And a signature already in the lock must not quieten it either. Somebody
+// vouched for this on a day it may well have been true; the provider is
+// saying today that it is not, and what it saw outranks what they said.
+func TestAnAttestationDoesNotSettleWhatTheProviderAnsweredNo(t *testing.T) {
+	item := engine.PlanItem{
+		ID:          core.NativeItem("pr_merged"),
+		Target:      engine.TargetTracker,
+		Outcome:     engine.OutcomeAttest,
+		Why:         "flow cannot see which column the board's own automation moves a card to",
+		DesiredHash: "sha256:wanted",
+	}
+	vouchedFor := func(t *testing.T, item engine.PlanItem) engine.Result {
+		t.Helper()
+		env := setupEnv(t, setupConfig())
+		env.Plan = engine.Plan{Items: []engine.PlanItem{item}, ConfigHash: "sha256:cfg"}
+		env.Lock = config.NewLock("v0.3.0")
+		env.Lock.ConfigHash = "sha256:cfg"
+		env.Lock.Attestations = []config.Attestation{engine.NewAttestation(
+			item.ID, "@17twenty", "I watched a card move", item.DesiredHash,
+			env.Now().Add(-24*time.Hour), 90*24*time.Hour)}
+		return setupResult(t, engine.SetupInput{Config: setupConfig()}, env, item.ID)
+	}
+
+	// The control: without the note this is exactly the shape a word settles,
+	// so a test that only looked at the refuted half could pass against a
+	// lock flow was ignoring altogether.
+	wantState(t, vouchedFor(t, item), engine.StatePass)
+
+	item.Notes = []core.Note{refutingNote}
+	wantState(t, vouchedFor(t, item), engine.StateFail)
+}
+
 // hasEvidence reports whether any evidence line says this.
 func hasEvidence(result engine.Result, want string) bool {
 	for _, evidence := range result.Evidence {

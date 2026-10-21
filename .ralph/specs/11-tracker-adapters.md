@@ -691,3 +691,20 @@ reopen, pagination, error mapping.
   looking like one from a tracker that records no repository at all. Jira and
   Linear leave it empty, and a board of theirs is one repository's by
   assumption.
+- **§3 whether a built-in workflow is on is readable; what it does is not
+  (issue #184).** `ProjectV2.workflows` lists the board's own
+  automations by name with an `enabled` flag, so a workflow the configuration
+  relies on and nobody switched on is a promise this board cannot keep,
+  whoever vouches for it. Which column the workflow moves a card to is still
+  unreadable, which is why the adapter refutes the attestation rather than
+  replacing it: flow can prove the promise is not being kept and still cannot
+  prove it is.
+- **§3 the pairing of flow's events to GitHub's workflow names lives in the
+  adapter (issue #184).** Translating flow's vocabulary into the
+  provider's is the adapter's whole job. The events with no pairing are the
+  ones GitHub has no built-in for; flow asks a person for nothing about those,
+  so there is nothing to refute and no query to pay for.
+- **§3 nothing is said about the workflows of a board nobody has
+  (issue #184).** A missing board is the project check's finding,
+  and every other tracker check waits on that one. A second complaint
+  underneath it is noise.

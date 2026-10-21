@@ -114,6 +114,8 @@ changes that still satisfy desired are absorbed silently.
 
 `flow attest <id> --note …` → lock; valid ⇒ pass with "attested by …"; expiring
 < 7d ⇒ pass + note; expired ⇒ `attest`; invalidated when inputs' config hash changes.
+A provider note marked `refutes` outranks any word: the check fails with a
+manual remedy, and no attestation is asked for or honoured.
 
 ## 9. Rendering
 
@@ -1151,3 +1153,19 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   tickets, because the gate reads both — and the same work being the agreed
   exception on Monday and a finding on Tuesday would be flow arguing with the
   configuration.
+- **§8 a provider that answered no is not asking for somebody's word (issue #184).**
+  An attestation is how flow takes a person's account of something no API will
+  answer. Where the provider has said outright that the thing is not so, there
+  is nothing left to take on trust: the check fails, the remedy is the switch
+  rather than the signature, and a signature already in the lock does not
+  quieten it. `core.Note.Refutes` is how an adapter says it saw that, and one
+  such note is enough — they are facts, not votes.
+- **§8 the rule needs no second guard (issue #184).** `AttestInput.Wants` already
+  holds that a word settles only what flow could not verify. A refutation makes
+  the item one flow did verify, so the ordinary path declines to apply the lock
+  on its own; the first draft tested the same thing twice in two places, which
+  is how two readings of one question drift apart.
+- **§8 a refuted item keeps the provider's note as evidence (issue #184).** The
+  finding is the note, so the line that would otherwise read "flow cannot see
+  this" has to carry what flow saw and where the switch is. The remedy's steps
+  are the note's own fix.

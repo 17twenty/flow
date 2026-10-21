@@ -728,6 +728,9 @@ func plannedResult(env *Env, id, title string) Result {
 	result := outcomeResult(item, title)
 	result.ObservedHash = item.ObservedHash
 
+	// A refuted item needs no guard here: [AttestInput.Wants] already holds
+	// that a word settles only what flow cannot verify, and the refusal
+	// above has made this one a thing flow verified (spec 07 §8).
 	result = Attest(AttestInput{
 		Check:      Check{ID: id, Title: strings.TrimSpace(result.Message)},
 		Result:     result,
@@ -787,6 +790,17 @@ func followUpSteps(item PlanItem) []string {
 		steps = append(steps, changeInstruction(change))
 	}
 	return steps
+}
+
+// refuted reports whether the provider said outright that the item is not
+// true. One such note is enough; they are facts, not votes.
+func refuted(item PlanItem) bool {
+	for _, note := range item.Notes {
+		if note.Refutes {
+			return true
+		}
+	}
+	return false
 }
 
 // withNotes adds what the provider volunteered to a finding's evidence.
@@ -891,6 +905,16 @@ func outcomeResult(item PlanItem, title string) Result {
 		})
 
 	case OutcomeAttest:
+		// A provider that has already answered no is not asking for a
+		// word. Flow cannot make this change either, so the remedy is a
+		// person's — but it is the switch, not the signature.
+		if refuted(item) {
+			return withNotes(Fail("%s", item.Why), item).Fix(Remediation{
+				Kind:    RemedyManual,
+				Summary: "switch it on; vouching for it will not make it true",
+				Steps:   noteSteps(item),
+			})
+		}
 		return Fail("%s", item.Why).Fix(Remediation{
 			Kind:    RemedyAttest,
 			Summary: "confirm it by hand, if it is true",

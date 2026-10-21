@@ -403,11 +403,22 @@ func (g *GitHubProjects) Observe(ctx context.Context, what string) (core.Observa
 		return observation, nil
 	default:
 		if strings.HasPrefix(what, core.NativeItemPrefix) {
-			// Whether a built-in workflow is on is not something the
-			// Projects API will say, so at setup there is nothing to
+			// What a built-in workflow *does* is not something the
+			// Projects API will say, so there is still nothing to
 			// observe and a person's word is what settles it. What
 			// actually happened to the cards is the live-health
 			// audit's question, not this one (spec 07 §6).
+			//
+			// Whether it is switched on, though, GraphQL will say —
+			// and a workflow that is off is a promise this board
+			// cannot keep, whoever vouches for it.
+			note, err := g.workflowOff(ctx, strings.TrimPrefix(what, core.NativeItemPrefix))
+			if err != nil {
+				return core.Observation{}, err
+			}
+			if note != nil {
+				observation.Notes = []core.Note{*note}
+			}
 			return observation, nil
 		}
 		return core.Observation{}, ghNoSuchItem("observe", what)
@@ -1645,3 +1656,51 @@ func (g *GitHubProjects) decorate(r core.Request) core.Request {
 
 // GitHubProjects is a tracker.
 var _ core.Tracker = (*GitHubProjects)(nil)
+
+// ghBuiltInWorkflow is the name in the Projects Workflows panel for the
+// transition flow calls event, and whether GitHub has one at all.
+//
+// Translating flow's vocabulary into the provider's is the adapter's whole
+// job, so the pairing lives here rather than in the engine. The events with
+// no entry are the ones GitHub has no built-in for — the declaration already
+// says so by refusing to remediate them — and flow asks a person for nothing
+// about those, so there is nothing here to refute.
+func ghBuiltInWorkflow(event string) (string, bool) {
+	switch event {
+	case "pr_merged":
+		return "Pull request merged", true
+	case "issue_closed":
+		return "Item closed", true
+	case "changes_requested":
+		return "Code changes requested", true
+	}
+	return "", false
+}
+
+// workflowOff reports a built-in workflow the configuration is relying on and
+// the board has not switched on, or nil when there is nothing to report.
+//
+// A project answers with the workflows it has configured, so a name that is
+// absent is one nobody turned on. Neither reading tells flow which column the
+// workflow moves a card to, which is why this refutes an attestation rather
+// than replacing it: flow can prove the promise is not being kept, and still
+// cannot prove it is.
+func (g *GitHubProjects) workflowOff(ctx context.Context, event string) (*core.Note, error) {
+	name, builtIn := ghBuiltInWorkflow(event)
+	if !builtIn {
+		return nil, nil
+	}
+	project, err := g.project(ctx)
+	if err != nil {
+		return nil, core.Explain(err, "read the workflows of %s", g.Slug())
+	}
+	if !project.Exists || project.Workflows.on(name) {
+		return nil, nil
+	}
+	return &core.Note{
+		Text:    fmt.Sprintf("the %q workflow of %s is not switched on", name, g.Slug()),
+		URL:     ghProjectURL(g.site, g.owner, g.ownerType, g.number),
+		Fix:     fmt.Sprintf("switch on %q in the project's Workflows panel, reached from the … menu, and set it to move the item to the column the configuration names", name),
+		Refutes: true,
+	}, nil
+}
