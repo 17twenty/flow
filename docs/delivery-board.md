@@ -71,7 +71,7 @@ shape of this decision in the schema.
 | Backlog — work that is not ready, moved by a person | a column with `category: todo` | `workflow.columns` |
 | Needs Design — optional, moved by a person | a column with `category: todo`; flow never moves work into or out of it | `workflow.columns` |
 | Ready — clear acceptance criteria, moved by a person (the gate) | the column carrying `gate: definition_of_ready` | `workflow.columns[].gate` |
-| In Progress — a branch exists, moved by automation, WIP 2 per person | a per-person limit on the column, warned on every gated pull request | `workflow.columns[].wip.per_person` |
+| In Progress — a branch exists, moved by automation, WIP 2 per person | a per-person limit on the column, warned on every gated pull request and audited daily by `live.wip` | `workflow.columns[].wip.per_person` |
 | In Review — a PR is open, moved by automation, WIP 2 × reviewers | a limit on the column; flow does not multiply it by anything, because it cannot count your reviewers | `workflow.columns[].wip.limit` |
 | Done — merged **and** synced to production, moved by automation | `workflow.done_on: deployed` | `workflow.done_on` |
 
@@ -190,7 +190,7 @@ other follow-up flow files.
 | Agents take work only from Ready | the agent skill (`skills/flow/SKILL.md`) tells a harness that the column carrying the gate is where takeable work sits, and `ticket.ready` refuses a pull request whose ticket never passed it |
 | Mark agent work with the label `agent`, or an agent user | `agents.labels` and `agents.authors` — either one makes a pull request agent-written |
 | A person reviews each agent PR; the reviewer owns the merge | `agent.human_review`, which relaxed strictness does not relax |
-| The WIP limit on In Review matters: agents outrun reviewers | `workflow.columns[].wip.limit` on the review column, warned on every gated pull request. Expedited work is the one exception, which is the team’s own agreed way past a limit |
+| The WIP limit on In Review matters: agents outrun reviewers | `workflow.columns[].wip.limit` on the review column, warned on every gated pull request, and `live.wip` counts the days the queue was over it. Expedited work is the one exception, which is the team’s own agreed way past a limit |
 | Track throughput and rework rate for agent work | `live.agents.rework` — how much a machine merged in the window and how much of it came back first, reported in the same health issue and never graded |
 
 ## §11 Testing · §12 Change management

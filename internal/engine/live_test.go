@@ -207,6 +207,7 @@ func liveCheckIDs() []string {
 		engine.LiveTransitionCheck(config.EventPRMerged),
 		engine.LiveTransitionCheck(config.EventIssueClosed),
 		engine.CheckLiveTransitionsFlow,
+		engine.CheckLiveWIP,
 		engine.CheckLiveFlagsCleanup,
 		engine.CheckLiveFlagsAge,
 		engine.CheckLiveAgentsRework,
@@ -279,10 +280,11 @@ func TestAQuietFortnightIsNotIllHealth(t *testing.T) {
 			t.Errorf("%s says %q, which reads as health rather than silence", id, result.Message)
 		}
 	}
-	if want := len(liveCheckIDs()) - 3; answered != want {
+	if want := len(liveCheckIDs()) - 4; answered != want {
 		t.Errorf("%d live checks had an opinion about a quiet fortnight, want %d: the two "+
 			"deployment checks and live.tickets.done_deployed do not apply to a team that "+
-			"records no deployments and finishes work on the merge", answered, want)
+			"records no deployments and finishes work on the merge, and live.wip does not "+
+			"apply to one that set no limits", answered, want)
 	}
 }
 
