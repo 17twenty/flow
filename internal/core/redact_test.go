@@ -16,16 +16,17 @@ import (
 const credBody = "0123456789abcdefghijABCDEFGHIJ0123"
 
 var (
-	ghp    = "ghp" + "_" + credBody
-	gho    = "gho" + "_" + credBody
-	ghu    = "ghu" + "_" + credBody
-	ghs    = "ghs" + "_" + credBody
-	ghr    = "ghr" + "_" + credBody
-	ghPAT  = "github" + "_pat_" + "11ABCDEFG0" + credBody
-	glpat  = "glpat" + "-" + "ABCDEFGhijklmnop1234"
-	linAPI = "lin" + "_api_" + "ABCDEFGhijklmnop1234567890"
-	atatt  = "ATATT" + "3xFfGF0abcdefghijklmnop1234567890="
-	jwt    = "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiIxMiJ9." + "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1g"
+	ghp      = "ghp" + "_" + credBody
+	gho      = "gho" + "_" + credBody
+	ghu      = "ghu" + "_" + credBody
+	ghs      = "ghs" + "_" + credBody
+	ghr      = "ghr" + "_" + credBody
+	ghPAT    = "github" + "_pat_" + "11ABCDEFG0" + credBody
+	glpat    = "glpat" + "-" + "ABCDEFGhijklmnop1234"
+	linAPI   = "lin" + "_api_" + "ABCDEFGhijklmnop1234567890"
+	linOAuth = "lin" + "_oauth_" + "ABCDEFGhijklmnop1234567890"
+	atatt    = "ATATT" + "3xFfGF0abcdefghijklmnop1234567890="
+	jwt      = "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiIxMiJ9." + "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1g"
 )
 
 func TestRedactValuePatterns(t *testing.T) {
@@ -41,6 +42,7 @@ func TestRedactValuePatterns(t *testing.T) {
 		{"github fine-grained pat", ghPAT, "github_pat"},
 		{"gitlab pat", glpat, "gitlab_token"},
 		{"linear api key", linAPI, "linear_key"},
+		{"linear oauth token", linOAuth, "linear_key"},
 		{"atlassian token", atatt, "atlassian_token"},
 		{"jwt", jwt, "jwt"},
 	}
