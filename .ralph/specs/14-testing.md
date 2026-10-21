@@ -197,3 +197,12 @@ Coverage targets: commits 90%, config 85%, engine 80%, adapters 70%.
   with `ErrUnsupported` and to saying `set: false` in its capabilities, since
   an adapter silently refusing what it declares it can do would make a plan
   propose work that never lands (spec 05 §1).
+- **An advisory moves the floor the same way a new import does (item 2.16,
+  revisited, issue #177).** GO-2026-6809 made `crypto/x509` reachable through
+  every `fmt.Fprintf` in the tree and turned `test` red on `main` and on every
+  open pull request at once, with nobody having changed a line. The remedy is
+  the same single edit: `go.mod`'s `go` directive to the release that fixes
+  it, so the runner, every developer and `govulncheck` move together. Nothing
+  is pinned a second time anywhere, which is what makes a one-line change
+  enough — and it is why the first symptom of an advisory is a red gate on
+  somebody's unrelated work rather than a notification nobody reads.
