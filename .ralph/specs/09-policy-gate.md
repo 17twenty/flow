@@ -204,3 +204,32 @@ golden; determinism; fork/read-only path; draft path.
 - **The type is read from the header a merge would land.** `MergeHeader()`
   again, for the reason above it: the gate and the audit must agree about the
   same commit, and the audit only ever sees what landed.
+
+- **Auto-merge is armed, last, by the gate (issue #167).** The README's
+  bootstrap and §1 above both reasoned about auto-merge as though something
+  set it; nothing did, and four pull requests sat approved and green with
+  nobody listening. `flow check pr` now arms the pull request it has just
+  judged. It is the last thing the run does, after the status, the comment
+  and the transitions, because an armed pull request whose gate is already
+  passing merges on the spot: arming first would race flow against itself and
+  aim the remaining writes at a pull request the forge had closed.
+
+- **Nothing about the arming can fail the gate.** A forge with no such
+  feature, a repository with it switched off, a pull request the provider
+  will not promise to land, a credential that may not merge: each is a reason
+  this pull request waits for a person, which is what it would have done
+  anyway. The verdict is about the change, not about what flow managed to
+  arrange afterwards. A refusal is reported in the gate's own rendering
+  (`Gate.ArmOutcome`) and in its JSON, so a run that arranged nothing says so.
+
+- **`forge.auto_merge` is off unless the team writes it.** Merging unattended
+  is a decision about who is accountable rather than a convenience, so the
+  absence of the key is a no. The key is refused at validation time for a
+  forge whose declaration says it cannot arm, rather than discovered at six
+  in the morning by a gate that tries.
+
+- **A draft is never armed, and neither is an armed pull request.** The first
+  is a promise about something nobody has finished writing. The second is a
+  write in the audit log of every repository flow watches, every push, saying
+  nothing new — which is why `core.PullRequest.AutoMerge` is read first and
+  why it is a reading of one pull request rather than of a listing.

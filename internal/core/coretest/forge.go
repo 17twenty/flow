@@ -195,6 +195,7 @@ func summarised(pr core.PullRequest) core.PullRequest {
 	pr.ClosingIssues = nil
 	pr.Files.Paths = nil
 	pr.Mergeability = core.MergeabilityUnknown
+	pr.AutoMerge = false
 	return pr
 }
 
@@ -211,6 +212,7 @@ func summarised(pr core.PullRequest) core.PullRequest {
 func landable(pr core.PullRequest) core.PullRequest {
 	if pr.State != core.PRStateOpen {
 		pr.Mergeability = core.MergeabilityUnknown
+		pr.AutoMerge = false
 	}
 	return pr
 }
@@ -347,6 +349,51 @@ func (f *FakeForge) SetMergeSettings(ctx context.Context, s core.MergeSettings) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.repo.Merge = s
+	return nil
+}
+
+// ArmAutoMerge sets a pull request to land itself once its checks pass.
+//
+// The repository setting is honoured, because it is the thing a caller cannot
+// see before it tries: a forge with auto-merge switched off refuses the
+// arming, and an engine that only ever met a fake which accepted would never
+// have been written to cope.
+func (f *FakeForge) ArmAutoMerge(ctx context.Context, number int, method string) error {
+	if err := f.enter(ctx, "ArmAutoMerge"); err != nil {
+		return err
+	}
+	// The slug is read before the lock, because reading it takes the same
+	// one: a refusal that named the repository while holding it deadlocked
+	// the only path that refuses.
+	slug := f.Slug()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	index := slices.IndexFunc(f.prs, func(pr core.PullRequest) bool { return pr.Number == number })
+	if index < 0 {
+		return notFound("pull request", "#"+strconv.Itoa(number))
+	}
+	pr := f.prs[index]
+	switch {
+	case !f.repo.Merge.AllowAutoMerge:
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d", number).
+			WithWhy("%s does not allow a pull request to merge itself", slug).
+			WithFix("turn auto-merge on for the repository")
+	case pr.State != core.PRStateOpen:
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d", number).
+			WithWhy("it is %s", pr.State).
+			WithFix("arm a pull request that is still open")
+	case pr.Draft:
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d", number).
+			WithWhy("it is a draft").
+			WithFix("mark the pull request ready for review first")
+	case !core.ValidMergeMethod(method):
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d", number).
+			WithWhy("%q is not a merge method", method).
+			WithFix("ask for squash, merge or rebase")
+	}
+	f.prs[index].AutoMerge = true
 	return nil
 }
 

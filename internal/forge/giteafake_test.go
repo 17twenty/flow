@@ -41,6 +41,11 @@ type giteaFake struct {
 	mu       sync.Mutex
 	requests []string
 	methods  []string
+	// armed are the pull requests scheduled to merge themselves. Gitea
+	// keeps the schedule in a queue of its own and shows it on no
+	// endpoint, so nothing here is ever read back — the only use the fake
+	// has for it is to refuse the second arming the way Gitea does.
+	armed map[int]bool
 	// repo is the repository as it stands, because the merge settings and
 	// the archive flag are both written during the contract.
 	repo core.RepoInfo
@@ -100,6 +105,7 @@ func newGiteaServer(t *testing.T, fx coretest.ForgeFixture) (*giteaFake, *httpte
 		pageSize:   2,
 		repo:       fx.Repo,
 		reviews:    map[int][]core.Review{},
+		armed:      map[int]bool{},
 		statuses:   map[string][]core.CommitStatus{},
 		comments:   map[int][]gtComment{},
 		rules:      map[string]core.Protection{},
@@ -257,6 +263,8 @@ func (f *giteaFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.editPull(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 2:
 		f.pull(w, r, segments[1])
+	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "merge" && r.Method == http.MethodPost:
+		f.mergePull(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "reviews":
 		f.pullReviews(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "files":
@@ -380,6 +388,54 @@ func (f *giteaFake) pull(w http.ResponseWriter, r *http.Request, raw string) {
 		return
 	}
 	f.writeJSON(w, r, gtPullJSON(pr, true))
+}
+
+// mergePull is the one endpoint that both merges a pull request and promises
+// to merge it later, told apart by `merge_when_checks_succeed`.
+//
+// Gitea refuses with 405 for every condition the pull request has not met and
+// with 409 when it is already waiting, and the two statuses mean quite
+// different things to a caller: the first is "not like this", the second is
+// "already done". A fake that answered one status for both would let an
+// adapter treat an arming it had already made as a failure.
+//
+// Nothing is served back. Gitea answers 201 with no body, and keeps the
+// schedule where no endpoint can see it.
+func (f *giteaFake) mergePull(w http.ResponseWriter, r *http.Request, raw string) {
+	pr, ok := f.findPull(raw)
+	if !ok {
+		f.fail(w, http.StatusNotFound, "pull request does not exist")
+		return
+	}
+	var body gtMergeRequest
+	if !f.decode(w, r, &body) {
+		return
+	}
+	if !body.MergeWhenChecksSucceed {
+		f.fail(w, http.StatusMethodNotAllowed, "the fake only ever promises to merge, never merges")
+		return
+	}
+	f.mu.Lock()
+	armed := f.armed[pr.Number]
+	f.mu.Unlock()
+	switch {
+	case pr.State == core.PRStateMerged:
+		f.fail(w, http.StatusMethodNotAllowed, "The PR is already merged")
+	case pr.State != core.PRStateOpen:
+		f.fail(w, http.StatusNotFound, "pull request does not exist")
+	case pr.Draft:
+		f.fail(w, http.StatusMethodNotAllowed, "Work in progress PRs cannot be merged")
+	case !slices.Contains([]string{"squash", "merge", "rebase"}, body.Do):
+		f.fail(w, http.StatusMethodNotAllowed, body.Do+" is not allowed an allowed merge style for this repository")
+	case armed:
+		f.fail(w, http.StatusConflict,
+			fmt.Sprintf("pull request is already scheduled to auto merge when checks succeed [pull_id: %d]", pr.Number))
+	default:
+		f.mu.Lock()
+		f.armed[pr.Number] = true
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}
 }
 
 // pullReviews serves the verdicts on a pull request, including the two Gitea

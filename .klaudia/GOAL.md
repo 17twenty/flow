@@ -1276,6 +1276,53 @@ it for finished work could be deleted with the suite green. And GitHub's
 `mergeable == nil` was load-bearing in a way the fake never showed: without
 it, a state flow has no name for would have been read through a null pointer.
 
+
+### A promise in the README that nothing kept (issue #167)
+
+The README's bootstrap says "auto-merge on green gate". Spec 02 §2 reasons
+about `check pr` exiting 0 so as not to stop auto-merge from seeing the red
+tick it waits for, and spec 09 §1 puts the status out first because auto-merge
+waits on it. Nothing implemented any of it. On #166 the gate went red, the
+approval came at 02:15:32 and the status was green at 02:16:01 — twenty-nine
+seconds, and then nothing, because nobody was listening. Four pull requests
+sat approved and green at once.
+
+**The gate arms what it has just judged, last.** After the status, the comment
+and the transitions, because an armed pull request whose gate is already
+passing merges on the spot: arming first would race flow against itself and
+aim the remaining writes at a pull request the forge had closed. Nothing about
+the arming can fail a gate. A forge that cannot do it, a repository with the
+setting off, a draft, a credential that may not merge — each means this pull
+request waits for a person, which is what it would have done anyway.
+
+**A field flow does not ask for is a field flow would write `false` into.**
+The merge settings are written whole, so `forge.auto_merge` had to be asked
+for additively: GitHub's payload leaves the field out altogether, and Gitea
+and GitLab, which have no such setting and let any pull request be armed, are
+observed as permitting it rather than as refusing something they have never
+refused anybody. Issue #169 is the same shape with nothing in front of it —
+`delete_branch_on_merge` is in no desired item and is set to `false` by any
+write that happens for some other reason.
+
+**Three endpoints, one contract case.** GitHub has a mutation of its own and
+answers the pending request in the round trip that fetches the node id, so it
+never arms what is armed. Gitea has only the merge endpoint told to wait, and
+shows the arrangement on no endpoint at all, so the second arming is forgiven
+from its refusal rather than avoided. GitLab, asked to wait with nothing to
+wait for, merges on the spot — so flow refuses to arm a project that does not
+require its pipeline to pass.
+
+**Twenty-seven mutants, five survivors, and one of them was a line that could
+not be wrong.** Two were missing tests: the plan never asked a forge what it
+already permitted, and nothing followed the field as far as the write. One was
+a fake that accepted any merge method and remembered none — a promise made
+with the wrong strategy lands a commit of the wrong shape hours after the last
+person looked. And GitLab's newer `auto_merge` spelling reaches no
+installation the deprecated one does not, for as long as flow speaks
+`/api/v4`, so the write sends the old name and only the reading takes either.
+
 **Single best next step:** the four `flow attest` commands in
 `docs/cookbook.md` §6.1, which are still the only thing standing between this
-repository and the first of fourteen green days.
+repository and the first of fourteen green days. After them, `allow_auto_merge`
+on this repository (§9 of the cookbook, and a person's to do: the machine user
+has `push`) and the one-line `.flow.yaml` that turns it on.

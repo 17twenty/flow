@@ -392,6 +392,48 @@ func TestPlanChanges(t *testing.T) {
 	}
 }
 
+// TestAPlanAsksForAutoMergeOnlyWhereTheRepositoryRefusesIt.
+//
+// The desired side of this is TestDesiredAsksForAutoMergeOnlyWhereItWasAsked;
+// this is the other half, and the half that needs the provider to have been
+// asked. A forge is observed as it is, so a repository that already permits a
+// pull request to land itself is a repository with nothing to change — and an
+// observation that answered "false" for everybody would have flow proposing,
+// every morning, a setting somebody turned on months ago.
+func TestAPlanAsksForAutoMergeOnlyWhereTheRepositoryRefusesIt(t *testing.T) {
+	cfg := preset(t, config.PresetLeanKanban)
+	cfg.Forge.AutoMerge = true
+
+	for _, tc := range []struct {
+		name      string
+		permitted bool
+		want      bool
+	}{
+		{"a repository that refuses it", false, true},
+		{"a repository that already permits it", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := githubProjectsWorld(t)
+			fx := forgeFixture(t)
+			fx.Repo.Merge.AllowAutoMerge = tc.permitted
+			w.forge = coretest.NewFakeForge(fx)
+
+			planned, ok := planWith(t, w, cfg).Find(core.ItemForgeMergeSettings)
+			if !ok {
+				t.Fatal("the merge settings are not in the plan")
+			}
+			if len(planned.Changes) != 1 {
+				t.Fatalf("the merge settings changes are %+v, want one update", planned.Changes)
+			}
+			got := slices.Contains(planned.Changes[0].Differs, engine.FieldAllowAutoMerge)
+			if got != tc.want {
+				t.Errorf("the update differs in %v; it %s name %s",
+					planned.Changes[0].Differs, map[bool]string{true: "must", false: "must not"}[tc.want], engine.FieldAllowAutoMerge)
+			}
+		})
+	}
+}
+
 // TestPlanKeepsWhatFlowDidNotCreate proves spec 06 §4's rule: an option the
 // lock does not record as flow's own is left alone, however unwanted it is.
 func TestPlanKeepsWhatFlowDidNotCreate(t *testing.T) {

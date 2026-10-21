@@ -159,6 +159,9 @@ func (v *validator) forge() {
 			seen[context] = true
 		}
 	}
+	if forge.AutoMerge {
+		v.capable("forge.auto_merge", forge.Type, core.CapAutoMerge)
+	}
 	v.envName("forge.auth.token_env", forge.Auth.TokenEnv)
 	if forge.Auth.EmailEnv != "" {
 		v.add("forge.auth.email_env is set; a forge authenticates with a token alone")
@@ -270,6 +273,25 @@ func (v *validator) declares(key, adapter, kind string) {
 	if set.Kind != kind {
 		v.add("%s is %q, which is a %s, not a %s", key, adapter, set.Kind, kind)
 	}
+}
+
+// capable refuses a key that asks an adapter for something it has declared it
+// cannot do. It is the same reading as [validator.declares], one capability
+// further in: a declaration flow ships is a fact about the provider's API, so
+// a configuration that contradicts it is wrong at the moment it is written
+// and not at six in the morning when the gate first tries.
+//
+// An adapter this build has never heard of is left to declares, which has
+// already said so; saying it twice for one typo is noise.
+func (v *validator) capable(key, adapter, capability string) {
+	if v.registry == nil {
+		return
+	}
+	set, err := v.registry.Of(adapter)
+	if err != nil || set.Can(capability) {
+		return
+	}
+	v.add("%s is set, and %q cannot %s", key, adapter, capability)
 }
 
 // webURL checks an optional base URL.

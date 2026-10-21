@@ -552,6 +552,61 @@ func (g *Gitea) SetMergeSettings(ctx context.Context, s core.MergeSettings) erro
 	return nil
 }
 
+// giteaAlreadyArmed is the part of Gitea's refusal that names a pull request
+// already waiting to merge itself: "pull request is already scheduled to auto
+// merge when checks succeed [pull_id: 7]", answered as a conflict.
+//
+// Gitea offers nothing to ask beforehand — no field on the pull request, no
+// endpoint — which is what `auto_merge.verify: false` in the declaration
+// records. Arming twice is therefore not something flow can avoid by looking
+// first; it is something the second call has to forgive (spec 10 §3).
+const giteaAlreadyArmed = "already scheduled to auto merge"
+
+// ArmAutoMerge schedules a pull request to land itself once its checks pass.
+//
+// It is the same endpoint that merges a pull request now, told to wait. That
+// is why the flag is sent explicitly: a payload that dropped it would merge
+// the branch on the spot, which is not a mistake worth leaving to a zero
+// value. Gitea always schedules rather than landing it there and then, so
+// there is no arrangement here that is secretly a merge.
+func (g *Gitea) ArmAutoMerge(ctx context.Context, number int, method string) error {
+	style, ok := giteaMergeStyle(method)
+	if !ok {
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d of %s", number, g.Slug()).
+			WithWhy("%q is not a merge method", method).
+			WithFix("ask for squash, merge or rebase")
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	req := core.Request{
+		Method: http.MethodPost,
+		Path:   g.path("pulls", strconv.Itoa(number), "merge"),
+		Body:   gtMergeRequest{Do: style, MergeWhenChecksSucceed: true},
+	}
+	_, err := g.do(ctx, req)
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), giteaAlreadyArmed):
+		return nil
+	case errors.Is(err, core.ErrUnsupported):
+		// Gitea answers 405 for every condition this pull request has
+		// not met: a draft, a merge style the repository does not
+		// allow, protection that is not satisfied. The status says
+		// "method not allowed", which flow reads as a provider that
+		// cannot do the thing at all — and here it is this pull
+		// request that cannot. The difference decides whether a caller
+		// ever asks again, so it is worth rewriting.
+		return core.Errorf(core.ErrValidation, "arm auto-merge on #%d of %s", number, g.Slug()).
+			WithWhy("%s", refusedCondition(err)).
+			WithFix("a pull request has to be out of draft and otherwise ready before Gitea will promise to land it")
+	default:
+		return core.Explain(err, "arm auto-merge on #%d of %s", number, g.Slug())
+	}
+}
+
 // CommitStatuses returns the latest verdict from each context on a commit,
 // newest first. Gitea's endpoint is a history — every status ever published,
 // including the ones since replaced — and a history is not what a caller asking

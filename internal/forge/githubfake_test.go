@@ -57,6 +57,15 @@ type gitHubFake struct {
 	// run — including, for a moment, next to a state that is not
 	// `unknown`.
 	mergeableNull bool
+	// armed is the merge method each armed pull request was promised to
+	// land with. GitHub holds the arrangement on the pull request rather
+	// than anywhere a listing would carry it, which is why only the single
+	// read says so — and it holds the method with it, because "merge this
+	// when the checks pass" has to say how.
+	armed map[int]string
+	// armings counts the mutations sent, which the request log cannot: a
+	// GraphQL query and a GraphQL mutation are the same path.
+	armings int
 	// refusalKind and refusalMessage, when set, make every GraphQL query
 	// fail the way GraphQL fails: 200, no data, and a reason.
 	refusalKind    string
@@ -115,6 +124,7 @@ func newGitHubServer(t *testing.T, fx coretest.ForgeFixture) (*gitHubFake, *http
 		comments:    map[int][]ghComment{},
 		userAgents:  map[string]int{},
 		protections: map[string]core.Protection{},
+		armed:       map[int]string{},
 		rules:       map[string][]any{},
 		branches:    map[string]map[string][]byte{},
 		refs:        map[string]string{},
@@ -361,6 +371,7 @@ func (f *gitHubFake) pull(w http.ResponseWriter, r *http.Request, raw string) {
 		f.fail(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	pr.AutoMerge = f.armed[pr.Number] != ""
 	doc := ghPullJSON(pr, true)
 	if f.mergeableState != "" {
 		doc["mergeable"], doc["mergeable_state"] = false, f.mergeableState
@@ -785,6 +796,14 @@ func (f *gitHubFake) patchRepo(w http.ResponseWriter, r *http.Request) {
 		f.writeJSON(w, r, f.repoJSON(repo))
 		return
 	}
+	// A field the payload does not carry is a setting GitHub leaves exactly
+	// as it found it, which is the whole of what makes an additive ask
+	// additive. The fake has to keep that, or a test could not tell a flow
+	// that asked for nothing from one that asked for a "no".
+	autoMerge := f.fx.Repo.Merge.AllowAutoMerge
+	if body.AllowAutoMerge != nil {
+		autoMerge = *body.AllowAutoMerge
+	}
 	f.fx.Repo.Merge = core.MergeSettings{
 		AllowSquash:         body.AllowSquashMerge,
 		AllowMerge:          body.AllowMergeCommit,
@@ -792,6 +811,7 @@ func (f *gitHubFake) patchRepo(w http.ResponseWriter, r *http.Request) {
 		SquashTitle:         squashTitleFromGitHub(body.SquashMergeCommitTitle),
 		SquashMessage:       squashMessageFromGitHub(body.SquashMergeCommitMessage),
 		DeleteBranchOnMerge: body.DeleteBranchOnMerge,
+		AllowAutoMerge:      autoMerge,
 	}
 	repo := f.fx.Repo
 	f.mu.Unlock()
@@ -848,7 +868,12 @@ func (f *gitHubFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		f.graphQLError(w, r, kind, message)
 		return
 	}
-	if !strings.Contains(query.Query, "closingIssuesReferences") {
+	if strings.Contains(query.Query, "enablePullRequestAutoMerge") {
+		f.enableAutoMerge(w, r, query)
+		return
+	}
+	wantsAutoMerge := strings.Contains(query.Query, "autoMergeRequest")
+	if !wantsAutoMerge && !strings.Contains(query.Query, "closingIssuesReferences") {
 		f.graphQLError(w, r, "NOT_IMPLEMENTED", "the fake knows no such query")
 		return
 	}
@@ -866,7 +891,74 @@ func (f *gitHubFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		f.graphQLError(w, r, "NOT_FOUND", fmt.Sprintf("Could not resolve to a PullRequest with the number of %d.", int(number)))
 		return
 	}
+	if wantsAutoMerge {
+		f.writeJSON(w, r, map[string]any{"data": map[string]any{
+			"repository": map[string]any{"pullRequest": f.autoMergeState(pr)},
+		}})
+		return
+	}
 	f.writeJSON(w, r, map[string]any{"data": f.closingIssuesPage(pr, query.Variables)})
+}
+
+// ghNodeID is the opaque identity GraphQL addresses a pull request by. The
+// number is in it because the fake has to get back from one to the other, and
+// GitHub's own ids are opaque in the same way: an adapter that took one apart
+// would be reading something it was handed to pass on.
+func ghNodeID(number int) string {
+	return "PR_kwDO" + strconv.Itoa(number)
+}
+
+// autoMergeState renders the pull request as the arming query selects it:
+// the node id the mutation takes, and the pending request if there is one.
+func (f *gitHubFake) autoMergeState(pr core.PullRequest) map[string]any {
+	state := map[string]any{"id": ghNodeID(pr.Number), "autoMergeRequest": nil}
+	if f.armed[pr.Number] != "" {
+		state["autoMergeRequest"] = map[string]any{"enabledAt": f.fx.Clock.Now()}
+	}
+	return state
+}
+
+// enableAutoMerge answers the arming mutation.
+//
+// Every refusal here is one only GitHub could have made, and each comes back
+// as GitHub makes it: an error of type UNPROCESSABLE, with a message naming
+// the condition. A repository with the setting switched off, a draft, a pull
+// request with nothing left to wait for — the caller could not have known any
+// of them without asking.
+func (f *gitHubFake) enableAutoMerge(w http.ResponseWriter, r *http.Request, query core.GraphQLQuery) {
+	id, _ := query.Variables["pr"].(string)
+	number, err := strconv.Atoi(strings.TrimPrefix(id, "PR_kwDO"))
+	if err != nil {
+		f.graphQLError(w, r, "NOT_FOUND", "Could not resolve to a node with the global id of "+id)
+		return
+	}
+	pr, ok := f.findPull(strconv.Itoa(number))
+	if !ok {
+		f.graphQLError(w, r, "NOT_FOUND", "Could not resolve to a node with the global id of "+id)
+		return
+	}
+	method, _ := query.Variables["method"].(string)
+	switch {
+	case !f.fx.Repo.Merge.AllowAutoMerge:
+		f.graphQLError(w, r, "UNPROCESSABLE", "Pull request Auto merge is not allowed for this repository")
+	case pr.State != core.PRStateOpen:
+		f.graphQLError(w, r, "UNPROCESSABLE", "Pull request is closed")
+	case pr.Draft:
+		f.graphQLError(w, r, "UNPROCESSABLE", "Pull request is in draft status")
+	case method != "SQUASH" && method != "MERGE" && method != "REBASE":
+		f.graphQLError(w, r, "UNPROCESSABLE", "Variable $method of type PullRequestMergeMethod! was provided invalid value")
+	default:
+		f.mu.Lock()
+		f.armed[pr.Number], f.armings = method, f.armings+1
+		f.mu.Unlock()
+		f.writeJSON(w, r, map[string]any{"data": map[string]any{
+			"enablePullRequestAutoMerge": map[string]any{
+				"pullRequest": map[string]any{
+					"autoMergeRequest": map[string]any{"enabledAt": f.fx.Clock.Now()},
+				},
+			},
+		}})
+	}
 }
 
 // graphQLRefusal makes every GraphQL query from now on fail with kind.
@@ -1309,6 +1401,7 @@ func ghRepoJSON(repo core.RepoInfo) map[string]any {
 		"squash_merge_commit_title":   title,
 		"squash_merge_commit_message": message,
 		"delete_branch_on_merge":      repo.Merge.DeleteBranchOnMerge,
+		"allow_auto_merge":            repo.Merge.AllowAutoMerge,
 	}
 }
 
@@ -1341,6 +1434,14 @@ func ghPullJSON(pr core.PullRequest, detail bool) map[string]any {
 		"html_url":         pr.URL,
 	}
 	if detail {
+		// GitHub sends the pending request as an object and sends
+		// nothing at all when there is none, which is the difference
+		// between a pull request that will land itself and one that
+		// will not.
+		doc["auto_merge"] = nil
+		if pr.AutoMerge {
+			doc["auto_merge"] = map[string]any{"merge_method": "squash"}
+		}
 		doc["changed_files"] = pr.Files.Changed
 		doc["additions"] = pr.Files.Additions
 		doc["deletions"] = pr.Files.Deletions

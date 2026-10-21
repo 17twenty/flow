@@ -83,7 +83,8 @@ func ConfigSchema() *Schema {
 				"url":  str("Base web URL, for self-managed installations.", "https://github.example.com"),
 				"required_checks": array("Status contexts the trunk requires beyond flow's own gate.",
 					str("One status context, matched exactly.", "test")),
-				"auth": authSchema(),
+				"auto_merge": boolean("Let a pull request land itself once its gate and checks are green."),
+				"auth":       authSchema(),
 			}, "type", "repo"),
 
 			"tracker": object("The ticket system: the board, its columns and its items.", props{

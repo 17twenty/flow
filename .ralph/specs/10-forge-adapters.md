@@ -581,3 +581,53 @@ duplicate-pipeline hazards). MR closing issues: `GET
   single `mergeable` bool computed from conflicts alone — it applies
   `block_on_outdated_branch` at merge time and never says so beforehand — so
   a Gitea pull request is conflicted or clean and never behind.
+
+- **Arming auto-merge is one method and three quite different endpoints
+  (issue #167).** GitHub has a mutation of its own, `enablePullRequestAutoMerge`,
+  and no REST equivalent — REST's merge endpoint merges now, which is not a
+  thing flow has any business doing from a gate. Gitea and GitLab have only
+  that merge endpoint, told to wait by a flag: `merge_when_checks_succeed`
+  and `merge_when_pipeline_succeeds`. Flow always sends the flag explicitly
+  rather than relying on a zero value, because a payload that dropped it
+  would land the branch.
+
+- **A condition only the provider knows comes back as invalid input.** A
+  repository with the setting off, a draft, an approval still owing, a merge
+  style the repository does not allow: GitHub answers all of them with a
+  GraphQL error of type `UNPROCESSABLE`, and Gitea and GitLab with 405. The
+  405 is rewritten, because `method not allowed` otherwise reads as a
+  provider that cannot do the thing at all when it is this pull request that
+  cannot — and the difference decides whether a caller ever asks again. The
+  provider's own sentence is carried through in the `why`.
+
+- **Only GitLab is asked whether arming would merge.** GitLab looks for
+  something to wait for and, finding nothing, merges on the spot, so the
+  adapter refuses to arm a project that does not require its pipeline to
+  pass. GitHub and Gitea queue the request either way.
+
+- **Idempotence is bought differently on each.** GitHub answers the pending
+  request in the same round trip as the node id its mutation needs, so flow
+  never arms what is armed. GitLab reads the merge request first. Gitea shows
+  the schedule on no endpoint at all — which is what `auto_merge.verify:
+  false` records — so the second arming is forgiven from its 409 rather than
+  avoided.
+
+- **GitLab's rename is read both ways round and written only the old way.**
+  17.11 renamed `merge_when_pipeline_succeeds` to `auto_merge` and deprecated
+  the first; a deprecated v4 parameter is removed when v4 is, so for as long
+  as flow speaks `/api/v4` the old name reaches every installation and the
+  new one reaches none the old one does not. Sending both was the first
+  reading, and it is a line no test can fail: there is no release that
+  refuses the old name, which is the whole reason the old name is the one to
+  send. The reading is the other way round, and accepts either, because the
+  two directions fail differently — a parameter an installation does not know
+  is a refusal flow sees and reports, while a field it has stopped answering
+  is a quiet "nothing is armed" that would have flow arm the same merge
+  request every push.
+
+- **The merge method is flow's vocabulary, validated everywhere and sent
+  where it is wanted.** GitHub takes it as `PullRequestMergeMethod` and Gitea
+  as a merge style; GitLab has no per-merge-request method at all and decides
+  from the project's own settings, which `forge.merge_settings` already asks
+  for. GitLab still refuses a name flow does not have, so a caller's mistake
+  is a mistake on every provider rather than on two of them.

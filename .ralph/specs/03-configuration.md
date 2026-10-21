@@ -542,3 +542,10 @@ gate, relaxed policy).
   in its own list, naming the same sibling twice, or writing something that is
   not `owner/name` are errors for the same reason: each is a line that cannot
   mean what it says.
+
+- **§1 `forge.auto_merge` is a boolean, default false (issue #167).** It says
+  the team wants work to land itself once its gate and its checks are green.
+  It does two things, which is why it is one key rather than two: `flow plan`
+  asks for the repository setting under `forge.merge_settings`, and
+  `flow check pr` arms each pull request it judges. Validation refuses it for
+  a forge whose capability declaration cannot `auto_merge`.

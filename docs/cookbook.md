@@ -446,3 +446,47 @@ same work, so the gate and the fortnightly audit cannot disagree about it.
 
 To take it back, delete the key — through a pull request a person approves,
 which is the only way the key ever changes.
+
+---
+
+## 9. Letting green work land without waiting for somebody to look
+
+An approval given at eleven at night is a queue that stops until morning,
+unless something is listening. Two things have to be true:
+
+**The repository must permit it.** On GitHub that is *Settings → General →
+Pull Requests → Allow auto-merge*, or:
+
+```sh
+curl -s -X PATCH -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/$REPO \
+  -d '{"allow_auto_merge":true}'
+```
+
+`flow plan` asks for this under `forge.merge_settings` and `flow apply` sets
+it where the credential has admin. Where it does not — which is this
+repository, whose machine user has `push` and no more — flow files a
+follow-up ticket naming the step instead. Gitea and GitLab have no such
+setting: they let any pull request be armed, and flow observes them as
+permitting it.
+
+**The team must say it wants it**, in `.flow.yaml`:
+
+```yaml
+forge:
+  auto_merge: true
+```
+
+`flow check pr` then arms each pull request it judges, *after* publishing the
+status, the comment and the ticket moves — an armed pull request whose gate is
+already green merges on the spot, so arming any earlier would aim the rest of
+the run at a pull request the forge had closed.
+
+Nothing about the arming can fail a gate. A forge that cannot do it, a
+repository with it switched off, a draft, a credential that may not merge:
+each means this pull request waits for a person, which is what it would have
+done anyway. `flow check pr` says which it was in its own output.
+
+What auto-merge does **not** do is lower the bar. The pull request still waits
+for everything the branch requires — `flow/policy` included, and
+`agent.human_review` inside it. It lands the moment a human approves, rather
+than the next time a human looks.

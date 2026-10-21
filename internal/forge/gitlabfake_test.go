@@ -83,6 +83,13 @@ type gitLabFake struct {
 	// squashed one carries both commits and an unsquashed one only the
 	// merge commit.
 	squashCommit bool
+	// armed are the merge requests set to land themselves. GitLab answers
+	// the arrangement on a listing as well as on the merge request, which
+	// is a reading the adapter has to drop rather than pass on.
+	armed map[int]bool
+	// legacyAutoMerge answers only `merge_when_pipeline_succeeds`, as an
+	// installation from before 17.11 renamed it does.
+	legacyAutoMerge bool
 	// approvers are logins that approved a merge request without ever
 	// being one of its reviewers, which GitLab allows and reports only
 	// from the approvals endpoint.
@@ -146,6 +153,7 @@ func newGitLabServer(t *testing.T, fx coretest.ForgeFixture) (*gitLabFake, *http
 		closes:       map[int][]string{},
 		external:     map[int]bool{},
 		squashCommit: true,
+		armed:        map[int]bool{},
 		approvers:    map[int][]string{},
 		paths:        map[int][]string{},
 		statuses:     map[string][]glStatus{},
@@ -180,6 +188,10 @@ func newGitLabServer(t *testing.T, fx coretest.ForgeFixture) (*gitLabFake, *http
 		SquashCommitTemplate: template,
 		RemoveSourceBranch:   *settings.RemoveSourceBranch,
 		Permissions:          glPermissions{Project: &glAccess{AccessLevel: level}},
+		// GitLab holds "the trunk's checks must pass" on the project
+		// rather than on the branch, which is where the adapter reads
+		// it back from as well.
+		PipelineMustSucceed: fx.Protections[fx.Repo.DefaultBranch].StrictChecks,
 	}
 
 	// The trunk's history, oldest first, and a commit's ancestry with it.
@@ -467,6 +479,36 @@ func (f *gitLabFake) serveProject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// mergeNow is PUT /merge_requests/:iid/merge, which merges a merge request
+// and also promises to merge one, told apart by the flag.
+//
+// GitLab refuses with 405 whenever it will not make the promise — a draft, an
+// approval still owing — and that is the only answer a caller gets for any of
+// them. Arming again is not a refusal at all: GitLab happily re-arms what is
+// armed, so the fake accepts it rather than inventing a conflict GitLab does
+// not have.
+func (f *gitLabFake) mergeNow(w http.ResponseWriter, r *http.Request, pr *core.PullRequest) {
+	body, ok := glBody[glMergeNow](w, r)
+	if !ok {
+		return
+	}
+	if !body.MergeWhenPipelineSucceeds {
+		glRefuse(w, http.StatusMethodNotAllowed, "the fake only ever promises to merge, never merges")
+		return
+	}
+	switch {
+	case pr.State != core.PRStateOpen:
+		glRefuse(w, http.StatusNotFound, "404 Not found")
+	case pr.Draft:
+		glRefuse(w, http.StatusMethodNotAllowed, "405 Method Not Allowed")
+	case body.SHA != "" && body.SHA != pr.HeadSHA:
+		glRefuse(w, http.StatusConflict, "409 Conflict: SHA does not match HEAD of source branch")
+	default:
+		f.armed[pr.Number] = true
+		glWrite(w, http.StatusOK, f.mergeRequest(*pr))
+	}
+}
+
 // serveMergeRequests answers the merge request endpoints: the listing, one
 // merge request, its reviewers, its approvals, the issues it closes, its
 // diffs and its notes.
@@ -503,6 +545,8 @@ func (f *gitLabFake) serveMergeRequests(w http.ResponseWriter, r *http.Request, 
 		pr.Title, pr.Body = body.Title, body.Description
 		pr.UpdatedAt = f.now()
 		glWrite(w, http.StatusOK, f.mergeRequest(*pr))
+	case len(rest) == 2 && rest[1] == "merge" && r.Method == http.MethodPut:
+		f.mergeNow(w, r, pr)
 	case len(rest) == 2 && rest[1] == "reviewers" && r.Method == http.MethodGet:
 		glPage(f, w, r, f.reviewers(iid))
 	case len(rest) == 2 && rest[1] == "approvals" && r.Method == http.MethodGet:
@@ -1101,6 +1145,14 @@ func (f *gitLabFake) mergeRequest(pr core.PullRequest) glMergeRequest {
 		out.ClosedAt = &at
 	}
 	out.DetailedMergeStatus, out.MergeStatus = gitLabMergeStatus(pr)
+	if f.armed[pr.Number] {
+		// 17.11 renamed the field and went on sending the old one, so
+		// an installation at that release answers both. An older one
+		// answers only the old name, which is what legacyAutoMerge is
+		// for.
+		out.AutoMergeEnabled = !f.legacyAutoMerge
+		out.MergeWhenPipelineSucceeds = true
+	}
 	return out
 }
 

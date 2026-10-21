@@ -899,6 +899,35 @@ func TestGitHubReportsMergeSettingsTheProviderDidNotKeep(t *testing.T) {
 	}
 }
 
+// TestGitHubLeavesAnAutoMergeSettingNobodyAskedAbout.
+//
+// Every other merge setting is stated both ways round, because leaving one on
+// is a way for a commit of the wrong shape to land. Auto-merge is the one
+// flow only ever turns on: a configuration without `forge.auto_merge` asks
+// for nothing (spec 06 §4), and a repository that permitted its pull requests
+// to land themselves before flow ever saw it goes on permitting it. The write
+// used to carry the field unconditionally, which made every `flow apply`
+// quietly switch it off.
+func TestGitHubLeavesAnAutoMergeSettingNobodyAskedAbout(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.Repo.Merge.AllowAutoMerge = true
+	_, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	want := fx.Repo.Merge
+	want.AllowAutoMerge = false // the team never mentioned it
+	if err := adapter.SetMergeSettings(t.Context(), want); err != nil {
+		t.Fatalf("SetMergeSettings: %v", err)
+	}
+	repo, err := adapter.Repo(t.Context())
+	if err != nil {
+		t.Fatalf("Repo: %v", err)
+	}
+	if !repo.Merge.AllowAutoMerge {
+		t.Error("flow turned auto-merge off on a repository whose team had never asked it to")
+	}
+}
+
 func TestSameProtectionComparesEveryFieldProtectionHas(t *testing.T) {
 	kind := reflect.TypeOf(core.Protection{})
 	for i := range kind.NumField() {
@@ -1550,5 +1579,78 @@ func TestGitHubBelievesAConflictEvenWhileItIsStillThinking(t *testing.T) {
 	}
 	if pr.Mergeability != core.MergeabilityConflicted {
 		t.Errorf("Mergeability = %q, want %q", pr.Mergeability, core.MergeabilityConflicted)
+	}
+}
+
+// TestGitHubReadsBeforeItArms: the gate runs on every push, and an arming is
+// a mutation. GitHub answers the pending request in the same round trip as
+// the node id the mutation needs, so flow already knows before it asks — and
+// a second arming that cost nothing would still be a write in the audit log
+// of every repository flow watches.
+func TestGitHubReadsBeforeItArms(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.Repo.Merge.AllowAutoMerge = true
+	fx.PullRequests[0].Draft = false
+	fake, srv := newGitHubServer(t, fx)
+	github := newGitHubAdapter(t, srv, fx, nil)
+
+	for range 3 {
+		if err := github.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); err != nil {
+			t.Fatalf("ArmAutoMerge: %v", err)
+		}
+	}
+	if fake.armings != 1 {
+		t.Errorf("flow armed #1 %d times, want 1", fake.armings)
+	}
+}
+
+// TestGitHubArmsWithTheStrategyItWasAsked: the arming says how the pull
+// request is to land, and GitHub holds it until the checks pass. A promise
+// made with the wrong strategy is a commit of the wrong shape on the trunk,
+// published by nobody, hours after the last person looked — which is the one
+// failure auto-merge could introduce that a person merging never would.
+func TestGitHubArmsWithTheStrategyItWasAsked(t *testing.T) {
+	for _, tc := range []struct{ asked, sent string }{
+		{core.MergeMethodSquash, "SQUASH"},
+		{core.MergeMethodMerge, "MERGE"},
+		{core.MergeMethodRebase, "REBASE"},
+	} {
+		t.Run(tc.asked, func(t *testing.T) {
+			fx := coretest.ContractForge()
+			fx.Repo.Merge.AllowAutoMerge = true
+			fx.PullRequests[0].Draft = false
+			fake, srv := newGitHubServer(t, fx)
+			github := newGitHubAdapter(t, srv, fx, nil)
+
+			if err := github.ArmAutoMerge(t.Context(), 1, tc.asked); err != nil {
+				t.Fatalf("ArmAutoMerge: %v", err)
+			}
+			if got := fake.armed[1]; got != tc.sent {
+				t.Errorf("flow promised to land #1 as %q, want %q: GitHub takes the strategy with the arming and uses it when nobody is watching", got, tc.sent)
+			}
+		})
+	}
+}
+
+// TestGitHubReportsARefusalOnlyGitHubCouldMake: every condition that stops an
+// arming comes back as one error type, and flow reads it as the request being
+// wrong rather than the provider being unwell. A caller that could not tell
+// the two apart would either fail a gate over a repository setting or retry a
+// draft for ever.
+func TestGitHubReportsARefusalOnlyGitHubCouldMake(t *testing.T) {
+	fx := coretest.ContractForge() // auto-merge is off on the repository
+	fx.PullRequests[0].Draft = false
+	_, srv := newGitHubServer(t, fx)
+	github := newGitHubAdapter(t, srv, fx, nil)
+
+	err := github.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash)
+	if !errors.Is(err, core.ErrValidation) {
+		t.Fatalf("ArmAutoMerge = %v, want %v", err, core.ErrValidation)
+	}
+	if !strings.Contains(err.Error(), "not allowed for this repository") {
+		t.Errorf("the refusal drops what GitHub said about it:\n%v", err)
+	}
+	if err := github.ArmAutoMerge(t.Context(), 404, core.MergeMethodSquash); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("arming a pull request GitHub does not have = %v, want %v", err, core.ErrNotFound)
 	}
 }

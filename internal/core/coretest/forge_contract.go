@@ -47,6 +47,7 @@ func ForgeContractCases() []ForgeContractCase {
 		{Name: "protection is read effectively and written additively", Run: forgeProtection},
 		{Name: "merge settings", Run: forgeMergeSettings},
 		{Name: "where a squash takes its words from", Run: forgeSquashText},
+		{Name: "a pull request can be left to land itself", Run: forgeArmAutoMerge},
 		{Name: "a commit status replaces the last verdict from the same context", Run: forgeCommitStatus},
 		{Name: "a commit status says who it is and when it was written", Run: forgeCommitStatusIdentity},
 		{Name: "a comment is edited in place, found by its marker, and deleted once", Run: forgeComments},
@@ -512,6 +513,7 @@ func forgeMergeSettings(t *testing.T, newForge NewForge) {
 		SquashTitle:         core.SquashTitlePR,
 		SquashMessage:       core.SquashMessagePRBody,
 		DeleteBranchOnMerge: true,
+		AllowAutoMerge:      true,
 	}
 	if err := forge.SetMergeSettings(t.Context(), want); err != nil {
 		t.Fatalf("SetMergeSettings: %v", err)
@@ -575,6 +577,81 @@ func forgeSquashText(t *testing.T, newForge NewForge) {
 		t.Errorf("%s cannot be told where a squash takes its words from, but asking changed the answer from %q/%q to %q/%q",
 			forge.Kind(), before.Merge.SquashTitle, before.Merge.SquashMessage,
 			after.Merge.SquashTitle, after.Merge.SquashMessage)
+	}
+}
+
+// armable is the contract fixture with everything an arming needs in place:
+// a repository that permits it, a trunk that insists on its checks, and a
+// pull request that is open and out of draft.
+//
+// The trunk's insistence is not decoration. A provider whose merge endpoint
+// is also its arming endpoint will land a merge request on the spot when
+// nothing is left to wait for, so "merge when the checks pass" only means
+// what it says where the checks are required. The contract asks about the
+// arrangement, and an arrangement is only possible where there is a wait.
+func armable() ForgeFixture {
+	fx := ContractForge()
+	fx.Repo.Merge.AllowAutoMerge = true
+	protection := fx.Protections[fx.Repo.DefaultBranch]
+	protection.StrictChecks = true
+	fx.Protections[fx.Repo.DefaultBranch] = protection
+	return fx
+}
+
+// forgeArmAutoMerge: a pull request can be left to land itself once what it
+// is waiting for has gone green, asking twice changes nothing, and a forge
+// that has no such thing says so rather than pretending (spec 09 §1).
+func forgeArmAutoMerge(t *testing.T, newForge NewForge) {
+	fx := armable()
+	// #1 is a draft in the fixture, and a draft is nothing a forge will
+	// promise to land. The draft itself is asked about further down.
+	fx.PullRequests[0].Draft = false
+	forge := newForge(t, fx)
+
+	if !forge.Capabilities().Can(core.CapAutoMerge) {
+		err := forge.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash)
+		if !errors.Is(err, core.ErrUnsupported) {
+			t.Errorf("%s declares it cannot arm auto-merge, and ArmAutoMerge answered %v; a caller cannot tell a forge that did nothing from one that cannot",
+				forge.Kind(), err)
+		}
+		return
+	}
+
+	if err := forge.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); err != nil {
+		t.Fatalf("ArmAutoMerge(1): %v", err)
+	}
+	if err := forge.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); err != nil {
+		t.Errorf("arming #1 a second time: %v; the gate runs on every push, so an arming that cannot be repeated fails every run after the first", err)
+	}
+
+	if forge.Capabilities().CanVerify(core.CapAutoMerge) {
+		armed, err := forge.PullRequest(t.Context(), 1)
+		if err != nil {
+			t.Fatalf("PullRequest(1): %v", err)
+		}
+		if !armed.AutoMerge {
+			t.Error("#1 was armed and PullRequest does not say so, so the next run would arm it again")
+		}
+		prs, err := forge.PullRequests(t.Context(), core.PRQuery{State: core.PRStateOpen})
+		if err != nil {
+			t.Fatalf("PullRequests: %v", err)
+		}
+		for _, pr := range prs {
+			if pr.AutoMerge {
+				t.Errorf("the listing says #%d is armed; no listing carries that reading, so an engine that believed one would answer differently from provider to provider",
+					pr.Number)
+			}
+		}
+	}
+
+	if err := forge.ArmAutoMerge(t.Context(), 1, "cherry-pick"); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("ArmAutoMerge with a method flow has no name for = %v, want %v", err, core.ErrValidation)
+	}
+
+	draft := newForge(t, armable())
+	if err := draft.ArmAutoMerge(t.Context(), 1, core.MergeMethodSquash); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("arming a draft = %v, want %v: only the forge knows it would refuse, so the refusal has to come back as one",
+			err, core.ErrValidation)
 	}
 }
 

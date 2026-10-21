@@ -830,12 +830,87 @@ func (g *GitLab) SetMergeSettings(ctx context.Context, s core.MergeSettings) err
 	if !templated {
 		got.SquashTitle, got.SquashMessage = s.SquashTitle, s.SquashMessage
 	}
+	// Auto-merge is not a project setting here: GitLab lets any merge
+	// request be armed and offers nothing to turn that off. The write is
+	// judged on what it was about, the way the squash template is, rather
+	// than on a field the call never carried (spec 10 §4).
+	got.AllowAutoMerge = s.AllowAutoMerge
 	if got != s {
 		return core.Errorf(core.ErrConflict, "set the merge settings of %s", g.Slug()).
 			WithWhy("GitLab kept %+v rather than %+v", got, s).
 			WithFix("check whether a group policy fixes how this project merges")
 	}
 	return nil
+}
+
+// ArmAutoMerge sets a merge request to land itself once its pipeline passes.
+//
+// GitLab's merge endpoint is the same one that merges now, and which of the
+// two it does is not settled by the flag alone. Asked to wait, GitLab looks
+// for something to wait for; finding nothing, it merges on the spot. A
+// project with no pipeline requirement is therefore one where arming means
+// merging, and flow refuses rather than landing work from a gate nobody has
+// asked to merge anything (spec 10 §4).
+//
+// Flow reads the merge request first, which is what makes the call
+// idempotent. The flag it then sends is the older spelling: 17.11 renamed
+// `merge_when_pipeline_succeeds` to `auto_merge` and deprecated the first,
+// and a deprecated v4 parameter goes when v4 does, so the old name is the one
+// every installation flow can reach understands (spec 10 §4).
+//
+// The merge method is validated and then not sent. GitLab decides how a merge
+// request lands from the project's own `merge_method` and `squash_option`,
+// which is what `forge.merge_settings` already asks for; a per-merge-request
+// method is not something GitLab has.
+func (g *GitLab) ArmAutoMerge(ctx context.Context, number int, method string) error {
+	if !core.ValidMergeMethod(method) {
+		return core.Errorf(core.ErrValidation, "arm auto-merge on !%d of %s", number, g.Slug()).
+			WithWhy("%q is not a merge method", method).
+			WithFix("ask for squash, merge or rebase")
+	}
+
+	project, err := g.project(ctx)
+	if err != nil {
+		return core.Explain(err, "arm auto-merge on !%d of %s", number, g.Slug())
+	}
+	if !project.PipelineMustSucceed {
+		return core.Errorf(core.ErrValidation, "arm auto-merge on !%d of %s", number, g.Slug()).
+			WithWhy("%s does not require a pipeline to pass, so GitLab would merge this now rather than when its checks do", g.Slug()).
+			WithFix("name the checks the trunk requires in forge.required_checks and run `flow apply`")
+	}
+
+	var current glMergeRequest
+	path := g.path("merge_requests", strconv.Itoa(number))
+	if _, err := g.do(ctx, core.Request{Path: path, Out: &current}); err != nil {
+		return core.Explain(err, "read merge request !%d of %s", number, g.Slug())
+	}
+	if pr := current.toPullRequest(); pr.AutoMerge {
+		return nil
+	}
+
+	g.writing.Lock()
+	defer g.writing.Unlock()
+
+	req := core.Request{
+		Method: http.MethodPut,
+		Path:   path + "/merge",
+		Body:   glMergeNow{MergeWhenPipelineSucceeds: true, SHA: current.SHA},
+	}
+	switch _, err := g.do(ctx, req); {
+	case err == nil:
+		return nil
+	case errors.Is(err, core.ErrUnsupported):
+		// GitLab answers 405 for a merge request it will not promise
+		// to land: a draft, an approval still owing, a pipeline that
+		// has failed. The status says "method not allowed", which flow
+		// reads as a provider that cannot do the thing at all — and
+		// here it is this merge request that cannot.
+		return core.Errorf(core.ErrValidation, "arm auto-merge on !%d of %s", number, g.Slug()).
+			WithWhy("%s", refusedCondition(err)).
+			WithFix("a merge request has to be out of draft and otherwise ready before GitLab will promise to land it")
+	default:
+		return core.Explain(err, "arm auto-merge on !%d of %s", number, g.Slug())
+	}
 }
 
 // CommitStatuses returns the latest verdict from each context on a commit,

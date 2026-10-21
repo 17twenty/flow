@@ -397,6 +397,29 @@ func TestDesiredMergeSettings(t *testing.T) {
 	}
 }
 
+// TestDesiredAsksForAutoMergeOnlyWhereItWasAskedFor.
+//
+// The other merge strategies are stated both ways round: the one the team
+// chose is allowed and the rest are refused, because leaving one on is a way
+// for a commit of the wrong shape to land. Auto-merge is not like that. Two
+// of the three forges have no setting for it at all, so a desired "false"
+// would be drift nobody could ever clear, and the whole of TestDesiredMerge-
+// Settings above is the other half of this: those fields are compared with
+// maps.Equal, so a configuration that did not ask has to say nothing.
+func TestDesiredAsksForAutoMergeOnlyWhereItWasAskedFor(t *testing.T) {
+	cfg := preset(t, config.PresetLeanKanban)
+	cfg.Forge.AutoMerge = true
+
+	item, ok := desired(t, cfg).Find(core.ItemForgeMergeSettings)
+	if !ok {
+		t.Fatal("no merge settings are wanted")
+	}
+	if got := item.Items[0].Field(engine.FieldAllowAutoMerge); got != "true" {
+		t.Errorf("the merge settings ask for %s=%q, want %q: a team that wants its work to land itself needs the setting turned on",
+			engine.FieldAllowAutoMerge, got, "true")
+	}
+}
+
 // TestDesiredProtectionIsWhatTheConfigurationImplies: flow protects the trunk
 // and does not invent a review policy nobody wrote down (spec 06 §4).
 func TestDesiredProtectionIsWhatTheConfigurationImplies(t *testing.T) {

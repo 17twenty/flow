@@ -88,6 +88,11 @@ type gtRepo struct {
 // leaving the body to its own trailers. So the two fields are constants here
 // rather than a reading, and `squash_text.set: false` in the declaration is
 // what stops flow proposing to change them (spec 05 §2, spec 10 §3).
+//
+// Auto-merge is a constant for the opposite reason: Gitea has no setting that
+// could forbid it, so every repository permits it and "true" is the only
+// honest reading. A false here would describe a refusal no Gitea has ever
+// made, and flow would propose a change to a setting that does not exist.
 func (r gtRepo) toRepoInfo() core.RepoInfo {
 	return core.RepoInfo{
 		Owner:         r.Owner.Login,
@@ -102,6 +107,7 @@ func (r gtRepo) toRepoInfo() core.RepoInfo {
 			SquashTitle:         core.SquashTitlePR,
 			SquashMessage:       core.SquashMessageBlank,
 			DeleteBranchOnMerge: r.DeleteBranch,
+			AllowAutoMerge:      true,
 		},
 	}
 }
@@ -133,6 +139,33 @@ func mergeRequestGitea(s core.MergeSettings) gtRepoRequest {
 		AllowMergeCommit: s.AllowMerge,
 		AllowRebase:      s.AllowRebase,
 		DeleteBranch:     s.DeleteBranchOnMerge,
+	}
+}
+
+// gtMergeRequest is the body of POST /repos/{owner}/{repo}/pulls/{index}/merge.
+//
+// The same endpoint merges now and merges later: with MergeWhenChecksSucceed
+// the forge schedules it, and without it the pull request lands immediately.
+// Flow only ever sends the first, and sends it explicitly rather than relying
+// on a zero value, because the field being dropped from the payload would
+// turn an arming into a merge.
+type gtMergeRequest struct {
+	Do                     string `json:"Do"`
+	MergeWhenChecksSucceed bool   `json:"merge_when_checks_succeed"`
+}
+
+// giteaMergeStyle is Gitea's name for a merge method. Gitea offers more of
+// them than flow has names for; the ones flow does name map one to one.
+func giteaMergeStyle(method string) (string, bool) {
+	switch method {
+	case core.MergeMethodSquash:
+		return "squash", true
+	case core.MergeMethodMerge:
+		return "merge", true
+	case core.MergeMethodRebase:
+		return "rebase", true
+	default:
+		return "", false
 	}
 }
 
