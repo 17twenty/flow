@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -413,4 +415,122 @@ func TestInitDropsACredentialFromTheRemote(t *testing.T) {
 	if !strings.Contains(config, "  repo: acme/api") {
 		t.Errorf("the repository was not read from the remote:\n%s", config)
 	}
+}
+
+// readWorkflow reads the gate workflow init scaffolds.
+func readWorkflow(t *testing.T, dir string) string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "flow.yml"))
+	if err != nil {
+		t.Fatalf("the workflow was not written: %v", err)
+	}
+	return string(content)
+}
+
+// asBuild runs fn with flow reporting itself as the given version, which is
+// what ldflags inject into a release binary.
+func asBuild(t *testing.T, v string, fn func()) {
+	t.Helper()
+	was := version
+	t.Cleanup(func() { version = was })
+	version = v
+	fn()
+}
+
+// asInstalledBuild runs fn with flow built the way `go install` builds it:
+// nothing injected, and the module version the only record of which release
+// it is.
+func asInstalledBuild(t *testing.T, module string, fn func()) {
+	t.Helper()
+	wasRead := readBuildInfo
+	t.Cleanup(func() { readBuildInfo = wasRead })
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Path: "github.com/17twenty/flow", Version: module}}, true
+	}
+	asBuild(t, devVersion, fn)
+}
+
+// The workflow init writes has to install a flow that exists, and the obvious
+// one is the flow that wrote it: a gate judging a pull request should be the
+// build that set the repository up. The template shipped a version nobody had
+// ever tagged, so every repository flow configured got a workflow whose first
+// step failed (issue #186).
+func TestTheWorkflowInitWritesInstallsTheBuildThatWroteIt(t *testing.T) {
+	asBuild(t, "v1.4.0", func() {
+		dir := initRepo(t, "git@github.com:acme/api.git")
+		if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+			t.Fatalf("exited %d: %s", code, stderr)
+		}
+		workflow := readWorkflow(t, dir)
+		if !strings.Contains(workflow, "FLOW_VERSION: v1.4.0") {
+			t.Errorf("the workflow does not install the build that wrote it:\n%s", workflow)
+		}
+		if strings.Contains(workflow, "FLOW_VERSION: latest") {
+			t.Errorf("the workflow kept the shipped fallback:\n%s", workflow)
+		}
+	})
+}
+
+// A build with no release behind it has nothing to pin to, and must not
+// invent one: spec 16 §2 guarantees @latest always resolves, so that is what
+// it leaves in place.
+func TestAnUnreleasedBuildWritesAWorkflowThatStillInstalls(t *testing.T) {
+	asBuild(t, devVersion, func() {
+		dir := initRepo(t, "git@github.com:acme/api.git")
+		if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+			t.Fatalf("exited %d: %s", code, stderr)
+		}
+		if workflow := readWorkflow(t, dir); !strings.Contains(workflow, "FLOW_VERSION: latest") {
+			t.Errorf("an unreleased build did not fall back to latest:\n%s", workflow)
+		}
+	})
+}
+
+// templateReader finds every place the shipped templates are read.
+var templateReader = regexp.MustCompile(`assets\.Templates\((.*)\)`)
+
+// A workflow reaches a repository two ways: init copies it into the working
+// tree, and the forge.files proposal writes it when apply finds it missing.
+// Both are the same bytes only while every reader asks for the same build, so
+// a second answer to "which flow is this" is a drift waiting to happen.
+func TestEveryReadingOfTheTemplatesNamesTheSameBuild(t *testing.T) {
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	found := 0
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, match := range templateReader.FindAllStringSubmatch(string(content), -1) {
+			found++
+			if arg := strings.TrimSpace(match[1]); arg != "buildVersion()" {
+				t.Errorf("%s reads the templates as %q, not as buildVersion()", path, arg)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("nothing in the command surface reads the templates")
+	}
+}
+
+// `go install` injects no ldflags, so an installed binary knows which release
+// it is only from the module it was built from. That is still a release, and
+// the workflow it writes must pin to it rather than drifting to whatever
+// @latest resolves to months later.
+func TestAnInstalledBuildPinsTheReleaseItWasInstalledAt(t *testing.T) {
+	asInstalledBuild(t, "v0.3.0", func() {
+		dir := initRepo(t, "git@github.com:acme/api.git")
+		if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes"); code != core.ExitOK {
+			t.Fatalf("exited %d: %s", code, stderr)
+		}
+		if workflow := readWorkflow(t, dir); !strings.Contains(workflow, "FLOW_VERSION: v0.3.0") {
+			t.Errorf("an installed build did not pin the release it came from:\n%s", workflow)
+		}
+	})
 }

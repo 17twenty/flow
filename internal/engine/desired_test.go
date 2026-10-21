@@ -19,7 +19,7 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden files")
 
 // testTemplates is the shipped file templates, read from the tree. The root
-// passes assets.Templates(); the engine's tests use the same bytes, so that a
+// passes assets.Templates(version); the engine's tests use the same bytes, so that a
 // template nobody can read is a failing test rather than a broken proposal.
 func testTemplates(t *testing.T) fs.FS {
 	t.Helper()

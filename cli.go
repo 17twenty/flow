@@ -298,7 +298,7 @@ func (a *Context) inspect() (*session, error) {
 		return s, nil
 	}
 
-	templates, err := assets.Templates()
+	templates, err := assets.Templates(buildVersion())
 	if err != nil {
 		return nil, fmt.Errorf("read the templates: %w", err)
 	}

@@ -21,8 +21,15 @@ func Capabilities() (fs.FS, error) { return fs.Sub(FS, "capabilities") }
 // Presets returns the configuration presets (spec 03 §7).
 func Presets() (fs.FS, error) { return fs.Sub(FS, "presets") }
 
-// Templates returns the file templates written by flow init (spec 02 §2).
-func Templates() (fs.FS, error) { return fs.Sub(FS, "templates") }
+// Templates returns the file templates written by flow init (spec 02 §2),
+// with the workflow naming the given build of flow for its jobs to install.
+func Templates(version string) (fs.FS, error) {
+	sub, err := fs.Sub(FS, "templates")
+	if err != nil {
+		return nil, err
+	}
+	return pinned(sub, version)
+}
 
 // Schema returns the generated JSON Schema documents (spec 03 §6).
 func Schema() (fs.FS, error) { return fs.Sub(FS, "schema") }

@@ -294,3 +294,22 @@ Secrets never printed.
   it; and a whole invocation written in code inside a section — the hook
   section says it runs `flow check commit --fix` — belongs to the command it
   names, not to the section it sits in.
+- **§2 the workflow init writes installs the build that wrote it (issue
+  #186).** The shipped template pinned `FLOW_VERSION: v0.0.0`, a version
+  nobody has ever tagged, so every repository `flow init` configured got a
+  workflow whose first step — `go install github.com/17twenty/flow@${FLOW_VERSION}`
+  — failed before flow was asked anything. This repository never noticed
+  because its own workflow builds from the checkout (spec 17 §5) and installs
+  no release at all. A build that knows its release pins to it, so the gate
+  judging a pull request is the flow that set the repository up; a build with
+  no release behind it leaves the shipped `latest`, which spec 16 §2
+  guarantees always resolves. Inventing a version is the bug, not the
+  fallback.
+- **§2 the pin is applied to the template tree, not to the one file (issue
+  #186).** A workflow reaches a repository two ways — `init` copies it into
+  the working tree, and the `forge.files` proposal carries the same bytes for
+  `apply` to write when it is missing — and the two are the same bytes only
+  while both read the same thing. `assets.Templates` therefore takes the
+  version and every reader passes `buildVersion()`, the same answer `flow
+  version` prints. Substituting in `init` alone would have left `apply`
+  writing the placeholder.

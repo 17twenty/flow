@@ -388,7 +388,7 @@ var invocation = regexp.MustCompile(`\bflow ((?:[a-z][a-z-]*)(?: [a-z][a-z-]*)*)
 // `flow hook run`, which has never existed: a snippet nobody runs in CI is a
 // promise only a test can keep (spec 02 §2).
 func TestShippedTemplatesInvokeRealCommands(t *testing.T) {
-	templates, err := assets.Templates()
+	templates, err := assets.Templates("dev")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestShippedTemplatesInvokeRealCommands(t *testing.T) {
 // that can catch a mangled one is this test. YAML is well able to accept an
 // edit and mean something else by it.
 func TestShippedTemplatesAreWellFormedYAML(t *testing.T) {
-	templates, err := assets.Templates()
+	templates, err := assets.Templates("dev")
 	if err != nil {
 		t.Fatal(err)
 	}

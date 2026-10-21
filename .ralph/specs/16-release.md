@@ -16,3 +16,14 @@ release workflow (`.github/workflows/release.yml`) uses external tools:
 Doctor verifies the result (`live.deploys.lag` with `max_lag: 2h`).
 `go install github.com/17twenty/flow@latest` must always work: `package main` at
 root, no replace directives, no cgo, generated schema committed.
+
+## Decisions
+
+- **`-X main.version` is what a scaffolded workflow installs (issue #186).**
+  The release build injects the tag, `flow version` reports it, and the
+  workflow `flow init` writes pins to it (spec 02 §2). So the ldflags above
+  are not only how flow describes itself: they are how every repository flow
+  configures gets a gate that installs a flow that exists. A release that
+  forgets them produces binaries whose `init` falls back to `@latest`, which
+  still works — the guarantee at the end of this section is what makes the
+  fallback safe.
