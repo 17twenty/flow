@@ -313,3 +313,11 @@ Secrets never printed.
   version and every reader passes `buildVersion()`, the same answer `flow
   version` prints. Substituting in `init` alone would have left `apply`
   writing the placeholder.
+- **§2 a scaffolded job that runs flow checks the repository out (issue
+  #188).** Every flow command reads `.flow.yaml` out of the working tree, so
+  the `gate` and `deploy` jobs — which had `setup-go`, an install and nothing
+  else — could not run at all. This repository never noticed for the same
+  reason it did not notice #186: its own workflow builds flow from the
+  checkout, so every job has the repository whether it asked for one or not.
+  The rule is read off the shipped workflow by a test rather than written
+  down, so the next job added to it cannot forget.

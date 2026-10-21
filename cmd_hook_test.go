@@ -456,3 +456,90 @@ func TestShippedTemplatesAreWellFormedYAML(t *testing.T) {
 		t.Error("no template is YAML; this test is not testing anything")
 	}
 }
+
+// workflowJobs is as much of a GitHub workflow as this test reads: each job's
+// steps, in the order the runner takes them.
+type workflowJobs struct {
+	Jobs map[string]struct {
+		Steps []struct {
+			Uses string `yaml:"uses"`
+			Run  string `yaml:"run"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+// runsFlow reports whether a step's shell line invokes a flow command, as
+// opposed to merely naming the module it installs.
+func runsFlow(run string) bool {
+	for _, match := range invocation.FindAllStringSubmatch(run, -1) {
+		if words := strings.Fields(match[1]); len(words) > 0 && topLevelCommands[words[0]] {
+			return true
+		}
+	}
+	return false
+}
+
+// Every flow command reads the configuration out of the working tree, so a
+// job that runs one without checking the repository out cannot do anything at
+// all. The shipped workflow's gate and deploy jobs did exactly that, and this
+// repository never noticed: its own workflow builds flow from the checkout,
+// so every job has the repository whether it asked for it or not (issue #188).
+func TestEveryScaffoldedJobThatRunsFlowHasTheRepository(t *testing.T) {
+	templates, err := assets.Templates("dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := fs.ReadFile(templates, "ci/github-flow.yml")
+	if err != nil {
+		t.Fatalf("read the workflow: %v", err)
+	}
+	var workflow workflowJobs
+	if err := yaml.Unmarshal(content, &workflow); err != nil {
+		t.Fatalf("read the workflow: %v", err)
+	}
+	if len(workflow.Jobs) == 0 {
+		t.Fatal("the workflow has no jobs; this test is not testing anything")
+	}
+	checked := 0
+	for name, job := range workflow.Jobs {
+		got := false
+		for _, step := range job.Steps {
+			switch {
+			case strings.HasPrefix(step.Uses, "actions/checkout@"):
+				got = true
+			case !runsFlow(step.Run):
+			case !got:
+				t.Errorf("job %q runs `%s` without checking the repository out", name, strings.TrimSpace(step.Run))
+			default:
+				checked++
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no job in the workflow runs flow; this test is not testing anything")
+	}
+}
+
+// Telling a job that runs flow from one that only installs it, or only
+// mentions it, is what decides whether a missing checkout is a finding. The
+// module path ends in "flow" and prose is full of the word.
+func TestWhatCountsAsAJobRunningFlow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  string
+		want bool
+	}{
+		{name: "the gate", run: "flow check pr", want: true},
+		{name: "installed and then run", run: "go install github.com/17twenty/flow@${FLOW_VERSION} && flow doctor --ci", want: true},
+		{name: "only installed", run: "go install github.com/17twenty/flow@${FLOW_VERSION}", want: false},
+		{name: "built from the checkout", run: "go build -o bin/flow .", want: false},
+		{name: "spoken about", run: "# flow reads this file from the working tree", want: false},
+		{name: "nothing at all", run: "", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runsFlow(tc.run); got != tc.want {
+				t.Errorf("runsFlow(%q) = %v, want %v", tc.run, got, tc.want)
+			}
+		})
+	}
+}

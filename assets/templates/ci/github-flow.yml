@@ -31,6 +31,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}
@@ -40,6 +41,7 @@ jobs:
     if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}
