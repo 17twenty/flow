@@ -7,7 +7,8 @@
   API host or hosts listed in user config `[auth.<p>] hosts`. Otherwise prompt
   (interactive) or exit 77 with fix.
 - CI: `pull_request` (never `pull_request_target`); no checkout of PR code is
-  needed for `check pr`; least-privilege `permissions:` in templates.
+  needed for `check pr`; least-privilege `permissions:` in templates, granted
+  per job rather than per file so that only the gate may arm a merge.
 - Agent PR content is untrusted like any PR; flow only reads metadata.
 
 ## 2. Redaction (`internal/core/redact.go`)
@@ -20,7 +21,7 @@ Replacement `[REDACTED:<kind>]`.
 ## 3. Least privilege (dogfood defaults)
 | Credential | Scopes |
 |---|---|
-| Actions `GITHUB_TOKEN` | `contents: read`, `pull-requests: write`, `statuses: write`, `issues: write`; release job adds `contents: write`, `deployments: write` |
+| Actions `GITHUB_TOKEN` | `contents: read`, `pull-requests: write`, `statuses: write`, `issues: write`; the gate job adds `contents: write` to arm auto-merge; release job adds `contents: write`, `deployments: write` |
 | `FLOW_PROJECT_TOKEN` | classic PAT `project` (+ `read:org` only if org-owned) |
 | Agent identity (GitHub App) | contents write, pull requests write, issues read; NOT administration |
 
@@ -89,3 +90,25 @@ User config 0600; cache dir 0700. TLS always verified; `SSL_CERT_FILE`,
   `Authorization` was the one it would have logged. The value patterns above
   are the list, and an adapter that learns a new credential shape adds it
   there in the same change.
+
+- **§1 and §3 the gate holds `contents: write`, and no other job does
+  (issue #190).** Arming a merge is arranging a write to the trunk, so GitHub
+  refuses `enablePullRequestAutoMerge` to a token that may only read. The
+  whole of the auto-merge the gate learned in #167 was therefore dead from
+  the day it was written, and silently: arming is refused exactly as it is
+  refused for a fork's run, which flow records and forgives, so an approved
+  and green pull request simply went on waiting for a person. The permission
+  is granted on the gate's job and nowhere else — a job's `permissions:`
+  block replaces the file's whole set, which is what makes a per-job grant
+  possible — so the jobs that only read a tree still only read it.
+- **§3 a credential of its own was considered and refused (issue #190).** The
+  daily health job already borrows `FLOW_PROJECT_TOKEN` where the Actions
+  token is incapable, and arming could have followed it. It does not, because
+  the two cases are not alike: the health job borrows a credential for a read
+  GitHub will not grant a workflow at all, while arming is an ordinary write
+  a workflow may hold. Putting it behind a secret would make the feature work
+  here and nowhere an adopter had not first made a personal access token —
+  a default that is off for everyone who did not read the documentation. The
+  cost is stated rather than hidden: the gate, which otherwise only reads,
+  may ask the forge to land a pull request, and the comment beside the
+  permission says so.

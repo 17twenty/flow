@@ -457,7 +457,7 @@ which is the only way the key ever changes.
 ## 9. Letting green work land without waiting for somebody to look
 
 An approval given at eleven at night is a queue that stops until morning,
-unless something is listening. Two things have to be true:
+unless something is listening. Three things have to be true:
 
 **The repository must permit it.** On GitHub that is *Settings → General →
 Pull Requests → Allow auto-merge*, or:
@@ -486,6 +486,28 @@ forge:
 status, the comment and the ticket moves — an armed pull request whose gate is
 already green merges on the spot, so arming any earlier would aim the rest of
 the run at a pull request the forge had closed.
+
+**And the gate's job must be allowed to arrange the write.** To GitHub,
+arming a merge is a write to the trunk, so `enablePullRequestAutoMerge` is
+refused to a job holding `contents: read` — quietly, because a refusal to arm
+is forgiven the way a fork's run is. The workflow `flow init` writes grants it
+on the gate's job and on no other:
+
+```yaml
+jobs:
+  gate:
+    permissions:
+      contents: write             # arm auto-merge
+      pull-requests: write        # policy explanation comment
+      statuses: write             # flow/policy
+      issues: write               # follow-ups
+```
+
+A job's block replaces the workflow's whole set, which is why the three the
+gate already needed are repeated inside it — and why every other job goes on
+reading the tree and nothing more. A workflow installed before this was fixed
+has `contents: read` at the top of the file and nothing per job; it will never
+arm anything, and copying the block above into its gate is the whole repair.
 
 Nothing about the arming can fail a gate. A forge that cannot do it, a
 repository with it switched off, a draft, a credential that may not merge:

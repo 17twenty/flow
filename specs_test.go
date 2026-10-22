@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/17twenty/flow/assets"
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -438,21 +440,95 @@ func schemaLeaves(node map[string]any, prefix string) []string {
 // metadata, so a `pull_request` event is enough. This is the rule that would
 // turn a repository flow configured into a credential anybody can have.
 func TestNoWorkflowRunsOnPullRequestTarget(t *testing.T) {
-	checked := 0
+	for _, path := range workflowPaths(t) {
+		if strings.Contains(readSpec(t, path), "pull_request_target") {
+			t.Errorf("%s runs on pull_request_target, which spec 15 §1 refuses", path)
+		}
+	}
+}
+
+// TestTheGateIsTheOnlyJobThatMayWriteToTheTrunk keeps the permission issue
+// #190 was about. Arming a merge is arranging a write to the trunk, so GitHub
+// refuses `enablePullRequestAutoMerge` to a token holding `contents: read` —
+// and flow had granted every job `contents: read` since the gate was written.
+// The auto-merge of #167 therefore never once succeeded here: arming is
+// refused the way a fork's run is refused, which flow records and forgives,
+// so an approved and green pull request simply went on waiting for a person
+// and nothing said why.
+//
+// The rule has two halves and both are the point. A job that runs `flow check
+// pr` must be able to arm; a job that does not must not hold write access to
+// the trunk it is judging. That is what makes the grant a job's rather than
+// the file's, and this test is what keeps it so in the copy an adopter gets.
+func TestTheGateIsTheOnlyJobThatMayWriteToTheTrunk(t *testing.T) {
+	gates := 0
+	for _, path := range workflowPaths(t) {
+		raw := readSpec(t, path)
+		if !strings.Contains(raw, "check pr") {
+			continue // not a gate: what that workflow may write is its own affair
+		}
+		var doc workflow
+		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		gates++
+		armed := false
+		for name, job := range doc.Jobs {
+			grants := doc.Permissions
+			if job.Permissions != nil {
+				grants = job.Permissions // a job's block replaces the file's
+			}
+			arms := false
+			for _, step := range job.Steps {
+				arms = arms || strings.Contains(step.Run, "check pr")
+			}
+			armed = armed || arms
+			switch {
+			case arms && grants["contents"] != "write":
+				t.Errorf("%s: job %q runs `flow check pr` with contents: %q, so it can never arm a merge (#190)",
+					path, name, grants["contents"])
+			case !arms && grants["contents"] == "write":
+				t.Errorf("%s: job %q holds contents: write and arms nothing; only the gate writes to the trunk (spec 15 §3)",
+					path, name)
+			}
+		}
+		if !armed {
+			t.Errorf("%s names `check pr` but no job runs it, so its permissions are untested", path)
+		}
+	}
+	if gates == 0 {
+		t.Error("found no gate workflow; this test is not testing anything")
+	}
+}
+
+// workflowPaths is every workflow this repository runs, ships for an adopter
+// to install, or keeps as the copy the bootstrap takes (spec 17 §2).
+func workflowPaths(t *testing.T) []string {
+	t.Helper()
+	var paths []string
 	for _, dir := range []string{".github/workflows", "dogfood/.github/workflows", "assets/templates/ci"} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("reading %s: %v", dir, err)
 		}
 		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			checked++
-			if strings.Contains(readSpec(t, path), "pull_request_target") {
-				t.Errorf("%s runs on pull_request_target, which spec 15 §1 refuses", path)
-			}
+			paths = append(paths, filepath.Join(dir, entry.Name()))
 		}
 	}
-	if checked == 0 {
-		t.Error("read no workflow; this test is not testing anything")
+	if len(paths) == 0 {
+		t.Fatal("read no workflow; the tests that read them are testing nothing")
 	}
+	return paths
+}
+
+// workflow is as much of a GitHub workflow as these tests read: who may write
+// what, and what each job runs.
+type workflow struct {
+	Permissions map[string]string `yaml:"permissions"`
+	Jobs        map[string]struct {
+		Permissions map[string]string `yaml:"permissions"`
+		Steps       []struct {
+			Run string `yaml:"run"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
 }
