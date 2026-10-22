@@ -438,7 +438,10 @@ func sampleGate() engine.Gate {
 		Status:         core.CommitStatus{Context: "flow/policy", State: core.StatusFailure, Description: "✗ 1 error — ticket.ready"},
 		StatusOutcome:  engine.GatePosted,
 		CommentOutcome: engine.GatePosted,
-		Moves:          []engine.TicketMove{{Key: "#12", From: "ready", To: "in_progress", Event: "pr_opened_draft"}},
+		Moves: []engine.GateMove{{
+			TicketMove: engine.TicketMove{Key: "#12", From: "ready", To: "in_progress", Event: "pr_opened_draft"},
+			Outcome:    engine.GatePosted,
+		}},
 	}
 }
 

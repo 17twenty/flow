@@ -81,11 +81,30 @@ type Gate struct {
 	// was left set to land itself once the gate goes green.
 	ArmOutcome string
 	// Moves are the ticket transitions this run considered, in the order the
-	// tickets were linked.
-	Moves []TicketMove
+	// tickets were linked, each with what became of it.
+	Moves []GateMove
 	// ReadOnly reports a credential that may not write to this repository,
-	// which is the ordinary case on a fork's pull request.
+	// which is the ordinary case on a fork's pull request. It is set by the
+	// write that discovered it and read by the writes that come after, which
+	// would be refused in their turn; it is not what the run reports, because
+	// each write records its own outcome.
 	ReadOnly bool
+}
+
+// GateMove is a transition this run decided on, and what flow then did about
+// it (issue #192).
+//
+// Deciding and acting are two facts, and a run that keeps only the first will
+// sooner or later claim a card moved because it worked out that it should
+// have. The transition is the decision, unchanged from what `Transition`
+// returned; `Outcome` is the act.
+type GateMove struct {
+	TicketMove
+	// Outcome is GatePosted for a move the tracker made, GateNone for a
+	// ticket already where it belongs, GateDryRun for a decision flow was
+	// told not to act on, and GateReadOnly where the credential may not
+	// write to the board.
+	Outcome string `json:"outcome"`
 }
 
 // Pass reports a pull request nothing blocks.
@@ -371,7 +390,12 @@ func (g *Gate) arm(ctx context.Context, in GateInput, snapshot PolicySnapshot) e
 	case err == nil:
 		g.ArmOutcome = GatePosted
 	case errors.Is(err, core.ErrPermission):
-		g.ReadOnly, g.ArmOutcome = true, GateReadOnly
+		// Not g.ReadOnly: arming is the last write of the run, and what it
+		// needs is not what the status and the comment needed. A repository
+		// whose gate may post and may not arm is an ordinary repository with
+		// a permission to grant (issue #190), and saying the credential may
+		// not write here would be a report of something that did not happen.
+		g.ArmOutcome = GateReadOnly
 	case errors.Is(err, core.ErrUnsupported):
 		g.ArmOutcome = GateUnsupported
 	case errors.Is(err, core.ErrValidation):
@@ -408,26 +432,33 @@ func (g *Gate) move(ctx context.Context, in GateInput, snapshot PolicySnapshot) 
 		return err
 	}
 	for _, ticket := range snapshot.Tickets {
-		move := Transition(TransitionSnapshot{
+		move := GateMove{TicketMove: Transition(TransitionSnapshot{
 			Ticket: ticket.Ticket,
 			Column: ticket.Column,
 			PRs:    prsFor(in.Adapters.Tracker, linked, ticket.Ticket.Key),
 			Config: in.Config,
-		})
+		})}
+		// The decision is recorded before it is acted on, so that a run
+		// which cannot finish still reports what it had worked out.
 		g.Moves = append(g.Moves, move)
-		if !move.Moves() || in.DryRun || g.ReadOnly {
-			continue
-		}
-		to, found := columnTarget(in.Config, move.To)
-		if !found {
-			continue
-		}
-		if err := in.Adapters.Tracker.Move(ctx, ticket.Ticket.Key, to); err != nil {
-			if errors.Is(err, core.ErrPermission) {
-				g.ReadOnly = true
-				continue
+		at := len(g.Moves) - 1
+		switch {
+		case !move.Moves():
+			g.Moves[at].Outcome = GateNone
+		case in.DryRun:
+			g.Moves[at].Outcome = GateDryRun
+		case g.ReadOnly:
+			g.Moves[at].Outcome = GateReadOnly
+		default:
+			err := in.Adapters.Tracker.Move(ctx, ticket.Ticket.Key, columnTarget(in.Config, move.To))
+			switch {
+			case err == nil:
+				g.Moves[at].Outcome = GatePosted
+			case errors.Is(err, core.ErrPermission):
+				g.ReadOnly, g.Moves[at].Outcome = true, GateReadOnly
+			default:
+				return core.Explain(err, "move %s to %s", ticket.Ticket.Key, move.To)
 			}
-			return core.Explain(err, "move %s to %s", ticket.Ticket.Key, move.To)
 		}
 	}
 	return nil
@@ -518,29 +549,33 @@ func prsFor(tracker core.Tracker, linked []LinkedPR, key string) []LinkedPR {
 // columnTarget is the tracker's identifier for a configured column, which is
 // the name the team gave it: the tracker's own id belongs to the tracker, and
 // a column flow has never created has no id flow could know.
-func columnTarget(cfg *config.Config, id string) (core.ColumnID, bool) {
-	column, found := cfg.Workflow.Column(id)
-	if !found {
-		return "", false
-	}
-	return core.ColumnID(column.Name), true
+//
+// It cannot be asked for a column `workflow.columns` has not got. Transition
+// refuses such a move with ReasonUnknownColumn and reports it as no move at
+// all, so every `To` that reaches here names a configured column. Each caller
+// used to ask the same question again and skip the write in silence, which is
+// precisely how a decision becomes a reported act with nothing behind it
+// (issue #192).
+func columnTarget(cfg *config.Config, id string) core.ColumnID {
+	column, _ := cfg.Workflow.Column(id)
+	return core.ColumnID(column.Name)
 }
 
 // gateDoc is the --json document, schema flow.policy/v1.
 type gateDoc struct {
-	Schema      string       `json:"schema"`
-	PR          int          `json:"pr"`
-	SHA         string       `json:"sha"`
-	Draft       bool         `json:"draft"`
-	State       string       `json:"state"`
-	Description string       `json:"description"`
-	Pass        bool         `json:"pass"`
-	Findings    []Finding    `json:"findings"`
-	Status      string       `json:"status"`
-	Comment     string       `json:"comment"`
-	ReadOnly    bool         `json:"read_only,omitempty"`
-	AutoMerge   string       `json:"auto_merge"`
-	Moves       []TicketMove `json:"moves,omitempty"`
+	Schema      string     `json:"schema"`
+	PR          int        `json:"pr"`
+	SHA         string     `json:"sha"`
+	Draft       bool       `json:"draft"`
+	State       string     `json:"state"`
+	Description string     `json:"description"`
+	Pass        bool       `json:"pass"`
+	Findings    []Finding  `json:"findings"`
+	Status      string     `json:"status"`
+	Comment     string     `json:"comment"`
+	ReadOnly    bool       `json:"read_only,omitempty"`
+	AutoMerge   string     `json:"auto_merge"`
+	Moves       []GateMove `json:"moves,omitempty"`
 }
 
 // JSON renders the gate's single document (spec 02 §3).
@@ -578,8 +613,11 @@ func (g Gate) Text() string {
 		switch {
 		case move.Warning != "":
 			fmt.Fprintf(&out, "· %s  %s\n", move.Key, move.Warning)
-		case move.Moves():
-			fmt.Fprintf(&out, "→ %s  %s\n", move.Key, moveText(move))
+		case !move.Moves():
+		case move.Outcome == GatePosted:
+			fmt.Fprintf(&out, "→ %s  %s\n", move.Key, moveText(move.TicketMove))
+		default:
+			fmt.Fprintf(&out, "· %s  %s not made: %s\n", move.Key, moveText(move.TicketMove), movedNot(move))
 		}
 	}
 	if line := publishedText(g); line != "" {
@@ -591,6 +629,20 @@ func (g Gate) Text() string {
 		out.WriteString("\n")
 	}
 	return out.String()
+}
+
+// movedNot says why a transition flow decided on was not performed. Each
+// reason is somebody's: a dry run is the person who asked for one, and a
+// refusal is a credential to widen.
+func movedNot(move GateMove) string {
+	switch move.Outcome {
+	case GateDryRun:
+		return "dry run"
+	case GateReadOnly:
+		return "this credential may not write to the board"
+	default:
+		return move.Outcome
+	}
 }
 
 // moveText says where a ticket is going and what asked for it.
@@ -605,10 +657,12 @@ func moveText(move TicketMove) string {
 // when it wrote what it meant to.
 func publishedText(g Gate) string {
 	switch {
-	case g.ReadOnly:
+	case g.StatusOutcome == GateReadOnly:
 		return "status not posted: this credential may not write here"
 	case g.StatusOutcome == GateDryRun:
 		return "dry run: nothing was posted"
+	case g.CommentOutcome == GateReadOnly:
+		return "status posted; comment not written: this credential may not comment here"
 	default:
 		return ""
 	}
@@ -628,6 +682,8 @@ func armedText(g Gate) string {
 		return "auto-merge not armed: this forge cannot do it"
 	case GateRefused:
 		return "auto-merge not armed: the forge would not have it"
+	case GateReadOnly:
+		return "auto-merge not armed: this credential may not arrange a merge here"
 	default:
 		return ""
 	}

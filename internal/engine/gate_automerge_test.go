@@ -178,17 +178,34 @@ func TestACredentialThatMayNotWriteArmsNothing(t *testing.T) {
 	}
 }
 
-// TestAnArmingRefusedForWantOfPermissionMarksTheRunReadOnly: the refusal can
-// also arrive here first, on a credential allowed to publish a status and not
-// to merge, and the run has to go on saying what it could not do.
-func TestAnArmingRefusedForWantOfPermissionMarksTheRunReadOnly(t *testing.T) {
+// TestAnArmingRefusedForWantOfPermissionSaysSoOfTheArmingAlone: the refusal
+// can also arrive here first, on a credential allowed to publish a status and
+// not to merge, which is every repository whose gate holds `contents: read`
+// (issue #190). The run has to say what it could not do — and nothing else.
+// This is the shape that made the arming permission invisible for weeks: the
+// refusal marked the whole run read-only, and the line that got printed was
+// about a status the run had already posted (issue #192).
+func TestAnArmingRefusedForWantOfPermissionSaysSoOfTheArmingAlone(t *testing.T) {
 	world := armingWorld(t)
 	world.forge.Fail("ArmAutoMerge", core.Errorf(core.ErrPermission, "arm").WithWhy("read-only"))
 
 	gate := world.run(t)
-	if !gate.ReadOnly || gate.ArmOutcome != engine.GateReadOnly {
-		t.Errorf("read-only is %v and the arming outcome %q, want true and %q",
-			gate.ReadOnly, gate.ArmOutcome, engine.GateReadOnly)
+	if gate.ArmOutcome != engine.GateReadOnly {
+		t.Errorf("the arming outcome is %q, want %q", gate.ArmOutcome, engine.GateReadOnly)
+	}
+	if gate.StatusOutcome != engine.GatePosted {
+		t.Errorf("the status outcome is %q, want %q: the status went out before the arming was refused",
+			gate.StatusOutcome, engine.GatePosted)
+	}
+	if gate.ReadOnly {
+		t.Error("a credential that may not merge was reported as one that may not write at all")
+	}
+	text := gate.Text()
+	if !strings.Contains(text, "auto-merge not armed: this credential may not arrange a merge here") {
+		t.Errorf("the run says %q, and nowhere in it that the arming was refused", text)
+	}
+	if strings.Contains(text, "status not posted") {
+		t.Errorf("the run says %q, which is a report of something that did not happen", text)
 	}
 	if !gate.Pass() {
 		t.Errorf("a credential that may not merge failed a pull request that broke no rule: %+v", gate.Result.Failures())
