@@ -1363,6 +1363,40 @@ of them reachable from this repository, all of them on the path every adopter
 walks and this one never does. The demo now has a green `flow/policy` of its
 own.
 
+### The gate that could not land anything, and the line that lied (issues #190, #192)
+
+Five pull requests were approved and green last week and every one of them
+waited for somebody to press merge, although `flow check pr` has armed
+auto-merge since #167 and this repository asked for it in #180.
+
+**Arming a merge is a write to the trunk.** GitHub refuses
+`enablePullRequestAutoMerge` to a job holding `contents: read`, which is what
+every job of the gate workflow has held since it was written — here, in the
+`dogfood/` copy, and in the template every adopter installs. The permission
+is now the gate job's and no other job's: a job's `permissions:` block
+replaces the file's whole set, which is what makes a grant that narrow
+possible. A credential of its own was considered and refused, because a
+feature that works only for people who first made a personal access token is
+a feature that is off by default for everyone who did not read the manual.
+The proof is the pull request that carried the fix: a `pull_request` run uses
+the workflow from the head, so #191 armed itself.
+
+**And the gate had been saying so, of the wrong thing.** For weeks every run
+here printed `status not posted: this credential may not write here` three
+seconds after posting the status. `Gate.ReadOnly` was one flag for four
+writes, arming is the last of them, and its refusal reached back and
+relabelled the first. The one refusal anybody could have acted on — arming —
+was meanwhile the only outcome with no line at all.
+
+Underneath both: a decision and an act are two facts, and the gate kept one
+field for them. It printed a ticket moving whenever it worked out that one
+should, so a refusal, a `--dry-run` and a card that really moved were
+indistinguishable in the output. Every write now carries its own outcome.
+Three callers were also re-asking a question `Transition` had already
+answered — whether the column exists — and skipping the write in silence when
+the answer was no; unreachable code whose only possible effect was the defect
+above.
+
 **Single best next step:** issue #189, the column flow duplicates. After it,
 the four `flow attest` commands in `docs/cookbook.md` §6.1 and admin for the
 machine user on the demo repository, which are the two things a person holds.
