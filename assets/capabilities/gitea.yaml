@@ -1,18 +1,192 @@
 adapter: gitea
 kind: forge
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-22
 sources:
   - https://docs.rs/gitea-client/latest/src/gitea_client/models/branch_protection.rs.html
+  - https://docs.gitea.com/usage/merge-message-templates
+  - https://docs.gitea.com/usage/automatically-linked-references
 limits: { rate: "Instance-configured" }
 capabilities:
-  commit_status_write:    { set: true,  verify: true, requires: [write], remediation: follow_up }
-  branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up }
-  required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "enable_status_check + status_check_contexts" }
-  merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
-  squash_text:            { set: false, verify: true, remediation: follow_up, notes: "Gitea composes the squash commit itself: the header is the pull request title with the number appended. The body comes from .gitea/default_merge_message/SQUASH_TEMPLATE.md, which a person adds to the repository." }
-  auto_merge:             { set: true,  verify: false, requires: [write], remediation: follow_up, notes: "POST pulls/{index}/merge with merge_when_checks_succeed. Nothing reads back whether a pull request is armed, and the repository has no setting to switch it off." }
-  file_proposal:          { set: true,  verify: true, requires: [write], remediation: follow_up }
-  pr_comments:            { set: true,  verify: true, requires: [write], remediation: follow_up }
+  commit_status_write:
+    set: true
+    verify: true
+    requires: [write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        A commit status named {{name}}: the tick or cross Gitea shows against a
+        commit and in a pull request's checks. Flow's gate publishes its
+        verdict as one.
+      where: >-
+        Held against the commit, not in any file, and written only through the
+        API by whatever ran the check. There is no page to type one into.
+      steps:
+        - >-
+          Give flow a credential with write access to {{repo}} — a Gitea access
+          token with the `write:repository` scope, belonging to a user who is
+          a collaborator.
+  branch_protection:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        A protection rule on {{repo}}'s default branch, so that work lands
+        through a pull request rather than straight onto the trunk.
+      where: >-
+        A repository setting, under Settings → Branches → Protected Branches.
+        Only a repository administrator can see it.
+      steps:
+        - >-
+          On {{repo}}, go to Settings → Branches, add a rule for the default
+          branch, and tick "Enable Status Check" and "Block merge on outdated
+          branch".
+        - >-
+          Gitea has no force-push setting at all, so flow asks for nothing
+          there and neither should you: whether the branch can be rewritten is
+          decided by who may push to it.
+        - >-
+          Or give flow a credential that is an administrator of {{repo}} and it
+          will write the rule itself on the next `flow apply`.
+  required_status_checks:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    notes: "enable_status_check + status_check_contexts"
+    by_hand:
+      what: >-
+        A rule that a pull request on {{repo}} may not merge until these
+        status checks have passed: {{name}}. Without it the gate still
+        publishes its verdict and nothing stops anybody merging past a red
+        one.
+      where: >-
+        Part of the branch protection rule itself: Settings → Branches →
+        Protected Branches → the rule for the default branch. Administrator
+        only.
+      steps:
+        - >-
+          Open the rule for {{repo}}'s default branch, tick "Enable Status
+          Check", and add each of {{name}} to the status check patterns. Gitea
+          matches these as globs, so a literal name works and so does a
+          prefix.
+        - >-
+          Tick "Block merge on outdated branch" beside it, so a branch is
+          judged against the trunk it will actually land on.
+        - >-
+          Or, if the team does not want this check required, remove it from
+          `forge.required_checks` in `.flow.yaml`.
+  merge_settings:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        Which merge styles {{repo}} offers — squash, merge commit, rebase.
+        Flow asks for the one `commits.merge_strategy` names and for the rest
+        to be off, so one pull request becomes one commit of a known shape.
+      where: >-
+        A repository setting, under Settings → Repository → Pull Requests.
+        Administrator only.
+      steps:
+        - >-
+          On {{repo}}, go to Settings and tick only the merge style the team
+          uses under "Pull Request" → "Merge Style", leaving the rest clear.
+        - >-
+          Or change `commits.merge_strategy` in `.flow.yaml` to the one the
+          team actually uses, and flow will ask for that instead.
+  squash_text:
+    set: false
+    verify: true
+    remediation: follow_up
+    notes: "Gitea composes the squash commit itself: the header is the pull request title with the number appended. The body comes from .gitea/default_merge_message/SQUASH_TEMPLATE.md, which a person adds to the repository."
+    by_hand:
+      what: >-
+        Where a squash commit on {{repo}} takes its words from. Gitea composes
+        it itself — the header is the pull request title with the number
+        appended — and offers no repository setting to change that, so flow
+        can neither read nor write this one.
+      where: >-
+        A file in the repository, not a setting: Gitea reads the template from
+        `.gitea/default_merge_message/SQUASH_TEMPLATE.md` on the default
+        branch.
+      steps:
+        - >-
+          Add `.gitea/default_merge_message/SQUASH_TEMPLATE.md` to {{repo}} with
+          the shape the team wants. Gitea falls back to
+          `DEFAULT_TEMPLATE.md` in the same directory when there is no squash
+          template.
+        - >-
+          Leave the header alone. Gitea builds it from the pull request title,
+          which is what flow's gate already lints, so the header that lands is
+          the header somebody read.
+  auto_merge:
+    set: true
+    verify: false
+    requires: [write]
+    remediation: follow_up
+    notes: "POST pulls/{index}/merge with merge_when_checks_succeed. Nothing reads back whether a pull request is armed, and the repository has no setting to switch it off."
+    by_hand:
+      what: >-
+        Auto-merge on {{repo}}: a pull request waiting only on its checks lands
+        itself when they go green. Gitea has no repository setting for this —
+        it is armed one pull request at a time.
+      where: >-
+        A button on the pull request: "Merge when checks succeed" on the merge
+        dropdown.
+      steps:
+        - >-
+          On the pull request, choose "Merge when checks succeed" from the
+          merge button's dropdown.
+        - >-
+          Or give flow a credential with write access to {{repo}} and it will
+          arm each pull request it passes.
+        - >-
+          Or set `forge.auto_merge: false` in `.flow.yaml` if the team would
+          rather land every pull request by hand.
+  file_proposal:
+    set: true
+    verify: true
+    requires: [write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        These files in {{repo}}: {{name}}. Flow proposes them as a pull
+        request rather than writing them to the default branch, so that
+        somebody reads them before they run.
+      where: >-
+        A file in the repository, like any other. Flow needs to push a branch
+        and open a pull request to offer it.
+      steps:
+        - >-
+          Run `flow init` in a clone of {{repo}} to write them into the
+          working tree, then commit them on a branch and open a pull request
+          yourself.
+        - >-
+          Or give flow a credential with write access to {{repo}} and it will
+          propose the file on the next `flow apply`.
+  pr_comments:
+    set: true
+    verify: true
+    requires: [write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        The comment the gate leaves on a pull request saying which rules held
+        and which did not. The verdict is in the commit status either way;
+        the comment is what makes it readable without clicking into a check.
+      where: >-
+        A comment on the pull request, written through the API by whatever ran
+        the gate.
+      steps:
+        - >-
+          Give flow a credential with write access to {{repo}} — a Gitea access
+          token with `write:issue` — so it may comment.
+        - >-
+          Or set `policy.comment: never` in `.flow.yaml` and the gate will
+          report only through the commit status.
   deployments_read:       { set: false, verify: false, remediation: none, notes: "Use deploys.source: commit_status." }
   linked_issues_read:     { set: false, verify: false, remediation: none, notes: "Verify at build time; else tracker fallback." }

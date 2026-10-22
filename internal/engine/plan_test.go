@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -697,4 +698,226 @@ func TestARuleNobodyEnabledIsANoteAndNotADifference(t *testing.T) {
 			}
 		})
 	}
+}
+
+// nothingHasDeployedWorld is the board of a repository whose deploy job
+// writes no deployment record: `deploys.records` becomes somebody else's
+// job, which is the ticket this whole mechanism was reported against.
+func nothingHasDeployedWorld(t *testing.T) world {
+	t.Helper()
+	w := githubProjectsWorld(t)
+	fixture := deployFixture(t)
+	fixture.Deployments = nil
+	w.deploys = coretest.NewFakeDeploys(fixture)
+	return w
+}
+
+// A recipe is written once, for every repository the adapter will ever be
+// pointed at, and read by one person holding one of them. The plan is where
+// the general case becomes theirs: `{{name}}` is a sentence about nobody,
+// and a brace that reached a ticket would be the declaration's template read
+// out loud at somebody who never asked to see it.
+//
+// It rides only on an item flow is not going to make true itself. Every
+// other outcome is flow saying it will see to this, or that it is already
+// so, and instructions for doing by hand a thing nobody has to do are the
+// longest part of a document whose whole job is to be read before it is
+// approved.
+func TestAPlanCarriesByHandInstructionsOnlyWhereSomebodyHasToAct(t *testing.T) {
+	var owed int
+	for _, tc := range []struct {
+		name  string
+		world func(*testing.T) world
+	}{
+		{name: "github-projects", world: githubProjectsWorld},
+		{name: "jira-cloud", world: jiraWorld},
+		{name: "nothing has deployed", world: nothingHasDeployedWorld},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, item := range planFor(t, tc.world(t)).Items {
+				if item.Outcome != engine.OutcomeFollowUp {
+					if item.Recipe.Written() {
+						t.Errorf("%s is %s and still carries instructions for doing it by hand: %+v",
+							item.ID, item.Outcome, item.Recipe)
+					}
+					continue
+				}
+				if !item.Recipe.Written() {
+					t.Errorf("%s is somebody else's job and says nothing about how to do it", item.ID)
+					continue
+				}
+				owed++
+				for _, text := range append([]string{item.Recipe.What, item.Recipe.Where}, item.Recipe.Steps...) {
+					if strings.Contains(text, "{{") {
+						t.Errorf("%s carries a placeholder nobody filled in: %q", item.ID, text)
+					}
+				}
+			}
+		})
+	}
+	if owed == 0 {
+		t.Fatal("nothing in any of these plans was somebody else's job, so the test proved nothing")
+	}
+}
+
+// The names in a recipe are this run's. A declaration that says "a record
+// that a commit reached {{name}}" is asking flow for the one thing only flow
+// knows; an adapter that could not ask would have to write for the general
+// case and be read by somebody holding a particular one.
+//
+// This is the reported ticket: `create deploys.records "production"`, which
+// named the environment and said nothing else anybody could act on.
+func TestTheNamesInARecipeAreTheOnesThisRunIsAbout(t *testing.T) {
+	plan := planFor(t, nothingHasDeployedWorld(t))
+
+	item, ok := planItem(plan, core.ItemDeploysRecords)
+	if !ok {
+		t.Fatalf("no %s in the plan", core.ItemDeploysRecords)
+	}
+	if item.Outcome != engine.OutcomeFollowUp {
+		t.Fatalf("%s is %s, so nobody is handed its recipe", item.ID, item.Outcome)
+	}
+
+	recipe := strings.Join(append([]string{item.Recipe.What, item.Recipe.Where}, item.Recipe.Steps...), "\n")
+	// The environment the ticket is about, rather than "the environment".
+	if !strings.Contains(item.Recipe.What, "production") {
+		t.Errorf("the recipe does not name the environment it is about:\n%s", item.Recipe.What)
+	}
+	// And the repository, which is the other thing a declaration cannot know.
+	repo := preset(t, config.PresetLeanKanban).Forge.Repo
+	if !strings.Contains(recipe, repo) {
+		t.Errorf("the recipe does not say which repository it is about (%s):\n%s", repo, recipe)
+	}
+	// The last step out is the one the reporter wanted and did not get: a
+	// team that deploys nowhere is owed a way to stop being asked.
+	if !strings.Contains(recipe, "deploys.source: none") {
+		t.Errorf("the recipe never says how to stop flow asking:\n%s", recipe)
+	}
+}
+
+// A provider is free to list the same thing twice, and a recipe that is
+// about "Icebox and Icebox" reads as flow having lost count rather than as a
+// board with two of them. The names on a recipe are the things the change is
+// about, and a thing is one thing however many times it was listed.
+func TestARecipeNamesAThingOnceHoweverOftenItWasListed(t *testing.T) {
+	w := jiraWorld(t)
+	// Two options of the same name, both flow's own doing, so both are
+	// removed — and the whole of the change is still about Icebox.
+	w.tracker = coretest.NewFakeTracker(trackerWithStatusOptions(t,
+		core.Item{ID: "10001", Name: "To Do"},
+		core.Item{ID: "opt-icebox", Name: "Icebox"},
+		core.Item{ID: "opt-icebox-again", Name: "Icebox"},
+	))
+	w.lock = config.NewLock("v0.3.0")
+	w.lock.ConfigHash = planConfigHash
+	for _, id := range []string{"opt-icebox", "opt-icebox-again"} {
+		w.lock.Record(config.Creation{
+			Kind: engine.CreationKind(core.ItemTrackerStatusOptions),
+			ID:   id,
+			Name: "Icebox",
+			At:   coretest.ContractNow.Add(-30 * 24 * time.Hour),
+		})
+	}
+
+	item, ok := planItem(planFor(t, w), core.ItemTrackerStatusOptions)
+	if !ok {
+		t.Fatal("the status options are not in the plan")
+	}
+	if item.Outcome != engine.OutcomeFollowUp {
+		t.Fatalf("%s is %s, so nobody is handed its recipe", item.ID, item.Outcome)
+	}
+	var removals int
+	for _, change := range item.Changes {
+		if change.Op == core.ChangeDelete && change.Item.Name == "Icebox" {
+			removals++
+		}
+	}
+	if removals != 2 {
+		t.Fatalf("the plan removes Icebox %d times, so the recipe cannot be asked to name it once", removals)
+	}
+
+	recipe := strings.Join(append([]string{item.Recipe.What, item.Recipe.Where}, item.Recipe.Steps...), "\n")
+	if n := strings.Count(recipe, "Icebox and Icebox"); n > 0 {
+		t.Errorf("the recipe says Icebox twice over:\n%s", recipe)
+	}
+	if !strings.Contains(recipe, "Icebox") {
+		t.Errorf("the recipe does not name the column it is about:\n%s", recipe)
+	}
+}
+
+// A recipe may ask for a name the item it is declared on does not have: the
+// board itself is an id to find, not a thing to alter, so there is nothing
+// for `{{name}}` to be. The brace stays visible. A declaration written for
+// the wrong item is a fault in the declaration, and a sentence with a hole
+// where the word should be hides it from the person who would have to fix
+// it.
+func TestARecipeKeepsAPlaceholderTheItemHasNoWordFor(t *testing.T) {
+	tracker := coretest.ContractTracker()
+	tracker.Kind = "jira-cloud"
+	tracker.Capabilities = capabilitiesAsking(t, "{{name}} of {{repo}}")
+	tracker.Permissions = core.Permissions{Tokens: []string{"create_issues"}}
+	tracker.Observations = map[string]core.Observation{"tracker.project": {Exists: false}}
+
+	w := jiraWorld(t)
+	w.tracker = coretest.NewFakeTracker(tracker)
+
+	item, ok := planItem(planFor(t, w), core.ItemTrackerProject)
+	if !ok {
+		t.Fatal("the project is not in the plan")
+	}
+	if item.Outcome != engine.OutcomeFollowUp {
+		t.Fatalf("%s is %s, so nobody is handed its recipe", item.ID, item.Outcome)
+	}
+	if len(item.Changes) != 0 {
+		t.Fatalf("the board has changes after all, so it has names: %+v", item.Changes)
+	}
+	// The repository is known whatever the item is; the name is not.
+	want := "{{name}} of " + preset(t, config.PresetLeanKanban).Forge.Repo
+	if item.Recipe.What != want {
+		t.Errorf("what = %q, want %q", item.Recipe.What, want)
+	}
+}
+
+// capabilitiesAsking is Jira's own declaration with the board's recipe
+// asking for the words the caller gives it, for the tests about what a
+// recipe may ask for. The rest of the declaration is the shipped one: a
+// capability set has to be whole, and the subject here is one sentence of
+// it.
+func capabilitiesAsking(t *testing.T, what string) core.CapabilitySet {
+	t.Helper()
+	set := testRegistry(t)["jira-cloud"]
+	set.Capabilities = maps.Clone(set.Capabilities)
+	board := set.Capabilities[core.CapProject]
+	board.ByHand.What = what
+	set.Capabilities[core.CapProject] = board
+	return set
+}
+
+// trackerWithStatusOptions is the jira fixture with a board of the caller's
+// own, for the tests whose subject is what the provider listed.
+func trackerWithStatusOptions(t *testing.T, items ...core.Item) coretest.TrackerFixture {
+	t.Helper()
+	tracker := coretest.ContractTracker()
+	tracker.Kind = "jira-cloud"
+	tracker.Capabilities = testRegistry(t)["jira-cloud"]
+	tracker.Permissions = core.Permissions{
+		Tokens:   []string{"create_issues", "transition_issues"},
+		Evidence: []string{"/rest/api/3/mypermissions: BROWSE_PROJECTS, CREATE_ISSUES"},
+	}
+	tracker.Observations = map[string]core.Observation{
+		"tracker.project":        {Exists: true},
+		"tracker.status_options": {Exists: true, Items: items},
+		"tracker.labels":         {Exists: true},
+	}
+	return tracker
+}
+
+// planItem finds one item of a plan by id.
+func planItem(plan engine.Plan, id string) (engine.PlanItem, bool) {
+	for _, item := range plan.Items {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return engine.PlanItem{}, false
 }

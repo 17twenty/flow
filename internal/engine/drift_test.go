@@ -222,6 +222,42 @@ func TestDriftSaysWhatWouldPutItBack(t *testing.T) {
 	}
 }
 
+// A check that brought its own remedy has already said what the change is:
+// a follow-up carries it as the last of its steps, a native outcome as
+// evidence. Saying it again under "what flow saw" made the shortest ticket
+// flow files the same sentence twice, which is what issue #194 was about.
+func TestDriftDoesNotSayAgainWhatTheRemedyAlreadySays(t *testing.T) {
+	t.Parallel()
+
+	lock := driftLock("tracker.status_options", hashWas, coretest.ContractNow.Add(-20*24*time.Hour))
+	own := engine.Fail("the board is missing the Ready column").Fix(engine.Remediation{
+		Kind:    engine.RemedyFollowUp,
+		Summary: "add the Ready column",
+		Owner:   engine.OwnerTrackerAdmin,
+		Steps:   []string{`create tracker.status_options "Ready"`},
+	})
+
+	got := engine.Drift(engine.DriftInput{
+		Check:  "tracker.status_options",
+		Result: watched(own, hashNow),
+		Lock:   lock,
+		Item: engine.PlanItem{Changes: []core.Change{
+			{What: "tracker.status_options", Op: core.ChangeCreate, Item: core.Item{Name: "Ready"}},
+		}},
+		Now:    coretest.ContractNow,
+		Record: true,
+	})
+
+	if strings.Contains(evidenceText(got), "to put it back") {
+		t.Errorf("the change is in the ticket twice; evidence = %q", evidenceText(got))
+	}
+	// The drift itself still is: that is what this check adds, and nothing
+	// else in the finding knows the thing used to be right.
+	if !strings.Contains(evidenceText(got), "was ") || !strings.Contains(evidenceText(got), "now ") {
+		t.Errorf("the finding no longer says what changed; evidence = %q", evidenceText(got))
+	}
+}
+
 // TestDriftKeepsARemedyTheCheckAlreadyGave: a check that knows its own fix —
 // because only a human can do it, say — is not overruled by the generic one.
 func TestDriftKeepsARemedyTheCheckAlreadyGave(t *testing.T) {

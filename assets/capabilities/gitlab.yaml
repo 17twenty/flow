@@ -1,19 +1,194 @@
 adapter: gitlab
 kind: forge
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-22
 sources:
   - https://docs.gitlab.com/user/project/merge_requests/status_checks/
   - https://docs.gitlab.com/ci/ci_cd_for_external_repos/external_commit_statuses
+  - https://docs.gitlab.com/user/project/merge_requests/methods/
+  - https://docs.gitlab.com/user/project/merge_requests/commit_templates/
+  - https://docs.gitlab.com/user/project/repository/branches/protected/
 limits: { rate: "GitLab.com 2,000 req/min per user (plan limits may be lower)" }
 capabilities:
-  commit_status_write:    { set: true,  verify: true, requires: [developer], remediation: follow_up, hazards: ["Pass pipeline_id of the MR pipeline; duplicate pipelines can hide statuses."] }
-  branch_protection:      { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
-  required_status_checks: { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "Ultimate: external status check; else pipelines must succeed." }
-  merge_settings:         { set: true,  verify: true, requires: [maintainer], remediation: follow_up }
-  squash_text:            { set: true,  verify: true, requires: [maintainer], remediation: follow_up, notes: "squash_commit_template on the project." }
-  auto_merge:             { set: true,  verify: true, requires: [developer], remediation: follow_up, notes: "PUT merge_requests/:iid/merge with merge_when_pipeline_succeeds; read back from the merge request. The project has no setting to switch it off." }
-  file_proposal:          { set: true,  verify: true, requires: [developer], remediation: follow_up }
-  pr_comments:            { set: true,  verify: true, requires: [developer], remediation: follow_up }
+  commit_status_write:
+    set: true
+    verify: true
+    requires: [developer]
+    remediation: follow_up
+    hazards: ["Pass pipeline_id of the MR pipeline; duplicate pipelines can hide statuses."]
+    by_hand:
+      what: >-
+        A commit status named {{name}}: the mark GitLab shows against a commit
+        and in a merge request's pipeline list. Flow's gate publishes its
+        verdict as one.
+      where: >-
+        Held against the commit, not in any file, and written only through the
+        API by whatever ran the check. There is no page to type one into.
+      steps:
+        - >-
+          Give flow a credential with at least the Developer role on {{repo}} —
+          a project access token with the `api` scope is the usual shape.
+  branch_protection:
+    set: true
+    verify: true
+    requires: [maintainer]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        Protection on {{repo}}'s default branch: who may push and merge, and
+        that it cannot be force-pushed.
+      where: >-
+        A project setting, under Settings → Repository → Protected branches.
+        Maintainer or above.
+      steps:
+        - >-
+          On {{repo}}, go to Settings → Repository → Protected branches, protect
+          the default branch, set "Allowed to push and merge" to "No one" and
+          "Allowed to merge" to the role that reviews, and leave "Allow force
+          push" off.
+        - >-
+          Or give flow a credential with the Maintainer role on {{repo}} and it
+          will write the rule itself on the next `flow apply`.
+  required_status_checks:
+    set: true
+    verify: true
+    requires: [maintainer]
+    remediation: follow_up
+    notes: "Ultimate: external status check; else pipelines must succeed."
+    by_hand:
+      what: >-
+        A rule that a merge request on {{repo}} may not merge until these
+        checks have passed: {{name}}. Without it the gate still publishes its
+        verdict and nothing stops anybody merging past a red one.
+      where: >-
+        A project setting, and which one depends on the plan. On Ultimate it
+        is Settings → Merge requests → Status checks, which can require a
+        named external check. On every other plan the only lever is Settings →
+        Merge requests → "Pipelines must succeed".
+      steps: 
+        - >-
+          On Ultimate, go to {{repo}} → Settings → Merge requests → Status
+          checks, add a check for each of {{name}}, and point each one at the
+          service that reports it.
+        - >-
+          Otherwise tick Settings → Merge requests → "Pipelines must succeed",
+          and make flow's gate a job of the merge request's pipeline so that a
+          failing gate fails the pipeline. GitLab outside Ultimate cannot
+          require one named check among several.
+        - >-
+          Or, if the team does not want this check required, remove it from
+          `forge.required_checks` in `.flow.yaml`.
+  merge_settings:
+    set: true
+    verify: true
+    requires: [maintainer]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        How a merge request on {{repo}} is allowed to land — merge commit,
+        semi-linear history, or fast-forward — and whether its commits are
+        squashed.
+      where: >-
+        A project setting, under Settings → Merge requests → Merge method and
+        Squash commits when merging. Maintainer or above.
+      steps:
+        - >-
+          On {{repo}}, go to Settings → Merge requests and choose the merge
+          method the team uses. For a squash workflow, choose "Fast-forward
+          merge" and set "Squash commits when merging" to "Require".
+        - >-
+          Or change `commits.merge_strategy` in `.flow.yaml` to the one the
+          team actually uses, and flow will ask for that instead.
+  squash_text:
+    set: true
+    verify: true
+    requires: [maintainer]
+    remediation: follow_up
+    notes: "squash_commit_template on the project."
+    by_hand:
+      what: >-
+        Where a squash commit on {{repo}} takes its words from. Flow asks for
+        the merge request's title as the header and its description as the
+        body, so that the header the gate checked is the header that lands.
+      where: >-
+        A project setting, under Settings → Merge requests → Merge commit
+        message template and Squash commit message template. Maintainer or
+        above.
+      steps:
+        - >-
+          On {{repo}}, set the squash commit message template to
+          `%{title}` followed by a blank line and `%{description}`. That is
+          `squash_commit_template` through the API.
+        - >-
+          Or give flow a credential with the Maintainer role on {{repo}} and it
+          will set the template itself on the next `flow apply`.
+  auto_merge:
+    set: true
+    verify: true
+    requires: [developer]
+    remediation: follow_up
+    notes: "PUT merge_requests/:iid/merge with merge_when_pipeline_succeeds; read back from the merge request. The project has no setting to switch it off."
+    by_hand:
+      what: >-
+        Auto-merge on {{repo}}: a merge request waiting only on its pipeline
+        lands itself when the pipeline passes. GitLab has no project setting
+        for this — it is armed one merge request at a time.
+      where: >-
+        A button on the merge request, labelled "Set to auto-merge" (older
+        versions say "Merge when pipeline succeeds").
+      steps:
+        - >-
+          Make sure the project requires its pipeline to pass — Settings →
+          Merge requests → "Pipelines must succeed". Asked to wait for
+          nothing, GitLab merges on the spot, so flow refuses to arm a project
+          that requires no pipeline.
+        - >-
+          Press "Set to auto-merge" on the merge request, or give flow a
+          credential with the Developer role and it will arm each merge
+          request it passes.
+        - >-
+          Or set `forge.auto_merge: false` in `.flow.yaml` if the team would
+          rather land every merge request by hand.
+  file_proposal:
+    set: true
+    verify: true
+    requires: [developer]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        These files in {{repo}}: {{name}}. Flow proposes them as a merge
+        request rather than writing them to the default branch, so that
+        somebody reads them before they run.
+      where: >-
+        A file in the repository, like any other. Flow needs to push a branch
+        and open a merge request to offer it.
+      steps:
+        - >-
+          Run `flow init` in a clone of {{repo}} to write them into the
+          working tree, then commit them on a branch and open a merge request
+          yourself.
+        - >-
+          Or give flow a credential with the Developer role on {{repo}} and it
+          will propose the file on the next `flow apply`.
+  pr_comments:
+    set: true
+    verify: true
+    requires: [developer]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        The note the gate leaves on a merge request saying which rules held
+        and which did not. The verdict is in the commit status either way;
+        the note is what makes it readable without opening a pipeline.
+      where: >-
+        A note on the merge request, written through the API by whatever ran
+        the gate.
+      steps:
+        - >-
+          Give flow a credential with the Developer role on {{repo}} so it may
+          leave notes.
+        - >-
+          Or set `policy.comment: never` in `.flow.yaml` and the gate will
+          report only through the commit status.
   deployments_read:       { set: false, verify: false, remediation: none, notes: "GitLab has an environments API; flow has no source that reads it. Use deploys.source: commit_status." }
   linked_issues_read:     { set: false, verify: true, remediation: none, notes: "merge_requests/:iid/closes_issues" }

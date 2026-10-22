@@ -486,17 +486,39 @@ func FollowUpTitle(check Check, result Result, repo string) string {
 	return fmt.Sprintf("flow: %s (%s)", summary, repo)
 }
 
-// FollowUpBody is what the ticket says: why it was filed, exactly what to do,
-// and how flow will know it is done. The third part is the one that matters —
-// it is the promise that nobody will have to come back and close this by
-// hand, and it is why the ticket can be trusted to mean something.
+// FollowUpBody is what the ticket says: what the thing is, why it was filed,
+// exactly what to do, and how flow will know it is done. The last part is the
+// one that matters — it is the promise that nobody will have to come back and
+// close this by hand, and it is why the ticket can be trusted to mean
+// something.
+//
+// The first part is the one that was missing. A ticket is read by whoever it
+// was assigned to, who has flow's words for the thing and not the provider's:
+// "what this is" and "where it lives" come from the adapter's declaration
+// (spec 05 §1) and lead, because a list of instructions is no use to somebody
+// who does not yet know what they are being asked to look at.
 func FollowUpBody(check Check, result Result) string {
 	var body strings.Builder
 	body.WriteString(result.Message)
 	body.WriteString("\n\n")
-	if why := strings.TrimSpace(result.Remediation.Summary); why != "" && why != result.Message {
-		body.WriteString(why)
-		body.WriteString("\n\n")
+	switch subject, venue := result.Remediation.Subject, result.Remediation.Venue; {
+	case subject != "" || venue != "":
+		body.WriteString("## What this is\n\n")
+		for _, part := range []string{subject, venue} {
+			if part == "" {
+				continue
+			}
+			body.WriteString(part)
+			body.WriteString("\n\n")
+		}
+	default:
+		// No declaration to speak for the provider. The remedy's own
+		// summary is all there is — and it is also the ticket's title, so
+		// it goes in only when it says something the message did not.
+		if why := strings.TrimSpace(result.Remediation.Summary); why != "" && why != result.Message {
+			body.WriteString(why)
+			body.WriteString("\n\n")
+		}
 	}
 
 	body.WriteString("## What to do\n\n")

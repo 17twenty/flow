@@ -113,10 +113,17 @@ func (in DriftInput) drifted(result Result, previous config.Observation) Result 
 		Evidence{Text: fmt.Sprintf("was %s, last confirmed %s", short(previous.Hash), was)},
 		Evidence{Text: "now " + short(result.ObservedHash)},
 	)
-	for _, change := range in.Item.Changes {
-		result.Evidence = append(result.Evidence, Evidence{Text: "to put it back: " + describeChange(change)})
-	}
+	// What putting it back would take, but only where nothing else in the
+	// finding says. A check that brought its own remedy has already
+	// accounted for the change — a follow-up carries it as the last of its
+	// steps, a native outcome as evidence — and saying it again under
+	// "what flow saw" is the same sentence twice in one ticket. The
+	// fallback below is a command, and a command says nothing about what it
+	// will do, so there the changes are the only account there is.
 	if !result.Remediation.Actionable() {
+		for _, change := range in.Item.Changes {
+			result.Evidence = append(result.Evidence, Evidence{Text: "to put it back: " + describeChange(change)})
+		}
 		result.Remediation = Remediation{
 			Kind:    RemedyAuto,
 			Summary: "put it back the way the configuration asks",

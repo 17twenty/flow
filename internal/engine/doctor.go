@@ -158,6 +158,14 @@ type Remediation struct {
 	Command string `json:"command,omitempty"`
 	// Steps are what to do by hand, in order.
 	Steps []string `json:"steps,omitempty"`
+	// Subject is what the thing is, in the provider's words rather than
+	// flow's, and Venue is where it lives — a file, a settings page, an API
+	// call, something a pipeline does. Both come from the adapter's
+	// declaration (spec 05 §1). A remedy that says only what to type
+	// assumes the reader already knows what they are looking at, and the
+	// reader of a follow-up ticket is exactly the person who does not.
+	Subject string `json:"subject,omitempty"`
+	Venue   string `json:"venue,omitempty"`
 	// Owner is who it is for, resolved from followups.owners.
 	Owner string `json:"owner,omitempty"`
 }

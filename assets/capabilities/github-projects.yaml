@@ -1,22 +1,118 @@
 adapter: github-projects
 kind: tracker
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-22
 sources:
   - https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-built-in-automations
   - https://docs.github.com/en/issues/planning-and-tracking-with-projects/customizing-views-in-your-project/customizing-the-board-layout
+  - https://docs.github.com/en/issues/planning-and-tracking-with-projects/creating-projects/creating-a-project
+  - https://docs.github.com/en/issues/using-labels-and-milestones-to-track-work/managing-labels
   - https://github.com/orgs/community/discussions/198803
 limits: { rate: "Shares GitHub GraphQL budget (5,000 points/h)" }
 capabilities:
-  project:            { set: false, verify: true, requires: [project_read], remediation: follow_up, notes: "Resolve only; humans create projects." }
-  status_options:     { set: true,  verify: true, requires: [project_write], remediation: follow_up,
-                        hazards: ["updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up."] }
+  project:
+    set: false
+    verify: true
+    requires: [project_read]
+    remediation: follow_up
+    notes: "Resolve only; humans create projects."
+    by_hand:
+      what: >-
+        The board itself — a GitHub Project (the new kind, "Projects v2") that
+        the issues of {{repo}} appear on. `tracker.project` in `.flow.yaml`
+        names it by number.
+      where: >-
+        A project belongs to a user or an organisation, not to a repository,
+        and is reached from that account's Projects tab. GitHub's API offers
+        no way to create one, so this is always a person's job.
+      steps:
+        - >-
+          Go to the account that should own the board — github.com/<user>
+          → Projects, or an organisation's Projects tab — press "New project"
+          and choose the Board template.
+        - >-
+          Open the board's "…" menu → Settings, and read the number out of the
+          address bar: a project at /users/<user>/projects/7 is number 7. Put
+          that number in `tracker.project` in `.flow.yaml`.
+        - >-
+          Give flow's credential access to the board. A user-owned project has
+          its own collaborator list, separate from the repository's, so a
+          token that can read {{repo}} is still refused the project until it is
+          added there.
+  status_options:
+    set: true
+    verify: true
+    requires: [project_write]
+    remediation: follow_up
+    hazards: ["updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up."]
+    by_hand:
+      what: >-
+        The columns of the board, which on a GitHub Project are the options
+        of its single-select "Status" field. Flow wants exactly the set
+        `workflow.columns` names, and these do not agree: {{name}}.
+      where: >-
+        A setting on the project, not on {{repo}}: the Status field, under the
+        project's "…" menu → Settings → Status.
+      steps:
+        - >-
+          Open the board → "…" → Settings → Status and make its options
+          agree with `workflow.columns`: "Add option" for each one that is
+          missing, named exactly as `.flow.yaml` spells it. Case and spacing
+          have to match — "In progress" and "In Progress" are two columns to
+          GitHub.
+        - >-
+          Drag the options into the order the work flows in. Flow reads the
+          order as the board's order, and the built-in automations put new
+          items in the first one.
+        - >-
+          Or remove the column from `workflow.columns` in `.flow.yaml` if the
+          team does not want it, and flow will stop asking.
   status_categories:  { set: false, verify: false, remediation: none }
   wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip, notes: "Column limits are per-view, advisory, UI-only." }
   expedite_view:      { set: false, verify: false, remediation: attest, notes: "Saved view filtered by label." }
-  labels:             { set: true,  verify: true, requires: [issues_write], remediation: follow_up }
+  labels:
+    set: true
+    verify: true
+    requires: [issues_write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        These issue labels on {{repo}}: {{name}}. Flow's rules read labels —
+        expedited work, blocked work, agent-authored pull requests — and a
+        rule about a label nobody can apply is a rule that never fires.
+      where: >-
+        Labels belong to the repository, not to the board: {{repo}}'s Issues
+        tab → Labels.
+      steps:
+        - >-
+          Go to github.com/{{repo}}/labels and press "New label" for each one
+          that is missing, typing the name exactly as `.flow.yaml` spells it.
+          The colour and description are the team's business; flow compares
+          the name and nothing else.
+        - >-
+          Or give flow a credential that may write issues on {{repo}} — a
+          fine-grained token with "Issues: Read and write" — and it will create
+          the missing labels on the next `flow apply`.
   follow_up_tickets:  { set: true,  verify: true, requires: [issues_write, project_write], remediation: none }
-  ticket_move:        { set: true,  verify: true, requires: [project_write], remediation: follow_up }
+  ticket_move:
+    set: true
+    verify: true
+    requires: [project_write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        Moving a card to another column — setting an item's Status on the
+        board. It is how flow keeps the board honest about work it has
+        watched open, review and merge.
+      where: >-
+        On the board, by dragging the card, or in the item's Status field.
+      steps:
+        - >-
+          Drag the card to the column the work is really in.
+        - >-
+          Give flow's credential write access to the project so it stops being
+          anybody's job. A user-owned project keeps its own collaborator list:
+          add flow's account there as a writer, not only to {{repo}}.
   linked_branches_read: { set: false, verify: true, requires: [project_read], remediation: none,
                         notes: "Issue.linkedBranches: the branches GitHub itself links to the issue, created from the issue or by `gh issue develop`." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }

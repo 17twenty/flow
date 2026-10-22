@@ -1,19 +1,213 @@
 adapter: github
 kind: forge
 version: 1
-researched_at: 2026-10-09
+researched_at: 2026-10-22
 sources:
   - https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
   - https://github.com/github/docs/issues/34689
+  - https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository
+  - https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-squashing-for-pull-requests
+  - https://docs.github.com/en/rest/commits/statuses
 limits: { rate: "PAT 5,000/h; GITHUB_TOKEN 1,000/h/repo; 304s free; ETags token-scoped" }
 capabilities:
-  commit_status_write:    { set: true,  verify: true, requires: [statuses_write], remediation: follow_up }
-  branch_protection:      { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Prefer rulesets; read effective rules." }
-  required_status_checks: { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "Additive." }
-  merge_settings:         { set: true,  verify: true, requires: [admin], remediation: follow_up }
-  squash_text:            { set: true,  verify: true, requires: [admin], remediation: follow_up, notes: "squash_merge_commit_title/message." }
-  auto_merge:             { set: true,  verify: true, requires: [pulls_write], remediation: follow_up, notes: "enablePullRequestAutoMerge (GraphQL); the repository setting allow_auto_merge must be on, and needs admin." }
-  file_proposal:          { set: true,  verify: true, requires: [contents_write, pulls_write], remediation: follow_up }
-  pr_comments:            { set: true,  verify: true, requires: [pulls_write], remediation: follow_up }
-  deployments_read:       { set: false, verify: true, remediation: none }
-  linked_issues_read:     { set: false, verify: true, remediation: none, notes: "closingIssuesReferences (GraphQL)." }
+  commit_status_write:
+    set: true
+    verify: true
+    requires: [statuses_write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        A commit status named {{name}}: the green or red mark GitHub shows
+        against a commit and in the checks list of every pull request that
+        contains it. Flow's gate publishes its verdict as one.
+      where: >-
+        GitHub holds it against the commit, not in any file. There is no page
+        to type one into — a status can only ever be written through the API,
+        by whatever ran the check.
+      steps:
+        - >-
+          Give flow a credential that may write commit statuses on {{repo}}: a
+          fine-grained token with "Commit statuses: Read and write", or a
+          classic token with the `repo` scope.
+        - >-
+          If the gate runs in GitHub Actions, the job's `permissions:` block
+          must also grant `statuses: write`. The default `GITHUB_TOKEN` has
+          only what the block names, so a workflow that names nothing can
+          write nothing.
+  branch_protection:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    notes: "Prefer rulesets; read effective rules."
+    by_hand:
+      what: >-
+        Protection on {{repo}}'s default branch: that it cannot be force-pushed
+        or deleted, and that a branch is up to date with it before it may
+        merge.
+      where: >-
+        A repository setting, under Settings → Rules → Rulesets (or the older
+        Settings → Branches → Branch protection rules). Only somebody with
+        admin on the repository can see that page.
+      steps:
+        - >-
+          On {{repo}}, go to Settings → Rules → Rulesets → New ruleset → New
+          branch ruleset, target "Default branch", and tick "Restrict
+          deletions", "Block force pushes" and "Require branches to be up to
+          date before merging".
+        - >-
+          Set Enforcement status to Active before saving. GitHub creates every
+          ruleset disabled, and a disabled ruleset is in no branch's effective
+          rules at all — it looks configured and protects nothing.
+        - >-
+          Or give flow a credential with admin on {{repo}} and it will do this
+          itself on the next `flow apply`.
+  required_status_checks:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    notes: "Additive."
+    by_hand:
+      what: >-
+        A rule that a pull request on {{repo}} may not merge until these
+        status checks have passed: {{name}}. Without it the gate still
+        publishes its verdict and nothing stops anybody merging past a red
+        one.
+      where: >-
+        The same repository setting as the protection itself: Settings →
+        Rules → Rulesets, on the ruleset that targets the default branch.
+        Admin only.
+      steps:
+        - >-
+          Open the ruleset targeting {{repo}}'s default branch, tick "Require
+          status checks to pass", and add each of {{name}} by name. The names
+          have to match exactly; GitHub offers checks it has seen recently,
+          and one it has never seen must be typed in.
+        - >-
+          Tick "Require branches to be up to date before merging" beside it.
+          A status is a fact about the commit it was posted on, so without
+          this two pull requests can each be green against the trunk they left
+          and be broken together once both have landed.
+        - >-
+          Or, if the team does not want this check required, remove it from
+          `forge.required_checks` in `.flow.yaml`.
+  merge_settings:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        Which ways a pull request on {{repo}} is allowed to land — squash, merge
+        commit or rebase. Flow asks for the one `commits.merge_strategy`
+        names and for the others to be off, so that one pull request becomes
+        one commit of a known shape.
+      where: >-
+        A repository setting, under Settings → General → Pull Requests. Admin
+        only.
+      steps:
+        - >-
+          On {{repo}}, go to Settings → General → Pull Requests and tick only
+          the merge button the team uses, leaving the rest clear.
+        - >-
+          Or change `commits.merge_strategy` in `.flow.yaml` to the one the
+          team actually uses, and flow will ask for that instead.
+  squash_text:
+    set: true
+    verify: true
+    requires: [admin]
+    remediation: follow_up
+    notes: "squash_merge_commit_title/message."
+    by_hand:
+      what: >-
+        Where the squash commit takes its words from. Flow asks for the pull
+        request's title as the header and its body as the message, so that the
+        header the gate checked is the header that lands in the trunk.
+      where: >-
+        A repository setting, under Settings → General → Pull Requests, in the
+        two dropdowns beneath "Allow squash merging". Admin only.
+      steps:
+        - >-
+          On {{repo}}, set "Default commit message" to "Pull request title and
+          description". That is `squash_merge_commit_title: PR_TITLE` and
+          `squash_merge_commit_message: PR_BODY` through the API.
+        - >-
+          Or give flow a credential with admin on {{repo}} and it will do this
+          itself on the next `flow apply`.
+  auto_merge:
+    set: true
+    verify: true
+    requires: [pulls_write]
+    remediation: follow_up
+    notes: "enablePullRequestAutoMerge (GraphQL); the repository setting allow_auto_merge must be on, and needs admin."
+    by_hand:
+      what: >-
+        Auto-merge on {{repo}}: a pull request that has been approved and is
+        waiting only on its checks lands itself when they go green, instead of
+        waiting for somebody to come back and press the button.
+      where: >-
+        Two places, and both have to be true. The repository setting is under
+        Settings → General → Pull Requests and needs admin; arming one pull
+        request is a button on that pull request and needs write.
+      steps:
+        - >-
+          On {{repo}}, tick Settings → General → Pull Requests → "Allow
+          auto-merge". Nothing can be armed until somebody with admin does
+          this once.
+        - >-
+          Give flow a credential with write access to pull requests, or grant
+          `pull-requests: write` in the gate workflow's `permissions:` block,
+          and flow will arm each pull request it passes.
+        - >-
+          Or set `forge.auto_merge: false` in `.flow.yaml` if the team would
+          rather land every pull request by hand.
+  file_proposal:
+    set: true
+    verify: true
+    requires: [contents_write, pulls_write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        These files in {{repo}}: {{name}}. Flow proposes them as a pull
+        request rather than writing them to the default branch, so that
+        somebody reads them before they run.
+      where: >-
+        A file in the repository, like any other. Flow needs to push a branch
+        and open a pull request to offer it.
+      steps:
+        - >-
+          Run `flow init` in a clone of {{repo}} to write them into the
+          working tree, then commit them on a branch and open a pull request
+          yourself.
+        - >-
+          Or give flow a credential that may write contents and open pull
+          requests on {{repo}} — a fine-grained token with "Contents: Read and
+          write" and "Pull requests: Read and write" — and it will propose the
+          file on the next `flow apply`.
+  pr_comments:
+    set: true
+    verify: true
+    requires: [pulls_write]
+    remediation: follow_up
+    by_hand:
+      what: >-
+        The comment the gate leaves on a pull request saying which rules held
+        and which did not. The verdict is in the commit status either way;
+        the comment is what makes it readable without clicking into a check.
+      where: >-
+        A comment on the pull request, written through the API by whatever
+        ran the gate.
+      steps:
+        - >-
+          Give flow a credential that may comment on pull requests in {{repo}}:
+          a fine-grained token with "Pull requests: Read and write", or a
+          classic token with the `repo` scope.
+        - >-
+          If the gate runs in GitHub Actions, grant `pull-requests: write` in
+          the job's `permissions:` block as well.
+        - >-
+          Or set `policy.comment: never` in `.flow.yaml` and the gate will
+          report only through the commit status.
+  deployments_read:      { set: false, verify: true, remediation: none }
+  linked_issues_read:    { set: false, verify: true, remediation: none, notes: "closingIssuesReferences (GraphQL)." }

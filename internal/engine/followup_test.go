@@ -198,6 +198,96 @@ func TestTheTicketSaysWhyWhatAndHow(t *testing.T) {
 	}
 }
 
+// The person a ticket is assigned to has flow's words for the thing and not
+// the provider's. `create deploys.records "production"` is an item id and the
+// name of one of its entries, and a reader holding neither is being asked to
+// go and find out what they have been handed. What the thing is and where it
+// lives come from the adapter's declaration (spec 05 §1) and lead, because a
+// list of instructions is no use to somebody who does not yet know what they
+// are being asked to look at.
+func TestTheTicketSaysWhatTheThingIsBeforeItSaysWhatToDo(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	finding := needsAHuman()
+	finding.Remediation.Subject = "A cap on how many issues may sit in In progress at once."
+	finding.Remediation.Venue = "A setting on the board's own view, not on acme/widget."
+	body := w.reconcile(t, finding, true).Ticket.Body
+
+	what := strings.Index(body, "## What this is")
+	todo := strings.Index(body, "## What to do")
+	switch {
+	case what < 0:
+		t.Fatalf("the ticket never says what the thing is:\n%s", body)
+	case todo < 0:
+		t.Fatalf("the ticket never says what to do:\n%s", body)
+	case what > todo:
+		t.Errorf("the ticket says what to do before it says what the thing is:\n%s", body)
+	}
+	for _, want := range []string{finding.Remediation.Subject, finding.Remediation.Venue} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the ticket body does not carry %q; it is:\n%s", want, body)
+		}
+	}
+}
+
+// Half a declaration is still better than none: a provider that says what
+// the thing is and has nowhere to point at is not made clearer by a heading
+// with a blank line under it.
+func TestATicketWithOnlyHalfADeclarationSaysTheHalfItHas(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		subject string
+		venue   string
+	}{
+		{name: "only what it is", subject: "A cap on how many issues may sit in In progress."},
+		{name: "only where it lives", venue: "A setting on the board's own view."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := newFollowUpWorld(t)
+			finding := needsAHuman()
+			finding.Remediation.Subject = test.subject
+			finding.Remediation.Venue = test.venue
+			body := w.reconcile(t, finding, true).Ticket.Body
+
+			if !strings.Contains(body, "## What this is") {
+				t.Fatalf("the ticket never says what the thing is:\n%s", body)
+			}
+			said := test.subject + test.venue
+			if !strings.Contains(body, said) {
+				t.Errorf("the ticket body does not carry %q; it is:\n%s", said, body)
+			}
+			if strings.Contains(body, "## What this is\n\n\n") {
+				t.Errorf("the heading has nothing under it:\n%s", body)
+			}
+		})
+	}
+}
+
+// Not every finding comes from a declaration — a live audit is flow's own
+// reading of the team's week, and there is no provider to speak for it. The
+// remedy's summary is all there is, and it carried the ticket before any of
+// this; losing it would take the "why" out of every check that is not about
+// a capability.
+func TestWithNobodyToSpeakForTheProviderTheRemedyStillSaysWhy(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	finding := needsAHuman()
+	body := w.reconcile(t, finding, true).Ticket.Body
+
+	if strings.Contains(body, "## What this is") {
+		t.Errorf("the ticket announced a declaration nobody wrote:\n%s", body)
+	}
+	if !strings.Contains(body, finding.Remediation.Summary) {
+		t.Errorf("the ticket body does not carry %q; it is:\n%s", finding.Remediation.Summary, body)
+	}
+}
+
 // TestNothingIsFiledWithoutFix is spec 02 §2: a plain `flow doctor` reports.
 func TestNothingIsFiledWithoutFix(t *testing.T) {
 	t.Parallel()
