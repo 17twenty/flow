@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -70,6 +71,94 @@ type Capability struct {
 	Hazards []string `yaml:"hazards,omitempty"`
 	// Notes is what the research found, in prose.
 	Notes string `yaml:"notes,omitempty"`
+	// ByHand is how a person makes this true when flow may not. It is
+	// required of a capability remediated by a follow-up and refused of
+	// every other.
+	ByHand Recipe `yaml:"by_hand,omitempty"`
+}
+
+// Recipe is how a person makes one capability true by hand (spec 05 §1).
+//
+// Flow files a ticket for every follow-up capability it is refused, and that
+// ticket is the only instruction anybody will get. Written in flow's own
+// vocabulary it says `create deploys.records "production"` — the id of a
+// desired item and the name of one of its entries, and nothing about what
+// kind of thing that is, where it lives, or what act would produce one. Only
+// the research behind an adapter knows that, so it is declared beside the
+// capability rather than composed by whatever happens to be printing.
+type Recipe struct {
+	// What the thing is, in the provider's own words rather than flow's.
+	What string `yaml:"what" json:"what,omitempty"`
+	// Where it lives: the answer to "is this a file in my repository, a
+	// settings page, an API call, or something my pipeline has to do?".
+	Where string `yaml:"where" json:"where,omitempty"`
+	// Steps are the acts that produce it, in order. The last of them is
+	// normally the way to stop flow asking at all, because a team that does
+	// not want the thing is owed that answer as plainly as the team that
+	// does.
+	Steps []string `yaml:"steps,omitempty" json:"steps,omitempty"`
+}
+
+// Written reports whether there is a recipe here at all.
+func (r Recipe) Written() bool {
+	return r.What != "" || r.Where != "" || len(r.Steps) > 0
+}
+
+// IsZero is what keeps an absent recipe out of the plan's JSON: encoding/json
+// has no omitempty for a struct, and an item with no recipe writing out three
+// empty fields would put the thing's absence in every line of a document read
+// to find out what is there.
+func (r Recipe) IsZero() bool { return !r.Written() }
+
+// Expand fills a recipe's placeholders in. It is the whole of the
+// substitution: a declaration is data, so the only thing it may compute with
+// is what [RecipeFields] names.
+func (r Recipe) Expand(fields map[string]string) Recipe {
+	out := Recipe{What: expandRecipe(r.What, fields), Where: expandRecipe(r.Where, fields)}
+	for _, step := range r.Steps {
+		out.Steps = append(out.Steps, expandRecipe(step, fields))
+	}
+	return out
+}
+
+// Recipe placeholders. A recipe has to be able to name the thing the ticket
+// is about — "the environment {{name}}" — or every recipe is written for the
+// general case and read by somebody holding a particular one.
+//
+// They are doubled because a recipe is prose about somebody else's API, and
+// single braces belong to those APIs: GitLab's commit templates are written
+// `%{title}`, a shell line is `${HOME}`. A syntax that collided with them
+// would make the declarations unable to quote the very thing they are
+// explaining.
+const (
+	// RecipeName is the thing or things the change is about.
+	RecipeName = "name"
+	// RecipeRepo is the repository, as owner/name.
+	RecipeRepo = "repo"
+)
+
+// RecipeFields are the placeholders a recipe may use, sorted. Anything else
+// between doubled braces is a typo, and a typo in a declaration is a broken
+// build rather than a brace printed at somebody.
+func RecipeFields() []string { return []string{RecipeName, RecipeRepo} }
+
+// recipePlaceholder matches one {{placeholder}} in a recipe.
+var recipePlaceholder = regexp.MustCompile(`\{\{([a-z_]*)\}\}`)
+
+// expandRecipe substitutes the fields that were supplied and leaves the rest
+// alone. An unknown placeholder cannot reach here: validate refuses the
+// declaration.
+func expandRecipe(text string, fields map[string]string) string {
+	if text == "" || len(fields) == 0 {
+		return text
+	}
+	return recipePlaceholder.ReplaceAllStringFunc(text, func(match string) string {
+		value, ok := fields[recipePlaceholder.FindStringSubmatch(match)[1]]
+		if !ok {
+			return match
+		}
+		return value
+	})
 }
 
 // Limits is informational: what the provider's rate limiting looks like.
@@ -297,6 +386,52 @@ func (c Capability) validate() []string {
 	for _, token := range c.Requires {
 		if strings.TrimSpace(token) == "" {
 			add("requires an empty permission token")
+		}
+	}
+	for _, problem := range c.recipe() {
+		add("%s", problem)
+	}
+	return problems
+}
+
+// recipe returns everything wrong with the by-hand recipe.
+//
+// It is required of a follow-up and refused of anything else. A follow-up is
+// flow saying "somebody has to do this", and the ticket it files is the only
+// place that somebody will be told what; a declaration that cannot say is a
+// provider that files work nobody can act on, which is worse than one flow
+// declines to support. Every other remediation raises no ticket, so a recipe
+// there is prose with no reader, and prose with no reader rots.
+func (c Capability) recipe() []string {
+	var problems []string
+	add := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
+
+	if c.Remediation != RemediationFollowUp {
+		if c.ByHand.Written() {
+			add("carries a by_hand recipe but its remediation is %q; only a capability flow files a ticket about is ever done by hand", c.Remediation)
+		}
+		return problems
+	}
+	switch {
+	case !c.ByHand.Written():
+		add("has no by_hand recipe; a follow-up is a ticket asking somebody to do this, so the declaration has to say what it is, where it lives and what to do")
+	case strings.TrimSpace(c.ByHand.What) == "":
+		add("has a by_hand recipe that does not say what the thing is")
+	case strings.TrimSpace(c.ByHand.Where) == "":
+		add("has a by_hand recipe that does not say where the thing lives")
+	case len(c.ByHand.Steps) == 0:
+		add("has a by_hand recipe with no steps")
+	}
+	for _, text := range append([]string{c.ByHand.What, c.ByHand.Where}, c.ByHand.Steps...) {
+		if text != "" && strings.TrimSpace(text) == "" {
+			add("has a by_hand step with nothing in it")
+		}
+		for _, match := range recipePlaceholder.FindAllStringSubmatch(text, -1) {
+			if !slices.Contains(RecipeFields(), match[1]) {
+				add("uses %s in its by_hand recipe, which flow cannot fill in; it knows %s", match[0], strings.Join(RecipeFields(), ", "))
+			}
 		}
 	}
 	return problems

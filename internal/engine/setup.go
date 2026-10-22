@@ -770,12 +770,19 @@ func followUpSummary(item PlanItem, title string) string {
 
 // followUpSteps is the "exact steps" spec 07 §4 asks a follow-up to carry.
 //
-// Flow planned this change and was refused, so it knows the whole of it: the
-// permission that was missing, and every field it would have set. Writing
-// "flow has no steps to offer for this one" when all of that is in hand is
-// the ticket telling a person to go and rediscover it.
+// The steps are the provider's own, from its declaration (spec 05 §1). Flow
+// knows what it wanted and which permission it lacked, and it does not know
+// what kind of thing a `deploys.record` is to the person reading the ticket,
+// or which page it is on, or whether there is a page at all. Only the
+// research behind the adapter knows that, and a ticket written without it
+// says `create deploys.records "production"` at somebody who has no reason
+// to have ever met either word.
+//
+// What flow adds is the two things the declaration cannot know: that this
+// particular credential was short of this particular permission, and what
+// the provider volunteered about this particular repository.
 func followUpSteps(item PlanItem) []string {
-	steps := make([]string, 0, len(item.Changes)+len(item.Notes)+1)
+	steps := make([]string, 0, len(item.Recipe.Steps)+len(item.Notes)+1)
 	// What the provider volunteered comes first. A mechanism that is already
 	// written and merely switched off is one click, and burying it under the
 	// change flow would have made from scratch is burying the cheap answer
@@ -783,11 +790,27 @@ func followUpSteps(item PlanItem) []string {
 	steps = append(steps, noteSteps(item)...)
 	if len(item.Missing) > 0 {
 		steps = append(steps, fmt.Sprintf(
-			"ask somebody whose %s credential has %s to make the change below, or give flow one",
+			"Give flow a %s credential with %s and it will do this itself; otherwise somebody who has it can follow the steps below.",
 			item.Target, joinWords(item.Missing)))
 	}
+	steps = append(steps, item.Recipe.Steps...)
+	// Flow's own words last, and only once. The reader has just been told
+	// what to do in the provider's vocabulary; this is the same thing said
+	// exactly, for somebody who knows flow's, and it is the only place in
+	// the ticket it appears — spelling it out again under "what flow saw"
+	// turned the shortest tickets into the same sentence twice.
+	//
+	// It is labelled as flow's vocabulary only where there is another
+	// vocabulary to tell it apart from. An item that names no capability
+	// has no declaration behind it and so no recipe, and announcing a
+	// translation of the only sentence in the ticket is worse than the
+	// sentence.
 	for _, change := range item.Changes {
-		steps = append(steps, changeInstruction(change))
+		instruction := changeInstruction(change)
+		if len(item.Recipe.Steps) > 0 {
+			instruction = "In flow's own words: " + instruction
+		}
+		steps = append(steps, instruction)
 	}
 	return steps
 }
@@ -891,16 +914,18 @@ func outcomeResult(item PlanItem, title string) Result {
 		if len(item.Missing) > 0 {
 			result = result.Saw("the credential is missing "+joinWords(item.Missing), "")
 		}
-		// The same evidence a native outcome carries. Flow knows exactly what
-		// it would have done; the only thing it lacks is permission to do it,
-		// and a ticket that withholds the change asks a person to work out
-		// for themselves what flow already decided.
-		for _, change := range item.Changes {
-			result = result.Saw(describeChange(change), "")
-		}
+		// The changes are deliberately not repeated here. A native outcome
+		// lists them as evidence because its remedy is a command and says
+		// nothing about what the command will do; a follow-up's remedy is
+		// the steps, and the last of those is the change written out in
+		// full. Saying it in both places made the shortest ticket flow files
+		// — one change, no fields — read as the same line under two
+		// headings.
 		return result.Fix(Remediation{
 			Kind:    RemedyFollowUp,
 			Summary: followUpSummary(item, title),
+			Subject: item.Recipe.What,
+			Venue:   item.Recipe.Where,
 			Steps:   followUpSteps(item),
 		})
 

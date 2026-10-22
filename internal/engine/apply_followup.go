@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/17twenty/flow/internal/config"
@@ -136,6 +137,8 @@ func applyResult(planned PlanItem, item AppliedItem) Result {
 			Kind:    RemedyFollowUp,
 			Summary: "make " + item.ID + " true by hand",
 			Owner:   planned.Owner,
+			Subject: planned.Recipe.What,
+			Venue:   planned.Recipe.Where,
 			Steps:   owed,
 		},
 		ObservedHash: planned.ObservedHash,
@@ -180,6 +183,13 @@ func outstandingChanges(item AppliedItem) []string {
 func unattemptedChanges(planned PlanItem) []string {
 	if planned.Outcome != OutcomeFollowUp {
 		return nil
+	}
+	// The provider's own instructions, the same ones doctor's follow-up
+	// carries. An item is refused for the same reason on both paths, and two
+	// tickets about one refusal that read differently are two accounts of
+	// the same fact.
+	if steps := planned.Recipe.Steps; len(steps) > 0 {
+		return slices.Clone(steps)
 	}
 	steps := make([]string, 0, len(planned.Changes))
 	for _, change := range planned.Changes {

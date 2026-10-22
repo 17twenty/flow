@@ -43,7 +43,7 @@ func TestShippedDeclarationsLoad(t *testing.T) {
 		if set.Researched().IsZero() {
 			t.Errorf("%s: researched_at %q did not parse", adapter, set.ResearchedAt)
 		}
-		if set.Kind != core.KindDeploys && len(set.Sources) == 0 {
+		if len(set.Sources) == 0 {
 			t.Errorf("%s: declares no sources, so nothing can be re-checked", adapter)
 		}
 
@@ -63,6 +63,45 @@ func TestShippedDeclarationsLoad(t *testing.T) {
 				t.Errorf("%s %s: compensated_by %q without compensate", adapter, name, capability.CompensatedBy)
 			}
 		}
+	}
+}
+
+// A capability flow cannot set at all is the one whose ticket is the only
+// instruction anybody will ever get: nobody can grant a permission that would
+// let flow do it, so the steps are the whole remedy.
+//
+// The loader already refuses a follow-up with no recipe, so this does not
+// check for one. What it checks is the list itself, which is the thing a
+// declaration could quietly leave: moving one of these to another
+// remediation, or declaring a ninth, changes who is owed instructions and
+// nothing else would say so.
+func TestEveryCapabilityFlowCanNeverSetSaysHowAPersonDoes(t *testing.T) {
+	registry := shippedRegistry(t)
+
+	var named []string
+	for _, adapter := range registry.Adapters() {
+		set, _ := registry.Of(adapter)
+		for _, name := range set.Names() {
+			capability := set.Capability(name)
+			if capability.Set || capability.Remediation != core.RemediationFollowUp {
+				continue
+			}
+			named = append(named, adapter+" "+name)
+		}
+	}
+
+	want := []string{
+		"deploys deploy_records",
+		"gitea squash_text",
+		"github-projects project",
+		"jira-cloud project",
+		"jira-cloud status_options",
+		"jira-cloud status_categories",
+		"linear project",
+		"linear status_categories",
+	}
+	if !slices.Equal(named, want) {
+		t.Errorf("the capabilities only a person can make true are\n%v\nwant\n%v", named, want)
 	}
 }
 
@@ -214,8 +253,12 @@ version: 1
 researched_at: 2026-10-09
 sources: []
 capabilities:
-  deploy_records: { set: false, verify: true, remediation: follow_up }
+  deploy_records: { set: false, verify: true, remediation: follow_up, by_hand: ` + recipeYAML + ` }
 `
+
+// recipeYAML is the smallest recipe a follow-up capability may carry: every
+// capability flow files a ticket about has to say what, where and how.
+const recipeYAML = `{ what: "the deployment history", where: "your deploy job writes it", steps: ["post a deployment"] }`
 
 func TestParseCapabilitySetRejects(t *testing.T) {
 	tests := []struct {
@@ -289,6 +332,56 @@ func TestParseCapabilitySetRejects(t *testing.T) {
 			name:   "asking for a promise about something flow can see",
 			src:    strings.Replace(validDeploys, "remediation: follow_up", "remediation: attest", 1),
 			wantIn: "would never settle anything",
+		},
+		{
+			name:   "a follow-up with no recipe",
+			src:    strings.Replace(validDeploys, ", by_hand: "+recipeYAML, "", 1),
+			wantIn: "has no by_hand recipe",
+		},
+		{
+			name:   "a recipe that does not say what the thing is",
+			src:    strings.Replace(validDeploys, `what: "the deployment history"`, `what: ""`, 1),
+			wantIn: "does not say what the thing is",
+		},
+		{
+			name:   "a recipe that does not say where it lives",
+			src:    strings.Replace(validDeploys, `where: "your deploy job writes it"`, `where: ""`, 1),
+			wantIn: "does not say where the thing lives",
+		},
+		{
+			name:   "a recipe with nothing to do",
+			src:    strings.Replace(validDeploys, `steps: ["post a deployment"]`, "steps: []", 1),
+			wantIn: "with no steps",
+		},
+		{
+			name:   "a step with nothing in it",
+			src:    strings.Replace(validDeploys, `["post a deployment"]`, `["post a deployment", "  "]`, 1),
+			wantIn: "step with nothing in it",
+		},
+		{
+			name:   "a recipe whose subject is only spaces",
+			src:    strings.Replace(validDeploys, `what: "the deployment history"`, `what: "   "`, 1),
+			wantIn: "does not say what the thing is",
+		},
+		{
+			name:   "a recipe whose venue is only spaces",
+			src:    strings.Replace(validDeploys, `where: "your deploy job writes it"`, `where: "   "`, 1),
+			wantIn: "does not say where the thing lives",
+		},
+		{
+			name:   "a recipe on a capability that files no ticket",
+			src:    strings.Replace(validDeploys, "remediation: follow_up", "remediation: none", 1),
+			wantIn: "only a capability flow files a ticket about is ever done by hand",
+		},
+		{
+			name:   "a placeholder flow cannot fill in",
+			src:    strings.Replace(validDeploys, `what: "the deployment history"`, `what: "the history of {{environment}}"`, 1),
+			wantIn: "uses {{environment}} in its by_hand recipe",
+		},
+		{
+			name:   "a placeholder in a step",
+			src:    strings.Replace(validDeploys, `["post a deployment"]`, `["post a deployment to {{env}}"]`, 1),
+			wantIn: "uses {{env}} in its by_hand recipe",
 		},
 		{
 			name:   "an empty permission token",
@@ -419,4 +512,72 @@ func TestLoadRegistryRefusesBrokenDeclarations(t *testing.T) {
 			t.Errorf("error %q does not name the file at fault", err)
 		}
 	})
+}
+
+// A recipe is written once for every repository an adapter will ever be
+// pointed at, and read by one person holding one of them. Expand is the whole
+// of the difference between those two.
+func TestARecipeIsFilledInForTheRepositoryItIsAbout(t *testing.T) {
+	recipe := core.Recipe{
+		What:  "the deployment history of {{repo}}",
+		Where: "written by whatever deploys {{repo}}",
+		Steps: []string{"record a deployment to {{name}}", "or stop asking"},
+	}
+
+	got := recipe.Expand(map[string]string{core.RecipeName: "production", core.RecipeRepo: "acme/api"})
+
+	if want := "the deployment history of acme/api"; got.What != want {
+		t.Errorf("what = %q, want %q", got.What, want)
+	}
+	if want := "written by whatever deploys acme/api"; got.Where != want {
+		t.Errorf("where = %q, want %q", got.Where, want)
+	}
+	want := []string{"record a deployment to production", "or stop asking"}
+	if !slices.Equal(got.Steps, want) {
+		t.Errorf("steps = %v, want %v", got.Steps, want)
+	}
+	// The original is untouched: one declaration is read for every item of
+	// every run, so an Expand that wrote through its receiver would leave the
+	// first repository's name in the second repository's ticket.
+	if recipe.Steps[0] != "record a deployment to {{name}}" {
+		t.Errorf("Expand rewrote the declaration itself: %q", recipe.Steps[0])
+	}
+}
+
+// A placeholder nobody supplied stays a placeholder. It cannot happen to a
+// field the validator knows — an unknown one fails to parse — so this is the
+// case of an item whose changes name nothing, and a visible brace is a better
+// account of that than a sentence with a hole where the word should be.
+func TestAPlaceholderNobodySuppliedIsLeftStanding(t *testing.T) {
+	recipe := core.Recipe{What: "the {{name}} of {{repo}}", Where: "somewhere"}
+
+	got := recipe.Expand(map[string]string{core.RecipeRepo: "acme/api"})
+
+	if want := "the {{name}} of acme/api"; got.What != want {
+		t.Errorf("what = %q, want %q", got.What, want)
+	}
+}
+
+// An absent recipe has to stay out of the plan's JSON, and a struct has no
+// omitempty: IsZero is what omitzero asks.
+func TestAnAbsentRecipeIsZero(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		recipe core.Recipe
+		want   bool
+	}{
+		{"nothing at all", core.Recipe{}, true},
+		{"only a subject", core.Recipe{What: "a thing"}, false},
+		{"only a venue", core.Recipe{Where: "a page"}, false},
+		{"only a step", core.Recipe{Steps: []string{"do it"}}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.recipe.IsZero(); got != test.want {
+				t.Errorf("IsZero() = %v, want %v", got, test.want)
+			}
+			if got := !test.recipe.Written(); got != test.want {
+				t.Errorf("Written() = %v, want %v", !got, !test.want)
+			}
+		})
+	}
 }

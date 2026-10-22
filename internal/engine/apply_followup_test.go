@@ -147,6 +147,45 @@ func TestASkippedItemsTicketCarriesThePlansChanges(t *testing.T) {
 	}
 }
 
+// A refusal is one fact, and two tickets about it that read differently are
+// two accounts of it. `flow apply` steps over the same item `flow doctor`
+// files for, so it hands over the same declaration: what the thing is, where
+// it lives, and the provider's own steps.
+func TestApplyFilesTheSameInstructionsDoctorWould(t *testing.T) {
+	t.Parallel()
+
+	w := newApplyFollowUpWorld(t)
+	planned := refusedByTheForge()
+	planned.Recipe = core.Recipe{
+		What:  "A rule saying what a commit has to pass before it may land on main.",
+		Where: "Settings → Rules → Rulesets on acme/widget.",
+		Steps: []string{"press New ruleset", "require the status flow/policy"},
+	}
+
+	filed := w.account(t, planned, neverAttempted(planned))
+	ticket, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("read the ticket back: %v", err)
+	}
+	for _, want := range []string{
+		"## What this is",
+		planned.Recipe.What,
+		planned.Recipe.Where,
+		"1. press New ruleset",
+		"2. require the status flow/policy",
+	} {
+		if !strings.Contains(ticket.Body, want) {
+			t.Errorf("the ticket does not carry %q:\n%s", want, ticket.Body)
+		}
+	}
+	// And not flow's item vocabulary instead of them. The plan's own words
+	// are what apply falls back to when a provider has nothing to say, not
+	// what it prefers.
+	if strings.Contains(ticket.Body, `update forge.protection "protection"`) {
+		t.Errorf("the ticket says it in flow's words as well as the provider's:\n%s", ticket.Body)
+	}
+}
+
 // An item that is already true is also skipped, and that skip really does
 // mean there is nothing left to do. Refusing to close those would leave a
 // ticket open for ever, which is the failure the lifecycle exists to stop —

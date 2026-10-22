@@ -1,23 +1,142 @@
 adapter: linear
 kind: tracker
 version: 1
-researched_at: 2026-10-14
+researched_at: 2026-10-22
 sources:
   - https://linear.app/developers/graphql
   - https://linear.app/developers/pagination
   - https://linear.app/developers/rate-limiting
   - https://linear.app/developers/attachments
   - https://linear.app/docs/github
+  - https://linear.app/docs/customize-workflows
+  - https://linear.app/docs/labels
 limits: { rate: "5,000 requests/h and 3,000,000 complexity points/h per API key" }
 capabilities:
-  project:            { set: false, verify: true, remediation: follow_up, notes: "A team; tracker.project holds its key." }
-  status_options:     { set: true,  verify: true, requires: [team_admin], remediation: follow_up, notes: "workflowStateCreate; states are columns." }
-  status_categories:  { set: false, verify: true, requires: [team_admin], remediation: follow_up, notes: "Settled when a state is created: WorkflowStateUpdateInput takes no type." }
+  project:
+    set: false
+    verify: true
+    remediation: follow_up
+    notes: "A team; tracker.project holds its key."
+    by_hand:
+      what: >-
+        The Linear team the work of {{repo}} belongs to. Linear has no object
+        called a project that works like a board, so flow uses a team, and
+        `tracker.project` in `.flow.yaml` holds the team key — the two-to-five
+        letter prefix on every issue, such as the ENG of ENG-128.
+      where: >-
+        A team belongs to the workspace. Only a workspace admin can create
+        one, and Linear's API offers flow no way to, so this is always a
+        person's job.
+      steps:
+        - >-
+          In Linear, go to Settings → Teams → Add team, or open an existing
+          team's settings and read its identifier.
+        - >-
+          Put that key in `tracker.project` in `.flow.yaml`. Leave
+          `tracker.url` empty: Linear is one hosted service and has no other
+          address.
+        - >-
+          Give flow's credential access to the team. A personal API key
+          carries the access of the account it belongs to, so that account has
+          to be a member of the team.
+  status_options:
+    set: true
+    verify: true
+    requires: [team_admin]
+    remediation: follow_up
+    notes: "workflowStateCreate; states are columns."
+    by_hand:
+      what: >-
+        The team's workflow statuses, which are Linear's columns. Flow wants
+        exactly the set `workflow.columns` names, and these do not agree:
+        {{name}}.
+      where: >-
+        A team setting, under Settings → Teams → the team → Workflow.
+      steps:
+        - >-
+          Open Settings → Teams → the team → Workflow and add a status for
+          each of {{name}} that is missing, choosing the kind it is — backlog,
+          unstarted, started, completed or cancelled. The kind cannot be
+          changed afterwards.
+        - >-
+          Drag it into the order work flows in. Linear's own order is the
+          board's order, and flow reads it rather than imposing one.
+        - >-
+          Or remove the column from `workflow.columns` in `.flow.yaml` if the
+          team does not want it, and flow will stop asking.
+  status_categories:
+    set: false
+    verify: true
+    requires: [team_admin]
+    remediation: follow_up
+    notes: "Settled when a state is created: WorkflowStateUpdateInput takes no type."
+    by_hand:
+      what: >-
+        Which kind of column each of {{name}} is — backlog, unstarted,
+        started, completed or cancelled. It is what tells flow whether work in
+        a column has begun or finished.
+      where: >-
+        A property of the status, chosen when it is created, under Settings →
+        Teams → the team → Workflow. Linear's API cannot change it afterwards
+        at all: the update takes no type.
+      steps:
+        - >-
+          Open Settings → Teams → the team → Workflow and create a new status
+          of the right kind, named for what the column means.
+        - >-
+          Move the issues sitting in the old status to it, then delete the
+          old one. Recategorising in place is not something Linear offers
+          anybody, through the interface or the API.
   wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip }
   expedite_view:      { set: false, verify: false, remediation: compensate, compensated_by: policy.expedite }
-  labels:             { set: true,  verify: true, remediation: follow_up, notes: "issueLabelCreate on the team; a workspace label is readable and not this board's." }
+  labels:
+    set: true
+    verify: true
+    remediation: follow_up
+    notes: "issueLabelCreate on the team; a workspace label is readable and not this board's."
+    by_hand:
+      what: >-
+        These labels, which the team's issues can carry: {{name}}. Flow's
+        rules read labels — expedited work, blocked work, agent-authored
+        changes — and a rule about a label nobody can apply is a rule that
+        never fires.
+      where: >-
+        Labels live either on the team, under Settings → Teams → the team →
+        Labels, or across the workspace, under Settings → Labels. Flow creates
+        them on the team and reads both.
+      steps:
+        - >-
+          Open Settings → Teams → the team → Labels and press "New label"
+          for each one that is missing, typing the name exactly as
+          `.flow.yaml` spells it. Its colour is the team's business; flow
+          compares the name and nothing else.
+        - >-
+          Do not put it in a label group. Linear treats a group as a label
+          with children, and flow will not see a group as the label its rules
+          are about.
   follow_up_tickets:  { set: true,  verify: true, remediation: none }
-  ticket_move:        { set: true,  verify: true, remediation: follow_up, notes: "issueUpdate stateId; an archived issue takes no change." }
+  ticket_move:
+    set: true
+    verify: true
+    remediation: follow_up
+    notes: "issueUpdate stateId; an archived issue takes no change."
+    by_hand:
+      what: >-
+        Moving an issue to another status, which on a Linear board is moving
+        the card to another column.
+      where: >-
+        On the issue, through its status control, or by dragging the card.
+      steps:
+        - >-
+          Set the issue's status to the column the work is really in.
+        - >-
+          If the issue is archived it will take no change at all, from you or
+          from flow. Linear archives issues a while after they are closed, so
+          an old ticket may have left the board without anybody doing
+          anything; unarchive it first if it is genuinely still live.
+        - >-
+          Give flow's credential membership of the team so it stops being
+          anybody's job.
   linked_branches_read: { set: false, verify: false, remediation: none,
                         notes: "Issue.branchName is the suggested name, not evidence a branch exists; the Git integration records pull requests as attachments." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Team PR automation (UI)." }

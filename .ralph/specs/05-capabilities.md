@@ -20,7 +20,23 @@ capabilities:
     compensated_by: ""           # policy.wip | policy.expedite | policy.dor | engine.transitions
     hazards: ["…"]
     notes: "…"
+    by_hand:                     # required iff remediation: follow_up, refused otherwise
+      what: "…"                  # what the thing is, in the provider's words
+      where: "…"                 # a file, a settings page, an API call, a pipeline's job
+      steps: ["…"]               # the acts that produce it, in order
 ```
+
+`by_hand` is the recipe a follow-up ticket is written out of. Flow files that
+ticket for every follow-up it is refused, and the ticket is the only
+instruction anybody will get; written in flow's own vocabulary it says
+`create deploys.records "production"`, which is an item id and the name of one
+of its entries. Only the research behind the adapter knows what kind of thing
+that is and where it lives, so it is declared beside the capability.
+
+`what`, `where` and each step may use `{{name}}` — the thing or things this
+change is about — and `{{repo}}`. Any other placeholder fails to parse. The
+braces are doubled because a recipe quotes other people's APIs, where
+`%{title}` and `${HOME}` are somebody else's syntax.
 
 ## 2. Registry (`core/capability_names.go`)
 
@@ -237,3 +253,29 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   declare both; Gitea declares `squash_text` verify-only, so a repository whose
   squash body is not the pull request's gets one follow-up naming the file a
   person adds, rather than a change flow attempts and silently fails to make.
+- **§1 a capability flow files a ticket about declares how a person does it
+  (issue #194).** `remediation: follow_up` is flow saying "somebody has to do
+  this", and the ticket it files is the whole of what that somebody is told.
+  Flow's own words for the work are an item id and an entry name —
+  `create deploys.records "production"` — printed at a reader who has no
+  reason to know either, and worst where `set: false`, because then no
+  credential anybody could grant would make flow do it instead. So `by_hand`
+  is **required** of a follow-up: a declaration without one does not parse,
+  and no adapter can be added that files work nobody can act on. It is
+  **refused** of every other remediation, because nothing else raises a
+  ticket and prose with no reader rots.
+- **§1 the recipe is filled in where the plan is made (issue #194).** A
+  declaration is written once for every repository an adapter will ever be
+  pointed at and read by one person holding one of them, so a recipe may say
+  `{{name}}` and `{{repo}}`; `NewPlan` substitutes them. The plan therefore
+  carries the words rather than the template — a plan is a record of what
+  flow decided, and a template is a decision deferred — and only a follow-up
+  item carries one, because instructions for doing by hand a thing flow is
+  about to do itself are the longest part of a document whose whole job is to
+  be read before it is approved.
+- **§1 the declarations are the only recipe (issue #194).** `flow doctor` and
+  `flow apply` both file tickets about a refusal, and two tickets about one
+  fact that read differently are two accounts of it. Both now write the
+  declaration's steps, and flow's own sentence appears exactly once, last,
+  labelled `In flow's own words:` — and only where there is another
+  vocabulary to tell it apart from.

@@ -128,6 +128,17 @@ type PlanItem struct {
 	// Hazards are the ways this provider's API can hurt, from its
 	// declaration, for a human to read before approving.
 	Hazards []string `json:"hazards,omitempty"`
+	// Recipe is how a person makes this true by hand, from the provider's
+	// declaration, with the names of this run filled in (spec 05 §1). It is
+	// what a follow-up ticket is written out of, and it is carried on the
+	// plan rather than looked up again later so that a plan read tomorrow
+	// says what flow decided today.
+	//
+	// Only a follow-up carries one. Every other outcome is flow saying it
+	// will see to this itself, or that it is already true, and instructions
+	// for doing by hand a thing nobody has to do are the longest part of a
+	// document whose whole job is to be read before it is approved.
+	Recipe core.Recipe `json:"recipe,omitzero"`
 }
 
 // NewPlan diffs the desired state against what was observed and decides what
@@ -221,8 +232,42 @@ func (in PlanInput) item(wanted DesiredItem) PlanItem {
 	}
 	if item.Outcome == OutcomeFollowUp {
 		item.Owner = followUpOwner(in.Config, wanted.Target)
+		item.Recipe = in.recipe(declared, changes)
 	}
 	return item
+}
+
+// recipe is the declaration's by-hand instructions with this run's names in
+// them.
+//
+// A recipe is written once, for every repository that will ever use the
+// adapter, and read by one person holding one of them. "Add the option named
+// {{name}}" is a sentence about the general case; "Add the option named
+// Ready" is the sentence they need, and flow is the only thing that knows
+// which it is. The substitution happens here, where the plan is made, so
+// that the plan carries the words rather than the template: a plan is a
+// record of what flow decided, and a template is a decision deferred.
+func (in PlanInput) recipe(declared core.Capability, changes []core.Change) core.Recipe {
+	if !declared.ByHand.Written() {
+		return core.Recipe{}
+	}
+	names := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if name := change.Item.Name; !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	fields := map[string]string{core.RecipeRepo: in.Config.Forge.Repo}
+	// An item with nothing to change leaves the placeholder standing: the
+	// board itself is an id to find rather than a thing to alter, and it has
+	// no name of its own to offer. No declaration asks for one there, so a
+	// `{{name}}` surviving into a ticket is a recipe written for an item it
+	// does not belong to, and a visible brace is a better account of that
+	// than a sentence with a hole where the word should be.
+	if len(names) > 0 {
+		fields[core.RecipeName] = joinWords(names)
+	}
+	return declared.ByHand.Expand(fields)
 }
 
 // changes is the diff itself: what would have to happen for the provider to

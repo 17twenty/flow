@@ -1,21 +1,117 @@
 adapter: jira-cloud
 kind: tracker
 version: 1
-researched_at: 2026-10-14
+researched_at: 2026-10-22
 sources:
   - https://developer.atlassian.com/cloud/jira/platform/rate-limiting
   - https://jira.atlassian.com/browse/JRACLOUD-74565
   - https://jira.atlassian.com/browse/JRACLOUD-94071
+  - https://support.atlassian.com/jira-software-cloud/docs/configure-columns-on-a-board/
+  - https://support.atlassian.com/jira-cloud-administration/docs/work-with-issue-workflows/
 limits: { rate: "API tokens: burst limits; apps: points-based hourly quotas since 2026-03-02" }
 capabilities:
-  project:            { set: false, verify: true,  remediation: follow_up }
-  status_options:     { set: false, verify: true,  remediation: follow_up, notes: "Statuses can be created through the status API and a created status is still not a column: which statuses a project's workflow offers is the workflow's business and which column of the board shows one is the board's, and neither is writable in the public Cloud API. Read from GET /project/{key}/statuses." }
-  status_categories:  { set: false, verify: true,  remediation: follow_up, notes: "A category belongs to a status, so it is settable exactly where the status is." }
+  project:
+    set: false
+    verify: true
+    remediation: follow_up
+    by_hand:
+      what: >-
+        The Jira project the work of {{repo}} is tracked in.
+        `tracker.project` in `.flow.yaml` holds its key — the prefix on every
+        issue number, such as the PROJ of PROJ-128.
+      where: >-
+        A Jira project belongs to the site, not to the repository, and only a
+        Jira administrator can create one. The public Cloud API offers no way
+        to create a project, so this is always a person's job.
+      steps:
+        - >-
+          In Jira, go to Projects → Create project, pick a template, and note
+          the key it gives you. An existing project's key is the prefix of
+          every issue number in it.
+        - >-
+          Put that key in `tracker.project` in `.flow.yaml`, and the site's
+          address — https://your-site.atlassian.net — in `tracker.url`.
+        - >-
+          Give flow's credential permission to browse the project. An API
+          token carries the permissions of the account it belongs to, so the
+          account itself has to be able to see the project.
+  status_options:
+    set: false
+    verify: true
+    remediation: follow_up
+    notes: "Statuses can be created through the status API and a created status is still not a column: which statuses a project's workflow offers is the workflow's business and which column of the board shows one is the board's, and neither is writable in the public Cloud API. Read from GET /project/<key>/statuses."
+    by_hand:
+      what: >-
+        The statuses the project's workflow offers and its board shows as
+        columns. Flow wants exactly the set `workflow.columns` names, and
+        these do not agree: {{name}}.
+      where: >-
+        Two settings, and both are needed. Which statuses exist at all is the
+        workflow's business, under Project settings → Workflows; which column
+        of the board shows a status is the board's, under Board settings →
+        Columns. Neither is writable through the public Cloud API, which is
+        why flow can only ever ask.
+      steps:
+        - >-
+          Open Project settings → Workflows, edit the workflow the issue
+          type uses, and add a status for each of {{name}} that is missing,
+          with transitions from the statuses work reaches it from. A status
+          with no transition into it is one nobody can move an issue to.
+        - >-
+          Open the board's Board settings → Columns and map each of them to
+          a column, in the order work flows in. A status that is not mapped to
+          a column is invisible on the board.
+        - >-
+          Or remove the column from `workflow.columns` in `.flow.yaml` if the
+          team does not want it, and flow will stop asking.
+  status_categories:
+    set: false
+    verify: true
+    remediation: follow_up
+    notes: "A category belongs to a status, so it is settable exactly where the status is."
+    by_hand:
+      what: >-
+        Which kind of column each of {{name}} is — To Do, In Progress or
+        Done. Jira calls it the status category, and it is what makes a board
+        report work as finished rather than merely as being in the last
+        column.
+      where: >-
+        A property of the status, not of the board: Project settings →
+        Workflows → the status. Not writable through the public Cloud API.
+      steps:
+        - >-
+          Open Project settings → Workflows, edit the workflow, and for each
+          of {{name}} set the status's category to the one that matches what
+          the column means in `workflow.columns`.
   wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip, notes: "Board configuration is read-only, and a project may have several boards: flow cannot say which one a limit is on." }
   expedite_view:      { set: false, verify: false, remediation: attest }
   labels:             { set: false, verify: false, remediation: attest, notes: "Free-form: a label exists the moment an issue carries one, and there is no registry to create one in or to read one from." }
   follow_up_tickets:  { set: true,  verify: true,  requires: [create_issues], remediation: none }
-  ticket_move:        { set: true,  verify: true,  requires: [transition_issues], remediation: follow_up, notes: "A move is a workflow transition, so a column the workflow does not reach from here is refused." }
+  ticket_move:
+    set: true
+    verify: true
+    requires: [transition_issues]
+    remediation: follow_up
+    notes: "A move is a workflow transition, so a column the workflow does not reach from here is refused."
+    by_hand:
+      what: >-
+        Moving an issue to another status. In Jira a move is a workflow
+        transition rather than a setting, so an issue can only reach a status
+        the workflow has a transition to from where it is now.
+      where: >-
+        On the issue, through its status dropdown; which moves it offers comes
+        from Project settings → Workflows.
+      steps:
+        - >-
+          Move the issue by hand from its status dropdown.
+        - >-
+          If the status you want is not offered, the workflow has no
+          transition to it from here. Add one in Project settings →
+          Workflows, or flow will be refused the same move for the same
+          reason.
+        - >-
+          Give flow's credential permission to transition issues in the
+          project, so it stops being anybody's job.
   linked_branches_read: { set: false, verify: false, remediation: none,
                         notes: "Development information (branches, commits) has no public API; the dev-status endpoint is internal." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: attest, notes: "Jira Automation + GitHub integration; not listable via API." }

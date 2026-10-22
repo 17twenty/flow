@@ -1,7 +1,46 @@
 adapter: deploys
 kind: deploys
 version: 1
-researched_at: 2026-10-09
-sources: []
+researched_at: 2026-10-22
+sources:
+  - https://docs.github.com/actions/deployment/about-deployments/deploying-with-github-actions
+  - https://docs.github.com/en/rest/deployments/deployments
+  - https://docs.github.com/en/rest/commits/statuses
 capabilities:
-  deploy_records: { set: false, verify: true, remediation: follow_up, notes: "Written by the deployer against the app SHA (spec 13)." }
+  deploy_records:
+    set: false
+    verify: true
+    remediation: follow_up
+    notes: "Written by the deployer against the app SHA (spec 13)."
+    by_hand:
+      what: >-
+        A record that a commit reached the environment {{name}}. Flow does not
+        watch your servers: it reads the history your forge already keeps, and
+        there is nothing in it for {{name}}. That history is what tells flow a
+        merge is actually running, and it is what `deploys.max_lag` is
+        measured against.
+      where: >-
+        Not a file in the repository and not a setting on a page — it is
+        written by whatever deploys the code, at the moment it deploys, and
+        the forge stores it against the commit that shipped.
+      steps:
+        - >-
+          If you deploy from GitHub Actions, add `environment: {{name}}` to the
+          job that does the deploying. GitHub creates a deployment record for
+          a job that names an environment, which is the whole of the work.
+        - >-
+          If you deploy from somewhere else, have it call `POST
+          /repos/{{repo}}/deployments` with `"environment": "{{name}}"` and the
+          commit it shipped, then `POST
+          /repos/{{repo}}/deployments/<id>/statuses` with `"state": "success"`
+          when the deploy finishes. A deployment with no successful status is
+          a deploy that started, which flow will not count as arrived.
+        - >-
+          If whatever deploys this repository already writes a commit status
+          instead, set `deploys.source: commit_status` in `.flow.yaml` and
+          name those contexts in `deploys.contexts`, and flow will read them
+          rather than the deployment history.
+        - >-
+          If this repository deploys nowhere, set `deploys.source: none` in
+          `.flow.yaml`. Flow will stop asking, stop holding the team to
+          `deploys.max_lag`, and close this ticket by itself.

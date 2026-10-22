@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -839,8 +840,12 @@ func TestARefusedItemHandsOverEverythingFlowKnows(t *testing.T) {
 	if !strings.Contains(steps, "with branch=main, required_approvals=1") {
 		t.Errorf("the fields are not in a settled order:\n%s", steps)
 	}
-	if !hasEvidence(result, `create ruleset "flow"`) {
-		t.Errorf("the report itself does not show the change:\n%+v", result.Evidence)
+	// And the report shows it too, not only the ticket. A person running
+	// `flow doctor` and a person opening the issue it filed are owed the
+	// same account of what flow wanted.
+	detail := engine.Checked{Result: result}.Detail()
+	if !strings.Contains(detail, `create ruleset "flow"`) {
+		t.Errorf("the report itself does not show the change:\n%s", detail)
 	}
 }
 
@@ -878,6 +883,100 @@ func TestARefusedUpdateAsksOnlyForWhatIsNotAlreadySo(t *testing.T) {
 	}
 	if strings.Contains(steps, "enabled=true") {
 		t.Errorf("the steps ask for a setting the provider already has:\n%s", steps)
+	}
+}
+
+// The steps of a refused item are the provider's own, from its declaration,
+// and flow's item vocabulary comes last and labelled.
+//
+// What flow knows is that this credential was short of this permission and
+// what it would have written. What it does not know is what kind of thing a
+// `ruleset` is to the reader, which page it is on, or whether there is a
+// page. Only the research behind the adapter knows that, and a ticket
+// written without it hands somebody an item id.
+func TestARefusedItemLeadsWithTheProvidersWordsAndSaysFlowsLast(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Missing: []string{"admin"},
+		Changes: []core.Change{{
+			Op:   core.ChangeCreate,
+			What: "ruleset",
+			Item: core.Item{ID: core.ItemForgeProtection, Name: "flow"},
+		}},
+		Recipe: core.Recipe{
+			What:  "A rule saying what a commit has to pass before it may land on main.",
+			Where: "Settings → Rules → Rulesets on acme/widget.",
+			Steps: []string{"press New ruleset", "require the status flow/policy"},
+		},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	// What the ticket will lead with comes off the plan, not out of here.
+	if result.Remediation.Subject != "A rule saying what a commit has to pass before it may land on main." {
+		t.Errorf("the remedy does not say what the thing is: %q", result.Remediation.Subject)
+	}
+	if result.Remediation.Venue != "Settings → Rules → Rulesets on acme/widget." {
+		t.Errorf("the remedy does not say where it lives: %q", result.Remediation.Venue)
+	}
+
+	steps := result.Remediation.Steps
+	provider := slices.Index(steps, "press New ruleset")
+	if provider < 0 {
+		t.Fatalf("the provider's own steps are not in the ticket:\n%v", steps)
+	}
+	if next := slices.Index(steps, "require the status flow/policy"); next != provider+1 {
+		t.Errorf("the provider's steps are out of order:\n%v", steps)
+	}
+	mine := slices.IndexFunc(steps, func(step string) bool {
+		return strings.Contains(step, `create ruleset "flow"`)
+	})
+	if mine < 0 {
+		t.Fatalf("the ticket never says what flow itself wanted:\n%v", steps)
+	}
+	if mine < provider {
+		t.Errorf("flow's own vocabulary comes before the provider's:\n%v", steps)
+	}
+	if !strings.Contains(steps[mine], "In flow's own words") {
+		t.Errorf("flow's vocabulary is not labelled as its own:\n%v", steps)
+	}
+	// And exactly once. Saying it again as evidence is what made the
+	// shortest ticket flow files read as the same sentence under two
+	// headings.
+	if hasEvidence(result, `create ruleset "flow"`) {
+		t.Errorf("the same change is in the ticket twice:\n%+v", result.Evidence)
+	}
+}
+
+// An item that names no capability has no declaration behind it and so no
+// recipe, and announcing a translation of the only sentence in the ticket is
+// worse than the sentence.
+func TestWithNoProvidersWordsFlowsAreNotLabelledAsATranslation(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "the trunk takes anything anyone pushes",
+		Changes: []core.Change{{
+			Op:   core.ChangeCreate,
+			What: "ruleset",
+			Item: core.Item{ID: core.ItemForgeProtection, Name: "flow"},
+		}},
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	steps := strings.Join(result.Remediation.Steps, "\n")
+	if !strings.Contains(steps, `create ruleset "flow"`) {
+		t.Errorf("the steps do not carry the change flow planned:\n%s", steps)
+	}
+	if strings.Contains(steps, "In flow's own words") {
+		t.Errorf("the only words in the ticket are announced as a translation:\n%s", steps)
 	}
 }
 

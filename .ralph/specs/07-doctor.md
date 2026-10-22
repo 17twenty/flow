@@ -49,8 +49,10 @@ Resolution order: discover (one candidate → auto in `--fix`) → choose (picke
 
 ## 4. Follow-ups
 
-Ticket in the tracker with title `flow: <summary> (<repo>)`, body = why, exact
-steps, how flow will verify, marker `flow:followup check=<id> repo=<repo>`,
+Ticket in the tracker with title `flow: <summary> (<repo>)`, body = what the
+thing is and where it lives (from the capability's `by_hand` recipe, spec 05
+§1), why, exact steps, how flow will verify, marker
+`flow:followup check=<id> repo=<repo>`,
 labels `followups.labels`, assignee from `followups.owners`. Lifecycle:
 create (after marker search) → `external` while unverified (nudge comment ≤ 1/7d)
 → verified: comment + close → closed-but-unverified: reopen with evidence →
@@ -1169,3 +1171,17 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   finding is the note, so the line that would otherwise read "flow cannot see
   this" has to carry what flow saw and where the switch is. The remedy's steps
   are the note's own fix.
+- **§4 a ticket says what the thing is before it says what to type (issue
+  #194).** The body now leads with `## What this is` — the capability's
+  `by_hand.what` and `by_hand.where`, filled in for this repository — and
+  only then `## What to do`. The reader of a follow-up is by definition the
+  person who does not have flow's vocabulary, and a list of instructions is
+  no use to somebody who does not yet know what they are being asked to look
+  at. Where there is no declaration to speak for a provider — a live audit is
+  flow's own reading of the team's week — the remedy's summary carries the
+  ticket as it always did.
+- **§4 one refusal is said once (issue #194).** The planned change used to
+  appear as a step *and* as evidence, so the shortest ticket flow files read
+  as the same sentence under two headings. The steps are the account; the
+  evidence of a refused item is the permission that was short and what the
+  provider volunteered, which is what a reader does not already have.
