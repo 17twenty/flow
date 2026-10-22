@@ -1397,6 +1397,52 @@ answered — whether the column exists — and skipping the write in silence whe
 the answer was no; unreachable code whose only possible effect was the defect
 above.
 
-**Single best next step:** issue #189, the column flow duplicates. After it,
-the four `flow attest` commands in `docs/cookbook.md` §6.1 and admin for the
-machine user on the demo repository, which are the two things a person holds.
+### A ticket written in flow's own words (issue #194)
+
+The greenfield test assigned @17twenty a ticket whose whole instruction was
+`create deploys.records "production"`. His reply was the finding: *"I dont
+know wtf that means — is this a yaml config? An API setting?"*
+
+It is neither. GitHub writes a deployment record when something deploys;
+nothing in `.flow.yaml` creates one, the deploy job does. Flow knew every
+word of that before it filed the ticket, and said none of it — because the
+only vocabulary it had for the work was its own: the id of a desired item and
+the name of one of its entries. It then said that twice, once under *what to
+do* and once under *what flow saw*.
+
+**Only the research knows what the thing is.** So the recipe is declared
+beside the capability, where the research already lives, rather than composed
+by whatever happens to be printing. `by_hand` says what the thing is in the
+provider's words, where it lives — a file, a page, an API call, something a
+pipeline does — and the steps that produce it. The last step is normally the
+way to stop flow asking, because a team that does not want the thing is owed
+that answer as plainly as the team that does.
+
+It is **required** of a capability remediated by a follow-up and **refused**
+of every other. A follow-up is flow saying somebody has to do this, and the
+ticket is all that somebody gets; a declaration that cannot say files work
+nobody can act on, which is worse than a provider flow declines to support.
+Nothing else raises a ticket, and prose with no reader rots. Both halves are
+the loader's, so this cannot be forgotten by the next adapter — it does not
+parse.
+
+A declaration is written once for every repository an adapter will ever be
+pointed at, and read by one person holding one of them. `{{name}}` and
+`{{repo}}` are the whole of the difference, and the plan is where they are
+filled in: a plan is a record of what flow decided, and a template is a
+decision deferred. Any other placeholder fails to parse, because a brace
+printed at somebody is a typo nobody can act on either.
+
+Thirty-eight follow-up capabilities across seven declarations now carry a
+recipe. The eight flow can *never* set are the ones whose ticket is the only
+instruction there will ever be — no credential anybody could grant would make
+flow do it instead — and a test pins that list, so moving one or declaring a
+ninth has to be deliberate.
+
+**Single best next step:** issue #189, the column flow duplicates — a board
+whose `In Progress` differs from the configured `In progress` by one
+space-bar is duplicated rather than renamed, and the two halves of flow
+already disagree about it, because a move resolves a column case-insensitively
+and an observation finds one exactly. After it, the four `flow attest`
+commands in `docs/cookbook.md` §6.1 and admin for the machine user on the
+demo repository, which are the two things a person holds.
