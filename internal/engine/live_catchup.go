@@ -188,11 +188,7 @@ func catchUp(ctx context.Context, env *Env, ticket core.Ticket, move TicketMove)
 	if env.Adapters.Tracker == nil {
 		return errors.New("there is no tracker adapter to ask")
 	}
-	to, found := columnTarget(env.Config, move.To)
-	if !found {
-		return fmt.Errorf("%q is not a column in workflow.columns", move.To)
-	}
-	if err := env.Adapters.Tracker.Move(ctx, ticket.Key, to); err != nil {
+	if err := env.Adapters.Tracker.Move(ctx, ticket.Key, columnTarget(env.Config, move.To)); err != nil {
 		return err
 	}
 	if env.Log != nil {

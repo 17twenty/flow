@@ -233,3 +233,28 @@ golden; determinism; fork/read-only path; draft path.
   write in the audit log of every repository flow watches, every push, saying
   nothing new — which is why `core.PullRequest.AutoMerge` is read first and
   why it is a reading of one pull request rather than of a listing.
+
+- **§1 a decision and an act are two facts, and the run reports both (issue
+  #192).** The gate decided a transition and then printed it, whether the
+  board had taken the move or not — so a credential refused the status, a
+  tracker refusing the move and a `--dry-run` all produced the same line as a
+  card that really moved. Each write the gate attempts now carries its own
+  outcome, and the rendering is built from the outcomes. `Gate.ReadOnly`
+  survives as what it is for: the flag one refused write sets so the writes
+  after it are not attempted. It is no longer what anything reports.
+- **§1 one write's refusal says nothing about another's (issue #192).** The
+  Decision above about discovering read-only by being refused holds forward,
+  not backward. Arming is the last write of the run and needs a permission
+  the status and the comment do not, so a repository whose gate may post and
+  may not arm is an ordinary one with a box to tick (issue #190) — and for
+  weeks this repository's own gate answered that by printing `status not
+  posted` beside a status it had posted three seconds earlier. Arming
+  therefore records its outcome and sets no flag; nothing runs after it.
+- **§3 the gate asks `Transition` where a ticket goes and does not ask again
+  (issue #192).** `Transition` refuses a transition naming a column
+  `workflow.columns` has not got, reporting it as no move with
+  `ReasonUnknownColumn`. Three callers nevertheless looked the column up a
+  second time and skipped the write in silence when they could not find it —
+  unreachable code whose only possible effect was the defect above, a move
+  reported and not made. The second question is gone from all three.
+

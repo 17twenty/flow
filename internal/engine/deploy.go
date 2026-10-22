@@ -300,11 +300,7 @@ func deployMove(ctx context.Context, in DeployInput, deploy *Deploy, linked []Li
 		if !move.Moves() || in.DryRun {
 			continue
 		}
-		to, found := columnTarget(in.Config, move.To)
-		if !found {
-			continue
-		}
-		if err := in.Adapters.Tracker.Move(ctx, key, to); err != nil {
+		if err := in.Adapters.Tracker.Move(ctx, key, columnTarget(in.Config, move.To)); err != nil {
 			return core.Explain(err, "move %s to %s", key, move.To)
 		}
 	}
