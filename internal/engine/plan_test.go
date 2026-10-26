@@ -450,16 +450,19 @@ func TestPlanKeepsWhatFlowDidNotCreate(t *testing.T) {
 	}
 }
 
-// TestPlanTakesAColumnThatDiffersOnlyInCase proves that a column flow reads
-// back by a folded name is the column it plans against. GitHub starts a board
-// with "In Progress"; a plan that wanted "In progress" beside it left two
-// columns that every move and every audit treated as one.
-func TestPlanTakesAColumnThatDiffersOnlyInCase(t *testing.T) {
+// TestPlanRenamesAColumnThatDiffersOnlyInCase proves that a column flow reads
+// back by a folded name is the column it plans against (issue #189). GitHub
+// starts a board with "In Progress"; a plan that wanted "In progress" beside
+// it left two columns that every move and every audit treated as one. The
+// column is renamed in place under its own id, so the items in it and the
+// automations pointing at it follow, and it is never proposed for removal —
+// even where the lock records it as flow's own.
+func TestPlanRenamesAColumnThatDiffersOnlyInCase(t *testing.T) {
 	w := githubProjectsWorld(t)
 	w.tracker = coretest.NewFakeTracker(trackerWithStatusOptions(t,
 		core.Item{ID: "opt-backlog", Name: "Backlog"},
 		core.Item{ID: "opt-in-progress", Name: "In Progress"},
-		core.Item{ID: "opt-ready", Name: "ready"},
+		core.Item{ID: "opt-ready", Name: "Ready"},
 		core.Item{ID: "opt-in-review", Name: "In review"},
 		core.Item{ID: "opt-done", Name: "Done"},
 	))
@@ -471,10 +474,9 @@ func TestPlanTakesAColumnThatDiffersOnlyInCase(t *testing.T) {
 	})
 
 	item, _ := planFor(t, w).Find(core.ItemTrackerStatusOptions)
-	for _, change := range item.Changes {
-		if change.Item.Name != "Icebox" {
-			t.Errorf("the plan would %s %q, which the board already has", change.Op, change.Item.Name)
-		}
+	want := core.Change{What: core.ItemTrackerStatusOptions, Op: core.ChangeUpdate, Item: core.Item{ID: "opt-in-progress", Name: "In progress"}}
+	if len(item.Changes) != 1 || item.Changes[0].Op != want.Op || !item.Changes[0].Item.Equal(want.Item) {
+		t.Errorf("changes are %+v, want only %+v", item.Changes, want)
 	}
 }
 

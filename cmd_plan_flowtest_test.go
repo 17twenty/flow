@@ -49,6 +49,7 @@ type planItem struct {
 	Changes []struct {
 		Op   string `json:"op"`
 		Item struct {
+			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"item"`
 	} `json:"changes,omitempty"`
@@ -132,16 +133,24 @@ func TestScenario_A03_PlanOnFreshProject(t *testing.T) {
 	if len(options.Hazards) == 0 {
 		t.Error("the status option change carries no hazard note (scenario A03)")
 	}
-	var created []string
+	var created, renamed []string
 	for _, change := range options.Changes {
-		if change.Op == "create" {
+		switch change.Op {
+		case "create":
 			created = append(created, change.Item.Name)
+		case "update":
+			renamed = append(renamed, change.Item.ID+"→"+change.Item.Name)
 		}
 	}
-	for _, status := range []string{"Backlog", "Ready", "In progress", "In review"} {
+	for _, status := range []string{"Backlog", "Ready", "In review"} {
 		if !slicesContains(created, status) {
 			t.Errorf("the plan does not create the %q status; it creates %v", status, created)
 		}
+	}
+	// GitHub's own "In Progress" is the column the configuration calls "In
+	// progress": it is renamed under its own id, never duplicated (#189).
+	if len(options.Changes) != 4 || slicesContains(created, "In progress") || !slicesContains(renamed, "opt-in-progress→In progress") {
+		t.Errorf("the plan creates %v and renames %v, want three creates and \"In Progress\" renamed", created, renamed)
 	}
 }
 

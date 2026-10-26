@@ -9,6 +9,7 @@ deploys  forge_deployments
 ⚠ follow-up → ${pending:owners.tracker_admin}  tracker.status_options (status_options)
     the provider has no API for this, so a person has to do it
     create "Backlog"
+    update "In progress"
     create "In review"
     create "Ready"
 

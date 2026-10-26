@@ -1059,6 +1059,19 @@ func TestGitHubProjectsMovesToTheExactNameBeforeAFoldedOne(t *testing.T) {
 	}
 }
 
+// The name a move resolves must be the name a plan finds (#189). A move
+// folds case, so the declaration the planner reads must say this set does:
+// otherwise the plan adds "In progress" beside "In Progress" and the move
+// takes whichever comes first.
+func TestGitHubProjectsDeclaresTheCaseItMovesBy(t *testing.T) {
+	field := ghStatusField{Options: []ghStatusOption{{ID: "opt-github", Name: "In Progress"}}}
+	_, folds := field.column("in progress")
+	declared := gitHubProjectsCapabilities(t).Capability(core.CapStatusOptions)
+	if declared.FoldCase != folds {
+		t.Errorf("a move folds case: %v; the status_options declaration says fold_case: %v", folds, declared.FoldCase)
+	}
+}
+
 // Adding an issue to a board is a different act from moving it — the board's
 // own automations run on it — and a transition is not where that is decided.
 func TestGitHubProjectsWillNotMoveAnIssueOntoTheBoard(t *testing.T) {
