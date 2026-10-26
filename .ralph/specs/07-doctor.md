@@ -814,6 +814,12 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   rather than opening thirty mornings in a row. A lock that already matches
   is proposed not at all — a daily pull request against a file nobody changed
   is how a team learns to ignore them.
+- **§4 one fact, one follow-up (issue #202).** A follow-up is keyed by the
+  doctor check it is reported under, and `flow apply` files under the same
+  id (`engine.CheckOf`): the deployment records are the one item whose check
+  id differs (`deploys.source`). A ticket an earlier flow filed under the
+  item id is closed as not planned by the next round, with a comment naming
+  the ticket that stands, and dropped from the lock.
 - **§2 failing to propose the lock is not the run's verdict (item 5.8).** The
   report has already said everything doctor found about the workflow, and the
   lock is flow's own bookkeeping. A forge that will not take the proposal is
