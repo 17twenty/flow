@@ -286,7 +286,11 @@ func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []
 	}
 	var changes []core.Change
 	for _, want := range wanted.Items {
-		found, ok := observation.Find(want.Name)
+		found, ok := wanted.find(observation, want.Name)
+		if ok {
+			// A name matched by folding is already the name flow reads.
+			want.Name = found.Name
+		}
 		switch {
 		case !ok:
 			changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeCreate, Item: want})
@@ -319,7 +323,10 @@ func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []
 func (in PlanInput) deletions(wanted DesiredItem, observation core.Observation) []core.Change {
 	var changes []core.Change
 	for _, found := range observation.Items {
-		if slices.ContainsFunc(wanted.Items, func(want core.Item) bool { return want.Name == found.Name }) {
+		if slices.ContainsFunc(wanted.Items, func(want core.Item) bool {
+			match, ok := wanted.find(observation, want.Name)
+			return ok && match.ID == found.ID && match.Name == found.Name
+		}) {
 			continue
 		}
 		if wanted.Additive && !in.created(wanted.ID, found) {
@@ -328,6 +335,24 @@ func (in PlanInput) deletions(wanted DesiredItem, observation core.Observation) 
 		changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeDelete, Item: found})
 	}
 	return changes
+}
+
+// find is the observed thing a desired one of that name is about: the one of
+// exactly that name, or for an item that folds its names, the first one of
+// that name in any case. Exact wins so that a provider already holding both
+// spellings is matched to the one the configuration wrote. A folded match
+// asks for no rename: it is the column every move and audit already reads,
+// and recasing somebody's board is not a change the workflow needs.
+func (d DesiredItem) find(observation core.Observation, name string) (core.Item, bool) {
+	if item, ok := observation.Find(name); ok || !d.FoldNames {
+		return item, ok
+	}
+	for _, item := range observation.Items {
+		if strings.EqualFold(item.Name, name) {
+			return item, true
+		}
+	}
+	return core.Item{}, false
 }
 
 // created reports whether the lock records this thing as flow's own doing.

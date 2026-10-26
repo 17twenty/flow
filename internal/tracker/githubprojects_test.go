@@ -1036,6 +1036,29 @@ func TestGitHubProjectsMoveThatChangesNothingWritesNothing(t *testing.T) {
 	}
 }
 
+// A board can hold "In Progress" beside "In progress" — GitHub's own default
+// beside the column a configuration named — and a move by name goes to the
+// one the configuration wrote. Folding first sent tickets to whichever came
+// first, and every audit, folding too, called that the right column.
+func TestGitHubProjectsMovesToTheExactNameBeforeAFoldedOne(t *testing.T) {
+	fx := coretest.ContractTracker()
+	columns := fx.Observations[core.ItemTrackerStatusOptions]
+	columns.Items = append([]core.Item{{ID: "opt-github-in-progress", Name: "In Progress"}}, columns.Items...)
+	fx.Observations[core.ItemTrackerStatusOptions] = columns
+	fake, srv := newGitHubProjectsServer(t, fx)
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	if err := adapter.Move(t.Context(), "#10", coretest.ColumnDone); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if err := adapter.Move(t.Context(), "#10", "In progress"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if got := fake.itemIn(10); got != string(coretest.ColumnInProgress) {
+		t.Errorf("the item is in %q, want the configured column %q", got, coretest.ColumnInProgress)
+	}
+}
+
 // Adding an issue to a board is a different act from moving it — the board's
 // own automations run on it — and a transition is not where that is decided.
 func TestGitHubProjectsWillNotMoveAnIssueOntoTheBoard(t *testing.T) {

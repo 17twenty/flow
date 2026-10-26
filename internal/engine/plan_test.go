@@ -450,6 +450,54 @@ func TestPlanKeepsWhatFlowDidNotCreate(t *testing.T) {
 	}
 }
 
+// TestPlanTakesAColumnThatDiffersOnlyInCase proves that a column flow reads
+// back by a folded name is the column it plans against. GitHub starts a board
+// with "In Progress"; a plan that wanted "In progress" beside it left two
+// columns that every move and every audit treated as one.
+func TestPlanTakesAColumnThatDiffersOnlyInCase(t *testing.T) {
+	w := githubProjectsWorld(t)
+	w.tracker = coretest.NewFakeTracker(trackerWithStatusOptions(t,
+		core.Item{ID: "opt-backlog", Name: "Backlog"},
+		core.Item{ID: "opt-in-progress", Name: "In Progress"},
+		core.Item{ID: "opt-ready", Name: "ready"},
+		core.Item{ID: "opt-in-review", Name: "In review"},
+		core.Item{ID: "opt-done", Name: "Done"},
+	))
+	w.lock.Record(config.Creation{
+		Kind: engine.CreationKind(core.ItemTrackerStatusOptions),
+		ID:   "opt-in-progress",
+		Name: "In Progress",
+		At:   coretest.ContractNow.Add(-30 * 24 * time.Hour),
+	})
+
+	item, _ := planFor(t, w).Find(core.ItemTrackerStatusOptions)
+	for _, change := range item.Changes {
+		if change.Item.Name != "Icebox" {
+			t.Errorf("the plan would %s %q, which the board already has", change.Op, change.Item.Name)
+		}
+	}
+}
+
+// TestPlanPrefersTheExactColumnToAFoldedOne proves that a board already
+// holding both spellings is planned against the one the configuration wrote,
+// and the other is left to whoever made it.
+func TestPlanPrefersTheExactColumnToAFoldedOne(t *testing.T) {
+	w := githubProjectsWorld(t)
+	w.tracker = coretest.NewFakeTracker(trackerWithStatusOptions(t,
+		core.Item{ID: "opt-backlog", Name: "Backlog"},
+		core.Item{ID: "opt-github-in-progress", Name: "In Progress"},
+		core.Item{ID: "opt-in-progress", Name: "In progress"},
+		core.Item{ID: "opt-ready", Name: "Ready"},
+		core.Item{ID: "opt-in-review", Name: "In review"},
+		core.Item{ID: "opt-done", Name: "Done"},
+	))
+
+	item, _ := planFor(t, w).Find(core.ItemTrackerStatusOptions)
+	if len(item.Changes) != 0 {
+		t.Errorf("a board with every configured column wants %+v", item.Changes)
+	}
+}
+
 // TestPlanAttestationLapsesWithTheConfig proves that a human's word covers the
 // workflow it was given about. Rewrite the configuration and the promise is
 // about something else (spec 03 §3).

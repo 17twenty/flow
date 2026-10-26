@@ -109,6 +109,12 @@ type DesiredItem struct {
 	// for without that being a difference: a label flow does not know about
 	// is somebody else's label, not drift (spec 06 §4).
 	Additive bool
+	// FoldNames marks an item whose contents are matched by a name read
+	// without regard to case, because that is how flow reads them back: a
+	// column called "In Progress" is the column a configuration calls "In
+	// progress" to every move and every audit, so a plan that wanted
+	// another one would leave the board holding two columns of one name.
+	FoldNames bool
 	// Items are the contents flow wants, in canonical order. A field is only
 	// ever something the provider can report back.
 	Items []core.Item
@@ -230,6 +236,7 @@ func trackerStatusOptions(cfg *config.Config) DesiredItem {
 		Target:     TargetTracker,
 		DependsOn:  []string{core.ItemTrackerProject},
 		Additive:   true,
+		FoldNames:  true,
 		Items:      items,
 	}
 }

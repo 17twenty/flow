@@ -45,13 +45,6 @@
           "what": "tracker.status_options",
           "op": "create",
           "item": {
-            "name": "In progress"
-          }
-        },
-        {
-          "what": "tracker.status_options",
-          "op": "create",
-          "item": {
             "name": "In review"
           }
         },
@@ -64,10 +57,10 @@
         }
       ],
       "recipe": {
-        "what": "The statuses the project's workflow offers and its board shows as columns. Flow wants exactly the set `workflow.columns` names, and these do not agree: Backlog, In progress, In review and Ready.",
+        "what": "The statuses the project's workflow offers and its board shows as columns. Flow wants exactly the set `workflow.columns` names, and these do not agree: Backlog, In review and Ready.",
         "where": "Two settings, and both are needed. Which statuses exist at all is the workflow's business, under Project settings → Workflows; which column of the board shows a status is the board's, under Board settings → Columns. Neither is writable through the public Cloud API, which is why flow can only ever ask.",
         "steps": [
-          "Open Project settings → Workflows, edit the workflow the issue type uses, and add a status for each of Backlog, In progress, In review and Ready that is missing, with transitions from the statuses work reaches it from. A status with no transition into it is one nobody can move an issue to.",
+          "Open Project settings → Workflows, edit the workflow the issue type uses, and add a status for each of Backlog, In review and Ready that is missing, with transitions from the statuses work reaches it from. A status with no transition into it is one nobody can move an issue to.",
           "Open the board's Board settings → Columns and map each of them to a column, in the order work flows in. A status that is not mapped to a column is invisible on the board.",
           "Or remove the column from `workflow.columns` in `.flow.yaml` if the team does not want it, and flow will stop asking."
         ]
