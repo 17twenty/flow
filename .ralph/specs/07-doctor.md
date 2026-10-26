@@ -814,6 +814,13 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   rather than opening thirty mornings in a row. A lock that already matches
   is proposed not at all — a daily pull request against a file nobody changed
   is how a team learns to ignore them.
+- **§6 flow's own bookkeeping is not delivered work (issue #203).**
+  `live.tickets.done_merged` leaves out a ticket carrying flow's follow-up or
+  health marker and says how many it left out. A follow-up is settings work
+  with no pull request by design, and flow closing it is its own evidence the
+  work is done; counting it turned the audit red for a fortnight after every
+  fix to a repository's setup. A flag cleanup ticket is still counted: it is
+  flow's writing, but the work it asks for is a change to the code.
 - **§2 failing to propose the lock is not the run's verdict (item 5.8).** The
   report has already said everything doctor found about the workflow, and the
   lock is flow's own bookkeeping. A forge that will not take the proposal is

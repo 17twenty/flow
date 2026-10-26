@@ -151,6 +151,12 @@ func (a *audit) inFlight(ctx context.Context, env *Env) ([]core.PullRequest, err
 // A ticket closed as not planned holds: spec 07 §6 exempts it, and abandoned
 // work having no merge behind it is the point of abandoning it rather than a
 // hole in the process.
+//
+// flow's own bookkeeping is not counted at all: a follow-up is settings work
+// that never has a pull request, and flow closing one is flow's evidence it
+// is done, so counting it made fixing a repository's setup turn this check
+// red for a fortnight (issue #203). A flag cleanup ticket is flow's writing
+// too, but removing a flag is a change to the code, and it is counted.
 func (a *audit) ticketsDoneMerged() Check {
 	return Check{
 		ID:        CheckLiveTicketsDoneMerged,
@@ -173,9 +179,13 @@ func (a *audit) ticketsDoneMerged() Check {
 			work := prsByTicket(env, prs)
 			since := env.Since()
 			var t tally
-			var elsewhere int
+			var elsewhere, own int
 			for _, ticket := range done {
 				if finished(ticket).Before(since) {
+					continue
+				}
+				if bookkeeping(ticket) {
+					own++
 					continue
 				}
 				if deliveredElsewhere(env.Config, ticket) != "" {
@@ -195,13 +205,13 @@ func (a *audit) ticketsDoneMerged() Check {
 			result := t.grade(env, false)
 			switch {
 			case t.counts.Total == 0:
-				return result.Said("nothing reached %s in the window%s", column.Name, sharedNote(elsewhere))
+				return result.Said("nothing reached %s in the window%s", column.Name, sharedNote(elsewhere)+ownNote(own))
 			case result.State == StatePass:
 				return result.Said("all %d %s that reached %s had work behind them%s",
-					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, sharedNote(elsewhere))
+					t.counts.Total, plural(t.counts.Total, "ticket"), column.Name, sharedNote(elsewhere)+ownNote(own))
 			}
 			return result.Said("%d of %d tickets reached %s with no merge behind them%s",
-				t.missed(), t.counts.Total, column.Name, sharedNote(elsewhere)).
+				t.missed(), t.counts.Total, column.Name, sharedNote(elsewhere)+ownNote(own)).
 				Fix(Remediation{
 					Kind:    RemedyManual,
 					Summary: "the merge should be what moves a ticket to " + column.Name + ", not a hand on the board",
@@ -959,6 +969,22 @@ func deliveredElsewhere(cfg *config.Config, ticket core.Ticket) string {
 		}
 	}
 	return ""
+}
+
+// ownNote is the clause saying how many of flow's own tickets a count left
+// out, empty when it left none.
+func ownNote(own int) string {
+	if own == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", not counting %d of flow's own %s", own, plural(own, "ticket"))
+}
+
+// bookkeeping reports whether a ticket is one flow keeps for itself — a
+// follow-up or the health issue — rather than a piece of the team's work.
+func bookkeeping(ticket core.Ticket) bool {
+	marker, ok := core.FindMarker(ticket.Body)
+	return ok && (marker.Kind == core.MarkerFollowUp || marker.Kind == core.MarkerHealth)
 }
 
 // sharedNote is what a check adds to its message when it passed over work

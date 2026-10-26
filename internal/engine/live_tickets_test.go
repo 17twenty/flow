@@ -100,6 +100,27 @@ func TestWorkThatWasDroppedIsNotWorkThatWentMissing(t *testing.T) {
 	wantCounts(t, result, 1, 1)
 }
 
+// TestFlowsOwnTicketsAreNotDeliveredWork is issue #203. A follow-up flow
+// verified and closed is settings work that never has a pull request, and the
+// health issue is flow's report; neither is counted. A flag cleanup ticket is
+// flow's writing too, but removing a flag is a change to the code, so it is.
+func TestFlowsOwnTicketsAreNotDeliveredWork(t *testing.T) {
+	followUp := boarded("#1", "flow: The trunk is protected", "Done", daysAgo(1))
+	followUp.Body = core.MarkBody("set it", engine.FollowUpMarker("forge.protection", "acme/api"), true)
+	health := boarded("#2", "flow health: acme/api", "Done", daysAgo(1))
+	health.Body = core.MarkBody("report", engine.HealthMarker("acme/api"), true)
+	flag := boarded("#3", "remove the new-checkout flag", "Done", daysAgo(1))
+	flag.Body = core.MarkBody("remove it", core.NewMarker(core.MarkerFlag, "flag", "new-checkout"), true)
+	env, _ := boardEnv(t, liveConfig(), coretest.ForgeFixture{}, followUp, health, flag)
+
+	result := liveResult(t, env, engine.CheckLiveTicketsDoneMerged)
+	wantCounts(t, result, 0, 1)
+	evidenceMentions(t, result, "#3")
+	if !strings.Contains(result.Message, "not counting 2 of flow's own tickets") {
+		t.Errorf("the result does not say what it left out: %q", result.Message)
+	}
+}
+
 // TestTheDoneWindowIsAboutWhenTheWorkFinished: a Done column holds everything
 // the team has ever finished, and an audit that judged all of it would report
 // a year-old ticket whose pull request is long outside the window as having no
