@@ -921,3 +921,18 @@ func planItem(plan engine.Plan, id string) (engine.PlanItem, bool) {
 	}
 	return engine.PlanItem{}, false
 }
+
+// TestCreationKindsAreNamed is issue #204: a kind is the singular of the set,
+// spelled out, not the set's id with its last letter trimmed.
+func TestCreationKindsAreNamed(t *testing.T) {
+	for id, want := range map[string]string{
+		core.ItemTrackerStatusOptions: "tracker.status_option",
+		core.ItemTrackerLabels:        "tracker.label",
+		core.ItemForgeRequiredStatus:  "forge.required_status",
+		core.ItemForgeFiles:           "forge.file",
+	} {
+		if got := engine.CreationKind(id); got != want {
+			t.Errorf("CreationKind(%q) = %q, want %q", id, got, want)
+		}
+	}
+}

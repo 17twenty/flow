@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/17twenty/flow/internal/config"
@@ -364,8 +363,24 @@ func sameThing(creation config.Creation, item core.Item) bool {
 
 // CreationKind is the lock's `created:` kind for one of the things a desired
 // item is a set of: tracker.status_options holds tracker.status_option
-// creations. One vocabulary, in the singular for one of them.
-func CreationKind(id string) string { return strings.TrimSuffix(id, "s") }
+// creations. One vocabulary, in the singular for one of them, named rather
+// than derived: trimming the last letter made a required status check a
+// `forge.required_statu` (issue #204).
+func CreationKind(id string) string {
+	if kind, ok := creationKinds[id]; ok {
+		return kind
+	}
+	return id
+}
+
+// creationKinds names the creation kind of every desired item flow can add
+// things to.
+var creationKinds = map[string]string{
+	core.ItemTrackerStatusOptions: "tracker.status_option",
+	core.ItemTrackerLabels:        "tracker.label",
+	core.ItemForgeRequiredStatus:  "forge.required_status",
+	core.ItemForgeFiles:           "forge.file",
+}
 
 // attested reports whether a human's word still stands for this item.
 //
