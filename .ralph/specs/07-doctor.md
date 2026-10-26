@@ -84,6 +84,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.prs.gated` | Did every merged PR have a `flow/policy` success status on its final head SHA at merge time? (critical) | commit statuses |
 | `live.prs.conventional` | Is every squash commit on the default branch a valid conventional header? | git log / forge commits |
 | `live.prs.reviewed` | Did agent-authored PRs get a human approval? (critical when `require_human_review`) | reviews |
+| `live.prs.closed_issues` | Did every merge close the issues it names? `--fix` closes any it left open | PR closing references + issue state |
 | `live.deploys.recent` | Was there a successful deployment to `deploys.environment` within `max_age`? | deploy records |
 | `live.deploys.lag` | Did every merged PR reach the environment within `max_lag`? (merge SHA ⊑ some deployed SHA, via forge compare API, results cached) | PRs + deploy records |
 | `live.tickets.shared_board` | Is every repository whose tickets are on this board named in `tracker.shared_with`? | tracker |
@@ -814,6 +815,14 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   rather than opening thirty mornings in a row. A lock that already matches
   is proposed not at all — a daily pull request against a file nobody changed
   is how a team learns to ignore them.
+- **§6 a merge that closed nothing is caught up (issue #201).** A pull
+  request the gate armed is merged for the Actions token, and GitHub lets
+  such a merge cause no further events: `Closes #N` is read and the issue
+  stays open, in review, with its work on the trunk. `live.prs.closed_issues`
+  reads each merged pull request's closing references and, under `--fix`,
+  closes what is still open with a comment naming the merge. It is flow's
+  own catch-up, like `live.transitions.flow`, rather than a second credential
+  for arming: the team chose a day's lag over another secret to hold.
 - **§2 failing to propose the lock is not the run's verdict (item 5.8).** The
   report has already said everything doctor found about the workflow, and the
   lock is flow's own bookkeeping. A forge that will not take the proposal is
