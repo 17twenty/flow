@@ -66,6 +66,7 @@ deploys  forge_deployments
     flow can set it through the provider's API
     create ".github/ISSUE_TEMPLATE/story.yml"
     create ".github/pull_request_template.md"
+    update ".github/workflows/flow.yml" runs="flow check pr, flow sync"
 
 · up to date  deploys.records (deploy_records)
     the provider already matches what was asked for

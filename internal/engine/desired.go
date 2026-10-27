@@ -522,7 +522,7 @@ func forgeFiles(cfg *config.Config, templates fs.FS) (DesiredItem, error) {
 	if templates == nil {
 		return DesiredItem{}, fmt.Errorf("desired state: no file templates were supplied")
 	}
-	runs := []string{"flow check pr"}
+	runs := []string{"flow check pr", "flow sync"}
 	if cfg.Workflow.DoneOn == config.DoneOnDeployed {
 		runs = append(runs, "flow check deploy")
 	}
