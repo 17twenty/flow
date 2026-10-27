@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -38,6 +39,7 @@ func (a *audit) prsCurrent() Check {
 			canUpdate = canUpdate && env.Adapters.Forge.Capabilities().Can(core.CapUpdateBranch)
 			var t tally
 			var caught []Evidence
+			conflicted := 0
 			for _, pr := range open {
 				if pr.Draft || pr.Mergeability != core.MergeabilityBehind {
 					continue
@@ -54,6 +56,14 @@ func (a *audit) prsCurrent() Check {
 					continue
 				}
 				if err := updater.UpdateBranch(ctx, pr.Number, pr.HeadSHA); err != nil {
+					if errors.Is(err, core.ErrConflict) {
+						// The forge saw what a mergeability reading had not
+						// yet: the base will not merge in. That is somebody's
+						// work to resolve, not something flow got wrong.
+						conflicted++
+						t.broke(pr.URL, "#%d %s — it conflicts with %s, so somebody has to resolve it", pr.Number, pr.Title, pr.BaseRef)
+						continue
+					}
 					t.broke(pr.URL, "#%d %s — flow could not bring it up to date: %v", pr.Number, pr.Title, err)
 					continue
 				}
@@ -73,6 +83,15 @@ func (a *audit) prsCurrent() Check {
 			case result.State == StatePass:
 				return result.Said("flow brought all %d that passed the gate and were behind up to date", len(caught))
 			}
+			if conflicted > 0 && conflicted == t.missed() {
+				result = result.Said("%d of %d pull requests that passed the gate conflict with their base", conflicted, t.counts.Total)
+				result.State = StateWarn
+				return result.Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "resolve the conflicts; flow cannot",
+					Steps:   []string{"merge the base into each, resolve the conflict and push — the gate and the checks run again on the result"},
+				})
+			}
 			result = result.Said("%d of %d pull requests that passed the gate wait only on being behind", t.missed(), t.counts.Total)
 			if !env.Fix && canUpdate {
 				return result.Fix(Remediation{Kind: RemedyAuto, Summary: "flow can bring them up to date", Command: "flow sync"})
@@ -86,7 +105,8 @@ func (a *audit) prsCurrent() Check {
 			return result.Fix(Remediation{
 				Kind:    RemedyManual,
 				Summary: "bring them up to date with their base",
-				Steps: append(env.Adapters.Forge.Capabilities().Capability(core.CapUpdateBranch).ByHand.Steps,
+				Steps: append(env.Adapters.Forge.Capabilities().Capability(core.CapUpdateBranch).ByHand.
+					Expand(map[string]string{core.RecipeRepo: env.Config.Forge.Repo}).Steps,
 					"check auth.forge in this report: updating a branch is a write, and needs a credential that may make one"),
 			})
 		},

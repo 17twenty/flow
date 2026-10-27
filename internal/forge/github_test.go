@@ -1129,6 +1129,11 @@ func TestGitHubUpdatesABranchAtTheHeadItWasGiven(t *testing.T) {
 		t.Errorf("GitHub was asked to expect %q, want abc123", got)
 	}
 	var _ core.BranchUpdater = adapter
+
+	fake.updateConflict = true
+	if err := adapter.UpdateBranch(t.Context(), 7, "abc123"); !errors.Is(err, core.ErrConflict) {
+		t.Errorf("a 422 from Update branch came back as %v, want ErrConflict", err)
+	}
 }
 
 func TestGitHubLeavesAStatusWithNoIdentityWithout(t *testing.T) {
