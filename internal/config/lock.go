@@ -174,16 +174,31 @@ func (l *Lock) Observe(key, hash string, now time.Time) {
 	l.Observed[key] = Observation{Hash: hash, At: now}
 }
 
-// Record remembers something flow created.
+// Record remembers something flow created. A record replaces the one about
+// the same thing: by identifier when both have one, by name otherwise. A
+// required status check is only ever its name, and matching two empty ids
+// made the second check flow required overwrite the record of the first.
 func (l *Lock) Record(c Creation) {
 	c.At = c.At.UTC().Truncate(time.Second)
 	for i, existing := range l.Created {
-		if existing.Kind == c.Kind && existing.ID == c.ID {
+		same := existing.ID == c.ID
+		if existing.ID == "" || c.ID == "" {
+			same = existing.ID == c.ID && existing.Name == c.Name
+		}
+		if existing.Kind == c.Kind && same {
 			l.Created[i] = c
 			return
 		}
 	}
 	l.Created = append(l.Created, c)
+}
+
+// legacyCreationKinds are kinds an earlier flow wrote and this one reads as
+// their proper names. The kind used to be the item id with its last "s"
+// trimmed, which made `forge.required_status` a `forge.required_statu`
+// (issue #204).
+var legacyCreationKinds = map[string]string{
+	"forge.required_statu": "forge.required_status",
 }
 
 // Normalise puts the lock in its canonical form: UTC timestamps truncated to
@@ -196,6 +211,9 @@ func (l *Lock) Normalise() {
 	}
 	for i := range l.Created {
 		l.Created[i].At = l.Created[i].At.UTC().Truncate(time.Second)
+		if kind, ok := legacyCreationKinds[l.Created[i].Kind]; ok {
+			l.Created[i].Kind = kind
+		}
 	}
 	for i := range l.FollowUps {
 		l.FollowUps[i].OpenedAt = l.FollowUps[i].OpenedAt.UTC().Truncate(time.Second)
