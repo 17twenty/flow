@@ -27,6 +27,16 @@ const MaxStatusDescription = 140
 // written. A draft is a request for help, not a request to merge.
 const DraftDescription = "draft — not enforced"
 
+// RulesDoc is the page that explains every rule the gate applies and every way
+// to resolve each: what a "Why am I seeing this?" link points at.
+const RulesDoc = "https://github.com/17twenty/flow/blob/main/docs/rules.md"
+
+// RuleDocURL is where a rule is explained. The anchor is the one GitHub makes
+// of a heading that is the rule's id: lower case, with the dots dropped.
+func RuleDocURL(rule string) string {
+	return RulesDoc + "#" + strings.ToLower(strings.ReplaceAll(rule, ".", ""))
+}
+
 // StatusContext is the commit status name the gate publishes under.
 func StatusContext(cfg *config.Config) string {
 	if cfg == nil || strings.TrimSpace(cfg.Policy.StatusContext) == "" {
@@ -168,12 +178,13 @@ func (r PolicyResult) CommentBody() string {
 	} else {
 		body.WriteString("| | rule | what is wrong | fix |\n|---|---|---|---|\n")
 		for _, finding := range problems {
-			fmt.Fprintf(&body, "| %s | `%s` | %s | %s |\n",
-				finding.Symbol(), finding.Rule, tableCell(finding.Message), tableCell(finding.Fix))
+			fmt.Fprintf(&body, "| %s | [`%s`](%s) | %s | %s |\n",
+				finding.Symbol(), finding.Rule, RuleDocURL(finding.Rule), tableCell(finding.Message), tableCell(finding.Fix))
 		}
 		for _, finding := range problems {
 			writeFindingEvidence(&body, finding)
 		}
+		fmt.Fprintf(&body, "\nWhy am I seeing this? Each rule links to what it asks and every way to resolve it: <%s>\n", RulesDoc)
 	}
 	if r.Draft {
 		body.WriteString("\nThis is a draft, so the status is pending and nothing is enforced yet.\n")

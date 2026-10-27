@@ -377,8 +377,16 @@ func prTicketLinked(s PolicySnapshot) Finding {
 		finding.Message = fmt.Sprintf("a %q pull request may merge without a ticket", kind)
 		return finding
 	}
+	// Expedited work — a security fix, an outage — is the agreed exception:
+	// it lands now and is written up after, and live.prs.linked names it
+	// every morning until it is (docs/rules.md).
+	if expedited(s) {
+		finding.OK = true
+		finding.Message = "expedited, so it may merge without a ticket; the daily audit will ask for one until it has one"
+		return finding
+	}
 	finding.Message = "it is not linked to a ticket, and its type is not one that may merge without one"
-	finding.Fix = linkFix(s.Config)
+	finding.Fix = linkFix(s.Config) + unlinkedWays(s.Config)
 	for _, key := range s.Unlinkable {
 		finding.Evidence = append(finding.Evidence, Evidence{
 			Text: fmt.Sprintf("%s is named but the tracker has no such ticket", key),
@@ -856,6 +864,25 @@ func linkFix(cfg *config.Config) string {
 		return `add a closing keyword to the description, such as "Closes #123", or link the issue from the Development sidebar`
 	}
 	return "put the ticket key in the branch name or at the start of the title"
+}
+
+// unlinkedWays is the rest of the remedy for an unlinked pull request: the two
+// ways a team has agreed work may land without a ticket.
+func unlinkedWays(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	var ways []string
+	if types := cfg.Commits.UnlinkedTypes; len(types) > 0 {
+		ways = append(ways, "if it needs no ticket, title it as "+strings.Join(types, ", "))
+	}
+	if labels := cfg.Workflow.Expedite.Labels; len(labels) > 0 {
+		ways = append(ways, "if it is urgent, label it "+strings.Join(labels, " or "))
+	}
+	if len(ways) == 0 {
+		return ""
+	}
+	return "; or " + strings.Join(ways, "; or ")
 }
 
 // trackerType is the configured tracker, or empty.

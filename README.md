@@ -29,6 +29,7 @@ deployment records against the app SHA, live-health audit in doctor,
 | `skills/flow/SKILL.md` | Agent skill: how a harness works a ticket to a reviewed pull request |
 | `docs/delivery-board.md` | The proposal flow was built from, verified line by line against what it does |
 | `docs/cookbook.md` | The steps a person has to do by hand, per forge and tracker |
+| `docs/rules.md` | Why am I seeing this? Every gate rule, why, and how to resolve it |
 | `docs/multi-repo.md` | Two repositories sharing one board: what to write and what each half audits |
 | `loop.sh` | Loop runner (direct and PR modes) |
 | `bootstrap/seed-issues.sh` | Creates phase + item issues and adds them to the Project |
