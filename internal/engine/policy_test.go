@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -862,7 +863,7 @@ func TestPolicyDescriptionAlwaysCountsTruthfully(t *testing.T) {
 	}
 	result := engine.PolicyResult{Findings: findings}
 	description := result.Description()
-	if !strings.HasPrefix(description, "✗ 9 errors") {
+	if want := fmt.Sprintf("✗ %d errors", len(engine.PolicyRuleIDs())); !strings.HasPrefix(description, want) {
 		t.Fatalf("the count was trimmed along with the list: %q", description)
 	}
 	if !strings.Contains(description, "more") {

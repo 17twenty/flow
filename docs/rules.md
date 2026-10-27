@@ -119,3 +119,17 @@ or something is being worked around.
 
 **To resolve it:** clear the blocker, or say on the ticket that this pull
 request is what clears it, and remove the label once it is gone.
+
+## pr.stacked
+
+**Asks:** that the pull request stands on the trunk alone — it targets the trunk,
+and carries no commit of another pull request that has not landed.
+
+**Why:** a branch made from another pull request's branch was checked against
+work that is still changing, and when that work lands as a squash the trunk
+holds it as a commit this branch does not have. A merge of the trunk into it
+can then drop a line with no conflict to say so.
+
+**To resolve it:** land the pull request it names first, then bring this one up
+to date with the trunk and check it again. A team that stacks on purpose sets
+`policy.rules: { pr.stacked: off }`.
