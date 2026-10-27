@@ -23,7 +23,20 @@ Replacement `[REDACTED:<kind>]`.
 |---|---|
 | Actions `GITHUB_TOKEN` | `contents: read`, `pull-requests: write`, `statuses: write`, `issues: write`; the gate job adds `contents: write` to arm auto-merge; release job adds `contents: write`, `deployments: write` |
 | `FLOW_PROJECT_TOKEN` | classic PAT `project` (+ `read:org` only if org-owned) |
-| Agent identity (GitHub App) | contents write, pull requests write, issues read; NOT administration |
+| Agent identity (machine user `flow-bot-gh`, classic PAT) | `repo`, `project`, `workflow`; a repository collaborator with push and a Project writer; NOT an administrator (`docs/cookbook.md` §1) |
+
+## 3.1 Roles
+
+A credential is described by the roles it can fill rather than by its scopes,
+which differ per provider (spec 20 §5). Doctor's `auth.forge` and
+`auth.tracker` say which roles each credential fills, read from the adapter's
+own declaration:
+
+| Role | Does | Filled when the adapter allows |
+|---|---|---|
+| **reader** | the audit: history, settings, the board | the credential is accepted at all |
+| **gate** | `flow/policy` and its comment | forge `commit_status_write` and `pr_comments` |
+| **actor** | moves, closes, follow-ups, arming merges; settings with admin | forge `auto_merge`; tracker `ticket_move` and `follow_up_tickets`; "and settings" when forge `branch_protection` too |
 
 ## 4. Files, network
 User config 0600; cache dir 0700. TLS always verified; `SSL_CERT_FILE`,
