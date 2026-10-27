@@ -40,9 +40,10 @@ narrowed to the live checks whose remedy is flow's own act:
 
 It reads a short window (default `48h`, `--window`), never publishes the
 health report, never proposes the lock, never files follow-ups, and prints
-one line per act. It exits 0 when everything it could see is settled, 2 when
-it acted on something (so a job log shows the day flow had to catch up), and
-the usual non-zero codes when it could not look or could not act.
+what it did. It exits as doctor would on the checks it ran: 0 when everything
+it could see is settled — including what it settled just now, which its
+report names — 2 when something it saw still needs a person, and the usual
+non-zero codes when it could not look or could not act.
 
 `doctor --fix` keeps doing everything `sync` does: `sync` is a subset run
 often, not a second implementation. The split is between *settling* (cheap,

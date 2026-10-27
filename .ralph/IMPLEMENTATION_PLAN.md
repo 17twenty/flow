@@ -477,7 +477,7 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 - [ ] 9.1 `flow sync`: the catch-ups flow owns, on a short window, nothing published — specs: 20 §2, 02 — deps: — (#211)
   - AC: runs exactly `live.transitions.flow` and `live.prs.closed_issues` with `--fix` semantics, default `--window 48h`
-  - AC: never publishes the health report, proposes the lock or files a follow-up; exits 0 settled, 2 when it acted
+  - AC: never publishes the health report, proposes the lock or files a follow-up; exits as doctor does on the checks it ran
   - AC: spec 02 lists the command; `doctor --fix` still performs the same catch-ups through the same code
 - [ ] 9.2 Every template and flow's own workflow run `sync` after the gate, hourly and on push to the trunk — specs: 20 §3, 17 — deps: 9.1 (#212)
   - AC: the gate job runs `flow sync` as a step after `check pr` that cannot fail the job
