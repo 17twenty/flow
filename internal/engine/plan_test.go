@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -230,9 +231,18 @@ func TestPlanGolden(t *testing.T) {
 }
 
 // goldenFile compares bytes against the file at testdata/name, rewriting it under
-// -update.
+// -update. Every golden in this package goes through it.
+//
+// Content hashes are blanked first. A golden is a record of what flow says —
+// the items, the outcomes, the changes — and a hash is derived from bytes the
+// golden does not show: one changed in a CI template rewrote a line in four
+// goldens, and two pull requests that each touched a template conflicted on
+// that line every time, which is how a stale golden reached the trunk. That
+// the hashes are there and stable is a property of its own, tested by
+// TestEveryPlannedItemCarriesItsHashes and the determinism tests.
 func goldenFile(t *testing.T, name string, got []byte) {
 	t.Helper()
+	got = contentHash.ReplaceAll(got, []byte("sha256:…"))
 	path := filepath.Join("testdata", name)
 	if *update {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -249,6 +259,26 @@ func goldenFile(t *testing.T, name string, got []byte) {
 	}
 	if string(got) != string(want) {
 		t.Errorf("%s does not match:\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
+	}
+}
+
+// contentHash is a sha256 content hash as flow writes one.
+var contentHash = regexp.MustCompile(`sha256:[0-9a-f]{64}`)
+
+// TestEveryPlannedItemCarriesItsHashes is what the goldens no longer say:
+// every item of a plan records the hash of what was wanted and of what was
+// observed, which is what lets a saved plan refuse to apply against a world
+// that has moved on (spec 06 §3).
+func TestEveryPlannedItemCarriesItsHashes(t *testing.T) {
+	for _, world := range []func(*testing.T) world{githubProjectsWorld, jiraWorld} {
+		for _, item := range planFor(t, world(t)).Items {
+			if !contentHash.MatchString(item.DesiredHash) {
+				t.Errorf("%s has no desired hash: %q", item.ID, item.DesiredHash)
+			}
+			if item.Exists && !contentHash.MatchString(item.ObservedHash) {
+				t.Errorf("%s was observed and has no observed hash: %q", item.ID, item.ObservedHash)
+			}
+		}
 	}
 }
 

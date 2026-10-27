@@ -76,22 +76,7 @@ func TestDesiredGolden(t *testing.T) {
 			state := desired(t, preset(t, name))
 			encoded := state.Canonical()
 
-			golden := filepath.Join("testdata", "desired", name+".golden")
-			if *update {
-				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(golden, encoded, 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("read golden: %v (run with -update to write it)", err)
-			}
-			if string(encoded) != string(want) {
-				t.Errorf("the %s preset wants something different than the golden file:\n--- got\n%s\n--- want\n%s", name, encoded, want)
-			}
+			goldenFile(t, filepath.Join("desired", name+".golden"), encoded)
 		})
 	}
 }
