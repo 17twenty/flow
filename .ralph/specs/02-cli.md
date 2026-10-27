@@ -19,7 +19,7 @@ Kong-based. This file is the public contract; changes update it in the same comm
 
 ## 2. Commands (complete list)
 
-Help groups: **Setup** (init, plan, apply, attest), **Verify** (doctor),
+Help groups: **Setup** (init, plan, apply, attest), **Verify** (doctor, sync),
 **CI** (check pr, check deploy, check commit), **Meta** (hook, schema, version).
 
 ### `flow init`
@@ -51,6 +51,17 @@ Setup checks + live-health audit (spec 07).
 `--ci` (plain + CI annotations), `--report <file.md>`, `--write-lock`
 (default true locally; in `--ci` it proposes a lock-refresh PR instead),
 `--watch` (TUI). Exit 0 all pass · 2 actionable · 1 hard failure.
+
+### `flow sync`
+The catch-ups flow owns, and nothing else (spec 20 §2): the transitions the
+configuration gives flow (`live.transitions.flow`) and the issues a merged pull
+request names and the forge left open (`live.prs.closed_issues`), performed as
+`flow doctor --fix` would perform them. `--window <dur>` (default 48h). Makes
+no plan, publishes no health report, proposes no lock and files no follow-up.
+Runs after the gate, hourly and on push to the trunk (spec 20 §3). Exit 0 all
+settled · 2 something it saw still needs a person · 1 hard failure; a provider
+it cannot reach is an error. A placeholder sync does not need (an owner, say)
+does not stop it; one it does (the board) fails the check that reads it.
 
 ### `flow check pr`
 The CI gate (spec 09). Runs in CI on pull request events.

@@ -705,7 +705,10 @@ func TestPolicyStrictness(t *testing.T) {
 		{strictness: config.StrictnessRelaxed, rule: engine.RuleTicketReady, want: config.SeverityWarn},
 		{strictness: config.StrictnessRelaxed, rule: engine.RulePRTicketLinked, want: config.SeverityError},
 		{strictness: config.StrictnessRelaxed, rule: engine.RuleAgentHumanReview, want: config.SeverityError},
-		{strictness: config.StrictnessStrict, rule: engine.RuleWIPReview, want: config.SeverityError},
+		// WIP is the board's business: strict does not let it block a merge
+		// (issue #231). policy.rules still can, below.
+		{strictness: config.StrictnessStrict, rule: engine.RuleWIPReview, want: config.SeverityWarn},
+		{strictness: config.StrictnessStrict, rule: engine.RuleWIPInProgress, want: config.SeverityWarn},
 		{strictness: config.StrictnessStrict, rule: engine.RuleTicketNotBlocked, want: config.SeverityError},
 		{strictness: "pedantic", rule: engine.RuleWIPReview, want: config.SeverityWarn},
 		{strictness: "", rule: engine.RuleTicketReady, want: config.SeverityError},
@@ -718,6 +721,13 @@ func TestPolicyStrictness(t *testing.T) {
 				t.Fatalf("%s under %s is %s, want %s", test.rule, test.strictness, got, test.want)
 			}
 		})
+	}
+
+	// A team that wants the gate to refuse on WIP says so in so many words.
+	cfg := preset(t, "lean-kanban")
+	cfg.Policy.Rules = map[string]string{engine.RuleWIPReview: config.SeverityError}
+	if got := engine.PolicySeverity(cfg, engine.RuleWIPReview); got != config.SeverityError {
+		t.Errorf("policy.rules asked for wip.review to be an error and got %s", got)
 	}
 }
 
@@ -821,6 +831,9 @@ func TestPolicyDescription(t *testing.T) {
 func TestPolicyDescriptionGolden(t *testing.T) {
 	s := snapshot(t)
 	s.Config.Policy.Strictness = config.StrictnessStrict
+	// WIP only blocks when a team says so (issue #231); this one does, so
+	// that every rule can fail at once.
+	s.Config.Policy.Rules = map[string]string{engine.RuleWIPReview: config.SeverityError, engine.RuleWIPInProgress: config.SeverityError}
 	s.Config.Agents.Authors = []string{"flow-bot"}
 	s.Config.Agents.RequireHumanReview = true
 	s.PR.Title = "wibble(nope)!: do the thing"

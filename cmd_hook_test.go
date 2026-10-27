@@ -376,7 +376,7 @@ func mkdir(t *testing.T, path string) {
 // topLevelCommands are the commands spec 02 §2 fixes. A template that invokes
 // one of them must invoke it correctly.
 var topLevelCommands = map[string]bool{
-	"init": true, "plan": true, "apply": true, "attest": true, "doctor": true,
+	"init": true, "plan": true, "apply": true, "attest": true, "doctor": true, "sync": true,
 	"check": true, "hook": true, "schema": true, "version": true,
 }
 
