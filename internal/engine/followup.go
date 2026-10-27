@@ -150,12 +150,77 @@ func ReconcileFollowUp(ctx context.Context, in FollowUpInput) FollowUpOutcome {
 
 	switch {
 	case found == nil:
-		return in.file(ctx, out, marker)
+		out = in.file(ctx, out, marker)
 	case in.Wants():
-		return in.chase(ctx, out, *found)
+		out = in.chase(ctx, out, *found)
 	default:
-		return in.finish(ctx, out, *found)
+		out = in.finish(ctx, out, *found)
 	}
+	if out.Err == nil {
+		out.Err = in.retire(ctx, out)
+	}
+	return out
+}
+
+// CheckOf is the doctor check a desired item is reported under. They are the
+// same id for every item but one: the deployment records are an item flow
+// reads and a check about whether it can (spec 07 §5). A follow-up is keyed
+// by the check, so apply and doctor file and find the same ticket.
+func CheckOf(item string) string {
+	if item == core.ItemDeploysRecords {
+		return CheckDeploysSource
+	}
+	return item
+}
+
+// formerly are the ids a check's follow-up was once filed under. apply used
+// to file under the item id, so a repository can hold a ticket for
+// deploys.records beside doctor's for deploys.source (issue #202).
+var formerly = map[string][]string{
+	CheckDeploysSource: {core.ItemDeploysRecords},
+}
+
+// retire closes a ticket an earlier flow filed for this check under another
+// id, saying which ticket now stands for it, and drops it from the lock. Two
+// tickets about one fact are two accounts of it, and the one nobody updates
+// is the one somebody will act on.
+func (in FollowUpInput) retire(ctx context.Context, out FollowUpOutcome) error {
+	for _, old := range formerly[in.Check.ID] {
+		stale, err := in.Tracker.FindFollowUp(ctx, FollowUpMarker(old, in.Repo))
+		if err != nil {
+			return err
+		}
+		if stale == nil || stale.Key == out.Ticket.Key {
+			continue
+		}
+		if !stale.Closed {
+			if !in.Fix {
+				continue
+			}
+			body := fmt.Sprintf("flow now tracks this as `%s`, not `%s`. ", in.Check.ID, old)
+			if out.Ticket.Key != "" {
+				body += fmt.Sprintf("%s is the one ticket for it.", out.Ticket.Key)
+			} else {
+				body += "Nothing is outstanding under that check."
+			}
+			marker := core.NewMarker(core.MarkerFollowUp, "check", old, "repo", in.Repo, "part", "status")
+			if err := in.Tracker.Comment(ctx, stale.Key, marker, body); err != nil {
+				return err
+			}
+			if err := in.Tracker.Close(ctx, stale.Key, core.ClosedNotPlanned); err != nil {
+				return err
+			}
+			in.Log.Info("flow closed a follow-up filed under a former check id",
+				"check", in.Check.ID, "former", old, "ticket", stale.Key)
+		}
+		for i, f := range in.Lock.FollowUps {
+			if f.Check == old {
+				in.Lock.FollowUps = append(in.Lock.FollowUps[:i], in.Lock.FollowUps[i+1:]...)
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // file opens a ticket, when one is wanted and there is none.
