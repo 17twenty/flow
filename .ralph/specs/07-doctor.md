@@ -338,9 +338,11 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   expiry dates is a question about which one counts, and the answer would have
   to be invented.
 - **§8 a promise with no expiry is not a promise (item 2.11).** When the
-  configuration gives no `attestation.default_ttl`, flow uses ninety days —
+  configuration gives no `attestation.default_ttl`, flow uses thirty days —
   long enough not to be a chore, short enough that nobody is relying on
-  something a departed colleague checked two years ago. The notice window is
+  something a departed colleague checked two years ago. (This entry said
+  ninety until issue #220; the code, spec 02 §2 and spec 03 always said
+  thirty, and `engine.DefaultAttestationTTL` is the one value.) The notice window is
   seven days, which is enough to renew deliberately rather than in a hurry on
   the morning a check turns red; an attestation inside it still passes and
   carries the renewal command.
