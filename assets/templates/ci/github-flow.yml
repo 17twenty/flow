@@ -1,13 +1,15 @@
-# Written by `flow init`. flow gate (check pr), deploy transitions (check deploy), daily health (doctor).
+# Written by `flow init`. flow gate (check pr), catch-ups (sync), deploy transitions (check deploy), daily health (doctor).
 name: flow
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
   pull_request_review:
     types: [submitted, dismissed]
+  push: {}                        # sync on the trunk; other branches skip every job
   deployment_status: {}           # only used when done_on: deployed
   schedule:
     - cron: '17 6 * * *'          # daily doctor
+    - cron: '41 * * * *'          # hourly sync
   workflow_dispatch: {}
 
 permissions:
@@ -47,6 +49,26 @@ jobs:
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}
       - run: flow check pr
+      # Settle what the last merge left behind (spec 20 §3). A merge can
+      # start nothing — GitHub lets no event follow one made for the Actions
+      # token — so every gate run is also a chance to catch up. It never
+      # fails the gate: the status above is the verdict.
+      - run: flow sync || [ $? -eq 2 ]
+        continue-on-error: true
+
+  sync:
+    # The other two of spec 20 §3's triggers: a push to the trunk where the
+    # forge delivers it, and an hourly backstop where it does not.
+    if: >-
+      (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'schedule' && github.event.schedule == '41 * * * *')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go install github.com/17twenty/flow@${FLOW_VERSION}
+      - run: flow sync || [ $? -eq 2 ]
 
   deploy:
     if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
@@ -73,7 +95,7 @@ jobs:
         run: go install github.com/17twenty/flow@${FLOW_VERSION} && flow doctor --ci --check 'config.*' --check 'lock.*'
 
   health:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'schedule' && github.event.schedule == '17 6 * * *') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # The audit reads what protects the trunk, and GitHub does not let a
