@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -90,5 +91,51 @@ func TestSyncLooksOnlyAsFarBackAsItsWindow(t *testing.T) {
 	ticket, _ := world().tracker.Ticket(t.Context(), "#42")
 	if !ticket.Closed {
 		t.Error("a wider window did not reach the merge it covers")
+	}
+}
+
+// The merge transitions are flow's in the shipped preset (spec 20 §4), so a
+// merge whose card the tracker never moved is moved by the next sync — no
+// automation of the tracker's to attest, and nothing for a person to do.
+func TestSyncMovesTheCardAMergeLeftBehind(t *testing.T) {
+	dir, world := gateRepo(t, mergedAndLeftOpen(time.Now().Add(-3*time.Hour)))
+
+	if code, _, stderr := execAt(t, dir, "sync"); code != core.ExitOK {
+		t.Fatalf("sync exited %d: %s", code, stderr)
+	}
+	ticket, err := world().tracker.Ticket(t.Context(), "#42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Status.Name != "Done" {
+		t.Errorf("#42 is in %q after sync, want Done: pr_merged is flow's in the preset", ticket.Status.Name)
+	}
+	if !ticket.Closed {
+		t.Error("#42 was moved and left open: both catch-ups belong to one run")
+	}
+}
+
+// TestSyncNamesAPullRequestOnlyBehindWithoutFailing is issue #240 on a forge
+// flow cannot update branches on: the pull request that passed the gate and
+// is only behind is named, and sync says somebody has something to do (2)
+// rather than failing (1) — it runs every hour, and a chore only a person can
+// do must not turn every one of those runs red.
+func TestSyncNamesAPullRequestOnlyBehindWithoutFailing(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) {
+		w.forge.SetPermissions(adminAccess)
+		pr := gatePR(14, "feat(engine): ready")
+		pr.Mergeability = core.MergeabilityBehind
+		w.forge.SetPullRequest(pr)
+		if err := w.forge.SetCommitStatus(t.Context(), pr.HeadSHA, core.CommitStatus{Context: engine.DefaultStatusContext, State: core.StatusSuccess}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	code, stdout, stderr := execAt(t, dir, "sync")
+	if code != core.ExitActionRequired {
+		t.Fatalf("sync exited %d, want %d: %s", code, core.ExitActionRequired, stderr)
+	}
+	if !strings.Contains(stdout, "#14") || !strings.Contains(stdout, engine.CheckLivePRsCurrent) {
+		t.Errorf("sync does not name the pull request waiting on being behind:\n%s", stdout)
 	}
 }

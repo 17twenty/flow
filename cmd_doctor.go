@@ -34,6 +34,7 @@ type DoctorCmd struct {
 // Run implements the doctor command.
 func (c *DoctorCmd) Run(app *Context) error {
 	app.CI = app.CI || c.CI
+	c.observeMode(app)
 	if c.Watch {
 		return c.watch(app)
 	}
@@ -52,6 +53,22 @@ func (c *DoctorCmd) Run(app *Context) error {
 	}
 	app.exit(report.Exit())
 	return nil
+}
+
+// observeMode drops --fix below automate (spec 20 §8): doctor still reads and
+// reports everything, writes --report, and changes nothing anywhere — no
+// follow-up, no health issue, no lock, no catch-up. A configuration doctor
+// cannot read leaves --fix alone, because doctor's job then is to say why.
+func (c *DoctorCmd) observeMode(app *Context) {
+	if !c.Fix {
+		return
+	}
+	s, err := app.inspect()
+	if err != nil || s.Config == nil || s.Config.Acts() {
+		return
+	}
+	app.Log.Warn("mode is " + s.Config.Mode + ", so doctor reports and changes nothing; --fix is ignored")
+	c.Fix = false
 }
 
 // once is a whole run: the world as it stands, every check asked, and the

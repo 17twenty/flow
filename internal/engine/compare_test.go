@@ -15,8 +15,13 @@ import (
 // declarations.
 func comparison(t *testing.T, left, right string) engine.Comparison {
 	t.Helper()
+	return comparisonOf(t, preset(t, config.PresetLeanKanban), left, right)
+}
+
+// comparisonOf compares two providers under a configuration of the caller's.
+func comparisonOf(t *testing.T, cfg *config.Config, left, right string) engine.Comparison {
+	t.Helper()
 	registry := testRegistry(t)
-	cfg := preset(t, config.PresetLeanKanban)
 	result, err := engine.Compare(engine.CompareInput{
 		Config:  cfg,
 		Desired: desired(t, cfg),
@@ -88,14 +93,16 @@ func TestCompareFindsWhatWouldChange(t *testing.T) {
 		want        [2]engine.Outcome
 		mechanism   string
 		sameVerdict bool
+		native      bool
 	}{
 		{
 			// Nothing can be asked of Jira about an issue closing, where
 			// GitHub Projects has the automation and flow simply cannot see
-			// whether it is on.
+			// whether it is on — for a team that leaves it to the tracker.
 			left: "github-projects", right: "jira-cloud",
-			id:   core.NativeItem("issue_closed"),
-			want: [2]engine.Outcome{engine.OutcomeAttest, engine.OutcomeUnsupported},
+			id:     core.NativeItem("issue_closed"),
+			want:   [2]engine.Outcome{engine.OutcomeAttest, engine.OutcomeUnsupported},
+			native: true,
 		},
 		{
 			// Linear has no saved view to expedite with, so the gate enforces
@@ -117,7 +124,11 @@ func TestCompareFindsWhatWouldChange(t *testing.T) {
 		},
 	} {
 		t.Run(tc.id+"/"+tc.right, func(t *testing.T) {
-			row, ok := find(comparison(t, tc.left, tc.right), tc.id)
+			cfg := preset(t, config.PresetLeanKanban)
+			if tc.native {
+				cfg = nativeMerges(cfg)
+			}
+			row, ok := find(comparisonOf(t, cfg, tc.left, tc.right), tc.id)
 			if !ok {
 				t.Fatalf("%s is not in the comparison", tc.id)
 			}

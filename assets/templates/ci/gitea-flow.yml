@@ -1,0 +1,124 @@
+# Written by `flow init` for Gitea or Forgejo Actions, which run GitHub's
+# workflow syntax. flow gate (check pr), catch-ups (sync), daily health (doctor).
+# The variables under env must be the ones .flow.yaml names in auth.token_env;
+# rename them here if yours differ. Forgejo also reads this directory.
+name: flow
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, dismissed]
+  push: {}                        # sync on the trunk; other branches skip every job
+  schedule:
+    - cron: '17 6 * * *'          # daily doctor
+    - cron: '41 * * * *'          # hourly sync
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write            # policy explanation comment
+  statuses: write                 # flow/policy
+  issues: write                   # follow-ups + pinned health issue
+
+concurrency:
+  group: flow-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT: 'project', plus 'repo' for the daily audit
+  FLOW_LOG_FORMAT: json
+  FLOW_VERSION: latest            # init writes the build that wrote this; bump deliberately
+  # Installs the released binary for FLOW_VERSION and checks it against the
+  # release's SHA256SUMS: no Go toolchain, nothing compiled on the runner.
+  FLOW_INSTALL: |
+    set -eu
+    v="${FLOW_VERSION:-latest}"
+    if [ "$v" = latest ]; then
+      v=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/17twenty/flow/releases/latest)
+      v="${v##*/}"
+    fi
+    case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "flow: no release for $(uname -m)" >&2; exit 1 ;; esac
+    asset="flow_${v}_linux_${arch}"
+    base="https://github.com/17twenty/flow/releases/download/${v}"
+    cd "$(mktemp -d)"
+    curl -fsSLO "$base/$asset"
+    curl -fsSLO "$base/SHA256SUMS"
+    grep " ${asset}\$" SHA256SUMS | sha256sum -c -
+    if [ -w /usr/local/bin ]; then install -m 0755 "$asset" /usr/local/bin/flow; else sudo install -m 0755 "$asset" /usr/local/bin/flow; fi
+
+jobs:
+  gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+    runs-on: ubuntu-latest
+    # Arming a merge is arranging a write to the trunk, so GitHub's
+    # `enablePullRequestAutoMerge` refuses a token that may only read (#190).
+    # This job holds `contents: write` for that one request and writes nothing
+    # to the tree itself: what it asks is that the forge land the pull request
+    # once the approval and the checks it waits for are in (spec 09 §1). A
+    # job's block replaces the workflow's whole set, so the rest is repeated.
+    permissions:
+      contents: write             # arm auto-merge
+      pull-requests: write        # policy explanation comment
+      statuses: write             # flow/policy
+      issues: write               # follow-ups
+    steps:
+      - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
+      - run: sh -c "$FLOW_INSTALL"
+      - run: flow check pr
+      # Settle what the last merge left behind (spec 20 §3). A merge can
+      # start nothing — GitHub lets no event follow one made for the Actions
+      # token — so every gate run is also a chance to catch up. It never
+      # fails the gate: the status above is the verdict.
+      - run: flow sync || [ $? -eq 2 ]
+        continue-on-error: true
+        env:
+          # Bringing a branch up to date is a push, and GitHub starts no
+          # checks for a push made with the Actions token (issue #240), so
+          # sync acts with the credential the daily job reads with.
+          GITHUB_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}
+
+  sync:
+    # The other two of spec 20 §3's triggers: a push to the trunk where the
+    # forge delivers it, and an hourly backstop where it does not.
+    if: >-
+      (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'schedule' && github.event.schedule == '41 * * * *')
+    runs-on: ubuntu-latest
+    env:
+      # As above: an update made with the Actions token starts no checks.
+      GITHUB_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -c "$FLOW_INSTALL"
+      - run: flow sync || [ $? -eq 2 ]
+
+  config:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with: { filters: "flow: ['.flow.yaml', '.flow.lock']" }
+      - if: steps.f.outputs.flow == 'true'
+        run: sh -c "$FLOW_INSTALL" && flow doctor --ci --check 'config.*' --check 'lock.*'
+
+  health:
+    if: (github.event_name == 'schedule' && github.event.schedule == '17 6 * * *') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      # The audit reads what protects the trunk, and GitHub does not let a
+      # workflow grant the Actions token the `administration` permission, so
+      # `secrets.GITHUB_TOKEN` answers 403 to every protection and ruleset
+      # read. A run that could not look is not a green run, so the daily job
+      # uses the same credential a person would (spec 07 §10).
+      GITHUB_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: sh -c "$FLOW_INSTALL"
+      - run: flow doctor --ci --fix --timeout 10m --report doctor.md || [ $? -eq 2 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: doctor-report, path: doctor.md }

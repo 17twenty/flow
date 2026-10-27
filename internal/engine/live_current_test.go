@@ -97,12 +97,14 @@ func TestOnlyTheReadyAreUpdated(t *testing.T) {
 	}
 }
 
-// A forge flow cannot update a branch on gets the steps for a person.
+// A forge flow cannot update a branch on gets the steps for a person, and a
+// warning rather than a failure: sync runs every hour, and failing it for a
+// chore only a person can do would fail it for ever (issue #240).
 func TestAForgeThatCannotUpdateGetsTheButton(t *testing.T) {
 	ready := readyAndBehind(1, "feat(api): ready")
 	result, _ := currentResult(t, true, false, coretest.ForgeFixture{PullRequests: []core.PullRequest{ready}, Statuses: passed(ready)})
 
-	wantState(t, result, engine.StateFail)
+	wantState(t, result, engine.StateWarn)
 	if result.Remediation.Kind != engine.RemedyManual || !strings.Contains(strings.Join(result.Remediation.Steps, " "), "auth.forge") {
 		t.Errorf("the remedy is %+v, want a person's steps", result.Remediation)
 	}

@@ -29,6 +29,7 @@ deployment records against the app SHA, live-health audit in doctor,
 | `skills/flow/SKILL.md` | Agent skill: how a harness works a ticket to a reviewed pull request |
 | `docs/delivery-board.md` | The proposal flow was built from, verified line by line against what it does |
 | `docs/cookbook.md` | The steps a person has to do by hand, per forge and tracker |
+| `docs/rules.md` | Why am I seeing this? Every gate rule, why, and how to resolve it |
 | `docs/multi-repo.md` | Two repositories sharing one board: what to write and what each half audits |
 | `loop.sh` | Loop runner (direct and PR modes) |
 | `bootstrap/seed-issues.sh` | Creates phase + item issues and adds them to the Project |
@@ -93,7 +94,7 @@ What the audit reads today, against the expectations of
 | `live.prs.linked` | every merge named a ticket | ✓ all 17 |
 | `live.prs.reviewed` | a person approved every agent pull request | ✓ all 17 |
 | `live.deploys.lag` | shipped within 2h | ✓ all 17 |
-| `live.transitions.native` | the tracker moved its own cards | ✓ 16 on `pr_merged`, 80 on `issue_closed` |
+| `live.transitions.flow` | flow made the moves it owns, `pr_merged` and `issue_closed` among them since spec 20 | read the health issue |
 | `live.tickets.review_has_pr` | nothing waits for a review of nothing | ✓ both |
 | `live.tickets.ready_dor` | everything Ready meets the Definition of Ready | ✓ nothing is Ready |
 

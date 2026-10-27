@@ -19,6 +19,13 @@ root, no replace directives, no cgo, generated schema committed.
 
 ## Decisions
 
+- **Templates install the release, not the module (issue #218).** Every
+  shipped CI template downloads `flow_<tag>_linux_<arch>` for its pinned
+  `FLOW_VERSION` and checks it against the release's `SHA256SUMS`, resolving
+  `latest` to a tag first because the asset names carry it. Compiling flow on
+  the runner with whatever Go it has was a second toolchain for every adopter
+  to keep working. `go install …@latest` stays guaranteed for people.
+
 - **`-X main.version` is what a scaffolded workflow installs (issue #186).**
   The release build injects the tag, `flow version` reports it, and the
   workflow `flow init` writes pins to it (spec 02 §2). So the ldflags above

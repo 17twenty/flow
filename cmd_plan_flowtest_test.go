@@ -105,12 +105,17 @@ func TestScenario_A03_PlanOnFreshProject(t *testing.T) {
 		"tracker.labels":                   "native",
 		"forge.protection":                 "native",
 		"forge.merge_settings":             "native",
-		"tracker.native.pr_merged":         "attest",
 		"tracker.native.changes_requested": "attest",
-		"tracker.native.issue_closed":      "attest",
 		"tracker.wip":                      "compensated",
 		"deploys.records":                  "follow_up",
 		"tracker.project":                  "noop",
+	}
+	// The merge transitions are flow's in the preset (spec 20 §4), so there
+	// is no automation of the tracker's left to take anybody's word for.
+	for _, id := range []string{"tracker.native.pr_merged", "tracker.native.issue_closed"} {
+		if item, ok := doc.item(id); ok {
+			t.Errorf("the plan asks about %s (%s), which the preset gives to flow", id, item.Outcome)
+		}
 	}
 	for id, outcome := range want {
 		it, ok := doc.item(id)

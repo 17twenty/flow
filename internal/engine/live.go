@@ -72,12 +72,15 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
+		a.trunkBuilt(),
 		a.prsCurrent(),
-		a.prsClosedIssues(),
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)
 	checks = append(checks, a.transitionChecks(cfg)...)
-	checks = append(checks, a.transitionsFlow(), a.wip(), a.flagsCleanup(), a.flagsAge())
+	// Closing what a merge left open comes after the moves flow owes: a card
+	// is owed its move from the merge, and closing the issue first would date
+	// that move from the close and hold it back for the grace period.
+	checks = append(checks, a.transitionsFlow(), a.prsClosedIssues(), a.wip(), a.flagsCleanup(), a.flagsAge())
 	return append(checks, a.agentsRework())
 }
 
