@@ -61,6 +61,10 @@ const (
 	CapAutoMerge = "auto_merge"
 	// CapPRComments is flow's own marked comments on a pull request.
 	CapPRComments = "pr_comments"
+	// CapUpdateBranch is bringing a pull request's branch up to date with its
+	// base, so one that is ready to land is not held up by a merge it is
+	// behind (spec 20 §3, issue #234).
+	CapUpdateBranch = "update_branch"
 	// CapDeploymentsRead is reading deployment records.
 	CapDeploymentsRead = "deployments_read"
 	// CapLinkedIssuesRead is the forge's own link between a PR and a ticket.
@@ -119,6 +123,7 @@ var forgeCapabilities = []string{
 	CapAutoMerge,
 	CapFileProposal,
 	CapPRComments,
+	CapUpdateBranch,
 	CapDeploymentsRead,
 	CapLinkedIssuesRead,
 }
