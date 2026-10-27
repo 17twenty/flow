@@ -27,6 +27,7 @@ Evaluation is pure and deterministic.
 | `wip.review` | warn | in_review count ≤ limit, or this PR is approved, or it entered review before the limit was exceeded |
 | `wip.in_progress` | warn | author's in_progress count ≤ per_person |
 | `ticket.not_blocked` | warn | no linked ticket blocked |
+| `pr.stacked` | warn | the PR targets the trunk and carries no older open PR's head commit (issue #235) |
 
 Strictness: relaxed (all → warn except `pr.ticket.linked`, `agent.human_review`),
 standard (table), strict (warn → error, except `wip.review` and `wip.in_progress`,
@@ -151,6 +152,15 @@ golden; determinism; fork/read-only path; draft path.
   the gate under any strictness; a team that wants them to block says so in
   `policy.rules`. `tracker.wip`'s compensation by `policy.wip` is therefore
   visibility, not enforcement, on a tracker that cannot hold a limit itself.
+- **§2 a stacked pull request is a warning (issue #235).** One that targets
+  another pull request's branch, or carries the head commit of an older open
+  one, was checked against work that is still changing, and once that work
+  lands as a squash the child carries commits the trunk no longer has — a
+  merge of the trunk into it can then drop a line with no conflict to say so.
+  The gate names the parent and says to land it first and look again. It is
+  a warning, an error under `strict`, and a team that stacks on purpose sets
+  `policy.rules: { pr.stacked: off }`. Ancestry costs one comparison per
+  older open pull request.
 - **§2 the board gives no arrival order (item 4.3).** `WIPItem.Since` is left
   zero. No tracker flow speaks to records when an item entered a column, and
   filling it with the last-edited time would let an item somebody merely
