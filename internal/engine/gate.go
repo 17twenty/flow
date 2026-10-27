@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -161,6 +162,9 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 		return PolicySnapshot{}, core.Explain(err, "read the board")
 	}
 	snapshot.WIP = wipFrom(in.Config, in.Lock, board)
+	if err := arrivals(ctx, in, &snapshot.WIP); err != nil {
+		return PolicySnapshot{}, err
+	}
 
 	for _, key := range in.Adapters.Tracker.LinkedKeys(pr) {
 		ticket, err := in.Adapters.Tracker.Ticket(ctx, key)
@@ -282,6 +286,50 @@ func wipFrom(cfg *config.Config, lock *config.Lock, board []core.Ticket) WIPCoun
 		}
 	}
 	return counts
+}
+
+// arrivals gives the review column an arrival order where the board gave
+// none, from the forge: each ticket arrived when the oldest open, ready pull
+// request that closes it was opened (spec 09 §2 Decisions, issue #231).
+//
+// It is read only when the column is over its limit, because that is the only
+// time the order decides anything, and it costs a read per open pull request.
+// Without it no tracker flow speaks to gives an order, the "entered review
+// before the limit" exemption never applies, and a column over its limit
+// fails every pull request in it — including the ones whose merge would
+// bring it back under. A queue that cannot drain is the WIP rule defeating
+// its own purpose. The opening of a pull request is not something an edit
+// can move, which is what the board's last-edited time would have been.
+func arrivals(ctx context.Context, in GateInput, counts *WIPCounts) error {
+	column, found := columnFor(in.Config, config.EventPRReadyForReview)
+	if !found || column.WIP == nil || column.WIP.Limit <= 0 || len(counts.Review) <= column.WIP.Limit {
+		return nil
+	}
+	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		return core.Explain(err, "read the open pull requests")
+	}
+	ready := slices.DeleteFunc(open, func(pr core.PullRequest) bool { return pr.Draft })
+	// A listing carries no closing issues (spec 10 §2), so each one is read.
+	full, err := detailed(ctx, in.Adapters.Forge, ready)
+	if err != nil {
+		return err
+	}
+	opened := map[string]time.Time{}
+	for _, pr := range full {
+		for _, key := range in.Adapters.Tracker.LinkedKeys(pr) {
+			key = normalKey(key)
+			if at, seen := opened[key]; !seen || pr.CreatedAt.Before(at) {
+				opened[key] = pr.CreatedAt
+			}
+		}
+	}
+	for i, item := range counts.Review {
+		if at := opened[normalKey(item.Key)]; item.Since.IsZero() && !at.IsZero() {
+			counts.Review[i].Since = at
+		}
+	}
+	return nil
 }
 
 // wipItem is one board item as the WIP rules read it.
