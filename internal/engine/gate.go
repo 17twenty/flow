@@ -316,6 +316,12 @@ func arrivals(ctx context.Context, in GateInput, open []core.PullRequest, counts
 	if !found || column.WIP == nil || column.WIP.Limit <= 0 || len(counts.Review) <= column.WIP.Limit {
 		return nil
 	}
+	// The order only changes a verdict where WIP can block, which is only
+	// where policy.rules makes it an error (issue #239). As a warning it is
+	// not worth a read per open pull request (issue #244).
+	if PolicySeverity(in.Config, RuleWIPReview) != config.SeverityError {
+		return nil
+	}
 	ready := slices.DeleteFunc(slices.Clone(open), func(pr core.PullRequest) bool { return pr.Draft })
 	// A listing carries no closing issues (spec 10 §2), so each one is read.
 	full, err := detailed(ctx, in.Adapters.Forge, ready)
@@ -340,46 +346,50 @@ func arrivals(ctx context.Context, in GateInput, open []core.PullRequest, counts
 }
 
 // stackedOn is every open pull request this one stands on (issue #235): one
-// whose branch it targets instead of the trunk, or an older one whose head it
-// contains. The second is the one that hides — a branch made from another
-// pull request's branch and pointed at the trunk looks like any other — so
-// the forge is asked about ancestry, once per older open pull request.
+// whose branch it targets instead of the trunk, or one whose head commit it
+// carries. The second is the one that hides — a branch made from another pull
+// request's branch and pointed at the trunk looks like any other — so the
+// forge is asked once what this pull request has that the trunk has not, and
+// every other open pull request's head is looked for in that answer.
+//
+// Once, not once per open pull request: the gate runs on every event of every
+// pull request on the Actions token's hourly budget, and a comparison per
+// pull request made that cost grow with the square of the queue until GitHub
+// refused the gate outright (issue #244).
 func stackedOn(ctx context.Context, in GateInput, pr core.PullRequest, open []core.PullRequest) ([]StackedPR, error) {
 	repo, err := in.Adapters.Forge.Repo(ctx)
 	if err != nil {
 		return nil, core.Explain(err, "read the trunk's name")
 	}
 	trunk := repo.DefaultBranch
-	var stacks []StackedPR
-	offTrunk := trunk != "" && pr.BaseRef != "" && pr.BaseRef != trunk
-	parented := false
-	for _, other := range open {
-		if other.Number == pr.Number {
-			continue
+	if trunk != "" && pr.BaseRef != "" && pr.BaseRef != trunk {
+		for _, other := range open {
+			if other.Number != pr.Number && other.HeadRef == pr.BaseRef {
+				return []StackedPR{{Number: other.Number, Title: other.Title,
+					Why: fmt.Sprintf("this targets its branch, %s, not %s", other.HeadRef, trunk)}}, nil
+			}
 		}
-		if offTrunk && other.HeadRef == pr.BaseRef {
-			parented = true
-			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title,
-				Why: fmt.Sprintf("this targets its branch, %s, not %s", other.HeadRef, trunk)})
-			continue
-		}
-		if other.HeadSHA == "" || pr.HeadSHA == "" || !other.CreatedAt.Before(pr.CreatedAt) {
-			continue
-		}
-		comparison, err := in.Adapters.Forge.Compare(ctx, other.HeadSHA, pr.HeadSHA)
-		switch {
-		case errors.Is(err, core.ErrNotFound):
-			continue
-		case err != nil:
-			return nil, core.Explain(err, "compare #%d with #%d", other.Number, pr.Number)
-		}
-		if comparison.Known() && comparison.Contains() {
-			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title,
-				Why: "this carries its commits"})
-		}
+		return []StackedPR{{Why: fmt.Sprintf("this targets %s, which is not %s and no open pull request is for", pr.BaseRef, trunk)}}, nil
 	}
-	if offTrunk && !parented {
-		stacks = append(stacks, StackedPR{Why: fmt.Sprintf("this targets %s, which is not %s and no open pull request is for", pr.BaseRef, trunk)})
+	if trunk == "" || pr.HeadSHA == "" || len(open) < 2 {
+		return nil, nil
+	}
+	comparison, err := in.Adapters.Forge.Compare(ctx, trunk, pr.HeadSHA)
+	switch {
+	case errors.Is(err, core.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, core.Explain(err, "compare #%d with %s", pr.Number, trunk)
+	}
+	carried := map[string]bool{}
+	for _, sha := range comparison.Commits {
+		carried[sha] = true
+	}
+	var stacks []StackedPR
+	for _, other := range open {
+		if other.Number != pr.Number && other.HeadSHA != "" && carried[other.HeadSHA] {
+			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title, Why: "this carries its commits"})
+		}
 	}
 	return stacks, nil
 }

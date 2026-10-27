@@ -678,6 +678,8 @@ func TestGateTextWarnsAboutACardItCannotPlace(t *testing.T) {
 // so the oldest `limit` pass and only the newest wait.
 func TestGateDrainsAColumnOverItsLimit(t *testing.T) {
 	world := gateFixture(t)
+	// The order only decides anything where WIP can block (issue #239).
+	world.cfg.Policy.Rules = map[string]string{engine.RuleWIPReview: config.SeverityError}
 	opened := time.Date(2026, 10, 27, 1, 0, 0, 0, time.UTC)
 	for i, key := range []string{"#30", "#31", "#32", "#33", "#34"} {
 		world.tracker.SetTicket(gateTicket(key, "In review"))
@@ -761,7 +763,7 @@ func TestGateNamesTheWorkAPullRequestStandsOn(t *testing.T) {
 	})
 	t.Run("carries its commits", func(t *testing.T) {
 		mine := openPRAt(4, "feat/triggers", "main", t0.Add(time.Hour))
-		ahead := map[string]core.Comparison{parent.HeadSHA + "..." + mine.HeadSHA: {Status: core.CompareAhead, AheadBy: 2}}
+		ahead := map[string]core.Comparison{"main..." + mine.HeadSHA: {Status: core.CompareAhead, AheadBy: 2, Commits: []string{"sha-mine", parent.HeadSHA}}}
 		got := finding(t, engine.CheckPolicy(stackWorld(t, mine, ahead, parent).snapshot(t)), engine.RulePRStacked)
 		if got.OK || !strings.Contains(got.Message, "#3") {
 			t.Errorf("%+v, want it to name #3", got)
@@ -769,10 +771,37 @@ func TestGateNamesTheWorkAPullRequestStandsOn(t *testing.T) {
 	})
 	t.Run("independent work", func(t *testing.T) {
 		mine := openPRAt(4, "fix/other", "main", t0.Add(time.Hour))
-		apart := map[string]core.Comparison{parent.HeadSHA + "..." + mine.HeadSHA: {Status: core.CompareDiverged, AheadBy: 1, BehindBy: 2}}
+		apart := map[string]core.Comparison{"main..." + mine.HeadSHA: {Status: core.CompareAhead, AheadBy: 1, Commits: []string{"sha-mine"}}}
 		got := finding(t, engine.CheckPolicy(stackWorld(t, mine, apart, parent).snapshot(t)), engine.RulePRStacked)
 		if !got.OK {
 			t.Errorf("%+v, want two pieces of work side by side to stand on nothing", got)
 		}
 	})
+}
+
+// TestTheGateCostsTheSameWhateverTheQueue is issue #244. The gate runs on
+// every event of every pull request on the Actions token's hourly budget, and
+// a read or a comparison per open pull request made each run cost more as the
+// queue grew, until GitHub refused the gate and every pull request sat with no
+// verdict. Twenty open pull requests and a column over its limit still cost
+// one comparison and one detailed read: the one being judged.
+func TestTheGateCostsTheSameWhateverTheQueue(t *testing.T) {
+	t0 := time.Date(2026, 10, 27, 1, 0, 0, 0, time.UTC)
+	mine := openPRAt(4, "feat/mine", "main", t0.Add(24*time.Hour))
+	var others []core.PullRequest
+	for i := range 20 {
+		others = append(others, openPRAt(50+i, fmt.Sprintf("feat/other-%d", i), "main", t0.Add(time.Duration(i)*time.Hour)))
+	}
+	world := stackWorld(t, mine, map[string]core.Comparison{"main..." + mine.HeadSHA: {Status: core.CompareAhead, AheadBy: 1, Commits: []string{"sha-mine"}}}, others...)
+	for i := range 5 {
+		world.tracker.SetTicket(gateTicket(fmt.Sprintf("#%d", 30+i), "In review"))
+	}
+
+	world.snapshot(t)
+	if calls := world.forge.Calls("Compare"); calls != 1 {
+		t.Errorf("the gate compared %d times with 20 pull requests open, want once", calls)
+	}
+	if calls := world.forge.Calls("PullRequest"); calls != 1 {
+		t.Errorf("the gate read %d pull requests in full, want only the one it judges", calls)
+	}
 }
