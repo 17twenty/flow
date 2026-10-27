@@ -43,6 +43,7 @@ capabilities:
     set: true
     verify: true
     requires: [project_write]
+    fold_case: true
     remediation: follow_up
     hazards: ["updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up."]
     by_hand:

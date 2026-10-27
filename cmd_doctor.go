@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -241,12 +242,24 @@ func (c *DoctorCmd) publish(app *Context, s *session, report engine.Report) erro
 		Log:      app.Log,
 	})
 	if out.Err != nil {
+		if outOfTime(app, out.Err) {
+			return fmt.Errorf("publish the health report: %w", out.Err)
+		}
 		// The report has already said what is wrong with the workflow. Not
 		// being able to file a copy of it is not a finding about the
 		// workflow, and must not become the run's verdict (spec 07 §4).
 		app.Log.Warn("doctor could not publish the health report", "error", out.Err)
 	}
 	return nil
+}
+
+// outOfTime reports whether an error is the run's own deadline rather than a
+// provider's weather. A tracker that will not take a copy of the report is
+// weather; a run that ran out of the time it was given did not finish, and
+// a daily job that exits as if it had is a job going green on a morning the
+// report was never filed (spec 07 Decisions).
+func outOfTime(app *Context, err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(app.Ctx.Err(), context.DeadlineExceeded)
 }
 
 // repoOf is the repository a report is about, empty when there is no
@@ -523,6 +536,9 @@ func (c *DoctorCmd) proposeLock(app *Context, s *session) error {
 		Files: []core.ProposedFile{{Path: config.LockPath, Content: data}},
 	})
 	if err != nil {
+		if outOfTime(app, err) {
+			return fmt.Errorf("propose the refreshed lock: %w", err)
+		}
 		app.Log.Warn("doctor could not propose the refreshed lock", "error", err)
 		return nil
 	}
