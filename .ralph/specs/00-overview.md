@@ -49,7 +49,8 @@ P1. **The tracker tracks work. Git tracks deployment. Flags track release.**
 P2. **Declarative and idempotent.** Re-running converges; never duplicates.
 P3. **Read-mostly.** After setup, flow's only writes are: the `flow/policy`
     status and its explanatory PR comment; engine-owned transitions (P11);
-    follow-up tickets. Everything else is reads.
+    closing an issue a merged pull request names and the forge left open
+    (P14); follow-up tickets. Everything else is reads.
 P4. **Honest about capability.** Every desired setting resolves to exactly one
     outcome: native, compensated, follow-up, attest, noop (spec 05).
 P5. **Enforce in the forge, display in the tracker.**
@@ -66,6 +67,10 @@ P12. **No user-authored regex.** Linkage uses structured API data (e.g. GitHub
      adapter (e.g. Jira issue keys in branch/PR title), never user-configured.
 P13. **Verify behaviour, not just configuration.** Doctor audits what actually
      happened over a time window, not only whether settings look right.
+P14. **Level-triggered.** Every run allowed to write settles everything in its
+     authority it can see, whatever started it. An event decides when flow
+     looks, never whether the work gets done: a lost event costs latency, not
+     correctness (spec 20).
 
 ## 5. Scope
 
