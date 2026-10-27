@@ -279,3 +279,11 @@ tracker's declarations, full permissions assumed, no network. Side-by-side table
   declaration's steps, and flow's own sentence appears exactly once, last,
   labelled `In flow's own words:` — and only where there is another
   vocabulary to tell it apart from.
+- **§1 whether two names are one name is the declaration's answer (issue
+  #189).** `fold_case: true` on a capability says the provider reads two
+  names in that set that differ only in case as one. The planner then matches
+  an observed item by a folded name (exact first) and renames it in place
+  under its own id rather than creating a second beside it. GitHub Projects,
+  Jira and Linear declare it for `status_options`, because every one of their
+  adapters already moved by a folded name; a required status context and a
+  proposed file path are case-sensitive to the forge and declare nothing.

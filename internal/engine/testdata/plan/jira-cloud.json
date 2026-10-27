@@ -43,8 +43,9 @@
         },
         {
           "what": "tracker.status_options",
-          "op": "create",
+          "op": "update",
           "item": {
+            "id": "10002",
             "name": "In progress"
           }
         },

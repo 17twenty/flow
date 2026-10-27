@@ -208,7 +208,7 @@ func TestApplyWritesTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply wrote no lock: %v", err)
 	}
-	for _, want := range []string{"Backlog", "In progress"} {
+	for _, want := range []string{"Backlog", "In review"} {
 		if !strings.Contains(string(lock), want) {
 			t.Errorf("the lock does not record the %q flow created:\n%s", want, lock)
 		}
