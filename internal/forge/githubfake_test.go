@@ -623,10 +623,15 @@ func (f *gitHubFake) compare(w http.ResponseWriter, r *http.Request, basehead st
 		f.fail(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	commits := make([]map[string]string, 0, len(comparison.Commits))
+	for _, sha := range comparison.Commits {
+		commits = append(commits, map[string]string{"sha": sha})
+	}
 	f.writeJSON(w, r, map[string]any{
 		"status":    comparison.Status,
 		"ahead_by":  comparison.AheadBy,
 		"behind_by": comparison.BehindBy,
+		"commits":   commits,
 	})
 }
 
