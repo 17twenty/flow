@@ -7,8 +7,8 @@
     "forge": "github",
     "tracker": "jira-cloud"
   },
-  "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:2873702d0d278c287f1a70685a2e7ba40a07e1546a14704595ecd5f19f8ffc00",
+  "config_hash": "sha256:…",
+  "desired_hash": "sha256:…",
   "items": [
     {
       "id": "tracker.project",
@@ -17,8 +17,8 @@
       "outcome": "noop",
       "why": "the provider already matches what was asked for",
       "exists": true,
-      "desired_hash": "sha256:4661c3e76c7784e4fe21fc1d21af55cfc3a9d18644f982fd7c848c2a65c21894",
-      "observed_hash": "sha256:04bb22d7a2059a6b57a0296c13a2e5ab0dc4a6dda764fc48d3890a4d4a87f3fb"
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…"
     },
     {
       "id": "tracker.status_options",
@@ -31,8 +31,8 @@
       "owner": "${pending:owners.tracker_admin}",
       "why": "the provider has no API for this, so a person has to do it",
       "exists": true,
-      "desired_hash": "sha256:00472242fef65d15a608959283a4ad9c110ebc7f43bf67346a9cfb2c8085085c",
-      "observed_hash": "sha256:57311442b4209aea202992618052a4e477af30fd009068be596934d155bb4ec5",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "tracker.status_options",
@@ -84,8 +84,8 @@
       "outcome": "attest",
       "why": "flow cannot see this through the API, so a person has to confirm it",
       "exists": true,
-      "desired_hash": "sha256:2d124cd19ab71729843def9eb597fb834938faff0d91c6d0bb75e003c9510545",
-      "observed_hash": "sha256:37a29ce98ecdf625267e2af6ccb9c4f43e8b1d313fc82bf4ca42f258056dcf1b",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "tracker.labels",
@@ -148,8 +148,8 @@
       "outcome": "attest",
       "why": "flow cannot see this through the API, so a person has to confirm it",
       "exists": false,
-      "desired_hash": "sha256:eeb8e7eb9e56eeacf8ce7df64b539b26f66a5d4a7f040071843ac91463f58027",
-      "observed_hash": "sha256:53e060536abc3d084b873888ee935f4d77b5c29dadc734df0564e014e98f2ff9",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "tracker.native.changes_requested",
@@ -174,8 +174,8 @@
       "mechanism": "policy.wip",
       "why": "the provider cannot be made to do this, so flow enforces the same intent through policy.wip",
       "exists": true,
-      "desired_hash": "sha256:d02371f9b2a716dd89a0aa5bbc53d15a39cb3ffe88d4536af7e31fb4d57e38eb",
-      "observed_hash": "sha256:420530db898272b11254f73bacf005b2a643ed79e8e45cc55befb114c0c3a99f",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "tracker.wip",
@@ -202,8 +202,8 @@
       "outcome": "attest",
       "why": "flow cannot see this through the API, so a person has to confirm it",
       "exists": false,
-      "desired_hash": "sha256:9759eaf7b7d4d3e0415c6b970dac3a9201a42ed04a85c4515c155198281dd23c",
-      "observed_hash": "sha256:9e3701f050c719a5c0074fdbe48fb7cf4c318e2a32d66155226ca70d7944ba86",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "tracker.expedite",
@@ -223,8 +223,8 @@
       "outcome": "noop",
       "why": "the provider already matches what was asked for",
       "exists": true,
-      "desired_hash": "sha256:1714273f2bf737d7cb68cf2b559ee7974a569fe84116a24f9dab927b3dd93bd3",
-      "observed_hash": "sha256:130df5095e47e6e2c56f9c91ad73a8b737f6ff9c8e8324706428f39b931452a8"
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…"
     },
     {
       "id": "forge.protection",
@@ -236,8 +236,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:d3e629972f721564cf076de027ab27252495885f2627e563d36f6516e060de8f",
-      "observed_hash": "sha256:34b7e54117fb38e314d7adb8d6fc21c44a80091b17faeba35b7bac156b20cf8f",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "forge.protection",
@@ -269,8 +269,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:0f4f17cd9906d2ff82ca855b8219e8960dc435e594ff5fb843aea523e9e72243",
-      "observed_hash": "sha256:773c13ce8079bfb369ee9e1aea3dbde8eb91144c95065c0c92a1c53530124ed8",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "forge.required_status",
@@ -288,8 +288,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:cc05493d1be9aa9463003439689f72b2bb069931924dc0ede8b86b8b64e9a7b2",
-      "observed_hash": "sha256:525b5c154daad3b7668b62db8cee216e3febdc64222dca672280a4a3a95fee73",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "forge.merge_settings",
@@ -318,8 +318,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:34968f94f9c40ad5043304d907d90f0804b2cae6f8db56adf3c33b5243adb31b",
-      "observed_hash": "sha256:541b43d5a240e9f7b758b3acad3c40a9d880cfd7d0d90db5424370ee2b0f0a8a",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "forge.squash_text",
@@ -345,8 +345,8 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:bcda30fdcbad676c28a233a975ec64316a8c9c00c2aba5e29ccdaaafb9715872",
-      "observed_hash": "sha256:c0aa4dce547733f8d460a1f80b58cad2d2edd843345605d9ad04c194304bbba6",
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…",
       "changes": [
         {
           "what": "forge.files",
@@ -387,8 +387,8 @@
       "outcome": "noop",
       "why": "the provider already matches what was asked for",
       "exists": true,
-      "desired_hash": "sha256:7f9aa3d0018834ec97da94dcf77cb843151fbc0e468159f72cfa308c86db787f",
-      "observed_hash": "sha256:b3446c1db6a22c3f0ccc58bb38317c56b67ea83c7090b7b1ee830d586e9bf02a"
+      "desired_hash": "sha256:…",
+      "observed_hash": "sha256:…"
     }
   ]
 }

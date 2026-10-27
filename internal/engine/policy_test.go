@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -995,21 +994,7 @@ func TestPolicyTextGolden(t *testing.T) {
 // checkGolden compares got with a golden file, writing it under -update.
 func checkGolden(t *testing.T, path, got string) {
 	t.Helper()
-	if *update {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("make golden directory: %v", err)
-		}
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-			t.Fatalf("write golden: %v", err)
-		}
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read golden: %v (run with -update to write it)", err)
-	}
-	if got != string(want) {
-		t.Errorf("%s differs:\n--- got\n%s\n--- want\n%s", path, got, want)
-	}
+	goldenFile(t, strings.TrimPrefix(path, "testdata"+string(filepath.Separator)), []byte(got))
 }
 
 func TestCommitSettingsFallsBackToTheDefaults(t *testing.T) {
