@@ -87,6 +87,15 @@ var policyBaseline = map[string]string{
 // moment they are advisory.
 var policyAlwaysError = []string{RulePRTicketLinked, RuleAgentHumanReview}
 
+// policyNeverBlocks are the rules about the board rather than the pull
+// request: work in progress. A limit is there to make a queue visible and to
+// stop work starting, not to stop finished work landing — holding up the one
+// pull request whose merge would empty the column is the limit working against
+// itself (issue #231). So strict does not raise them, and they say what they
+// see on the pull request and in doctor's live.wip without failing the gate.
+// A team that wants the gate to refuse on WIP says so in policy.rules.
+var policyNeverBlocks = []string{RuleWIPReview, RuleWIPInProgress}
+
 // PolicySeverity is the severity in force for one rule: the strictness
 // baseline, then whatever `policy.rules` says about it.
 //
@@ -108,7 +117,9 @@ func PolicySeverity(cfg *config.Config, rule string) string {
 			severity = config.SeverityWarn
 		}
 	case config.StrictnessStrict:
-		severity = config.SeverityError
+		if !slices.Contains(policyNeverBlocks, rule) {
+			severity = config.SeverityError
+		}
 	}
 	if override, set := cfg.Policy.Rules[rule]; set && override != "" {
 		severity = override
