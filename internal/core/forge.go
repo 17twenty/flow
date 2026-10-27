@@ -123,6 +123,10 @@ type Protection struct {
 	AllowForcePush bool
 	// AllowDeletions permits deleting the branch.
 	AllowDeletions bool
+	// Unreadable says the branch is protected in a way this credential may
+	// not read in full: only Enabled and RequiredChecks are known, and the
+	// other fields say nothing (issue #255).
+	Unreadable bool
 	// Dormant are rules the forge holds for this branch that are not in
 	// force. Nothing in one is enforced, so none of it is protection — but
 	// the difference between "somebody has to write this" and "somebody has

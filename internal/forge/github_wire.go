@@ -494,54 +494,6 @@ func (p ghProtection) toProtection(branch string) core.Protection {
 	return protection
 }
 
-// ghProtectionRequest is the body of PUT on a branch's protection. Every field
-// is required and nullable, so each one is a pointer and none may be omitted:
-// a key left out is read as null, which turns that protection off.
-type ghProtectionRequest struct {
-	RequiredStatusChecks *struct {
-		Strict   bool     `json:"strict"`
-		Contexts []string `json:"contexts"`
-	} `json:"required_status_checks"`
-	EnforceAdmins              *bool `json:"enforce_admins"`
-	RequiredPullRequestReviews *struct {
-		DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
-		RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
-	} `json:"required_pull_request_reviews"`
-	Restrictions                   *struct{} `json:"restrictions"`
-	RequiredLinearHistory          bool      `json:"required_linear_history"`
-	AllowForcePushes               bool      `json:"allow_force_pushes"`
-	AllowDeletions                 bool      `json:"allow_deletions"`
-	RequiredConversationResolution bool      `json:"required_conversation_resolution"`
-}
-
-// protectionRequest renders the protection flow wants as the body GitHub
-// insists on: the whole state, every time.
-func protectionRequest(p core.Protection) ghProtectionRequest {
-	body := ghProtectionRequest{
-		EnforceAdmins:                  &p.EnforceAdmins,
-		RequiredLinearHistory:          p.RequireLinearHistory,
-		AllowForcePushes:               p.AllowForcePush,
-		AllowDeletions:                 p.AllowDeletions,
-		RequiredConversationResolution: p.RequireConversationResolution,
-	}
-	if len(p.RequiredChecks) > 0 || p.StrictChecks {
-		body.RequiredStatusChecks = &struct {
-			Strict   bool     `json:"strict"`
-			Contexts []string `json:"contexts"`
-		}{Strict: p.StrictChecks, Contexts: p.RequiredChecks}
-		if body.RequiredStatusChecks.Contexts == nil {
-			body.RequiredStatusChecks.Contexts = []string{}
-		}
-	}
-	if p.RequiredApprovals > 0 || p.DismissStaleReviews {
-		body.RequiredPullRequestReviews = &struct {
-			DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
-			RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
-		}{DismissStaleReviews: p.DismissStaleReviews, RequiredApprovingReviewCount: p.RequiredApprovals}
-	}
-	return body
-}
-
 // Rule types of GET /repos/{owner}/{repo}/rules/branches/{branch}, the
 // ruleset mechanism. A rule flow has no name for is somebody else's and is
 // left out of what flow reports.
@@ -608,6 +560,7 @@ type ghRuleset struct {
 			Exclude []string `json:"exclude"`
 		} `json:"ref_name"`
 	} `json:"conditions"`
+	Rules []ghRule `json:"rules"`
 	Links struct {
 		HTML struct {
 			Href string `json:"href"`
@@ -702,6 +655,69 @@ func rulesToProtection(branch string, rules []ghRule) core.Protection {
 	}
 	slices.Sort(protection.RequiredChecks)
 	return protection
+}
+
+// ghBranch is GET /repos/{owner}/{repo}/branches/{branch}, which anybody who
+// can read the repository may ask.
+type ghBranch struct {
+	Protected  bool `json:"protected"`
+	Protection struct {
+		RequiredStatusChecks struct {
+			Contexts []string `json:"contexts"`
+		} `json:"required_status_checks"`
+	} `json:"protection"`
+}
+
+// ghRulesetRequest is POST /repos/{owner}/{repo}/rulesets, and the body of a
+// PUT to one.
+type ghRulesetRequest struct {
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Enforcement string `json:"enforcement"`
+	Conditions  struct {
+		RefName struct {
+			Include []string `json:"include"`
+			Exclude []string `json:"exclude"`
+		} `json:"ref_name"`
+	} `json:"conditions"`
+	Rules []map[string]any `json:"rules"`
+}
+
+// protectionToRules is the inverse of [rulesToProtection]: the rules that say
+// what a protection says. Approvals and conversation resolution travel in one
+// pull_request rule; force pushes and deletions are forbidden by a rule each,
+// and allowed by its absence.
+func protectionToRules(p core.Protection) []map[string]any {
+	var rules []map[string]any
+	if len(p.RequiredChecks) > 0 || p.StrictChecks {
+		checks := make([]map[string]any, 0, len(p.RequiredChecks))
+		for _, context := range p.RequiredChecks {
+			checks = append(checks, map[string]any{"context": context})
+		}
+		rules = append(rules, map[string]any{"type": ghRuleStatusChecks, "parameters": map[string]any{
+			"strict_required_status_checks_policy": p.StrictChecks,
+			"required_status_checks":               checks,
+		}})
+	}
+	if p.RequiredApprovals > 0 || p.DismissStaleReviews || p.RequireConversationResolution {
+		rules = append(rules, map[string]any{"type": ghRulePullRequest, "parameters": map[string]any{
+			"required_approving_review_count":   p.RequiredApprovals,
+			"dismiss_stale_reviews_on_push":     p.DismissStaleReviews,
+			"required_review_thread_resolution": p.RequireConversationResolution,
+			"require_code_owner_review":         false,
+			"require_last_push_approval":        false,
+		}})
+	}
+	if p.RequireLinearHistory {
+		rules = append(rules, map[string]any{"type": ghRuleLinearHistory})
+	}
+	if !p.AllowForcePush {
+		rules = append(rules, map[string]any{"type": ghRuleNonFastForward})
+	}
+	if !p.AllowDeletions {
+		rules = append(rules, map[string]any{"type": ghRuleDeletion})
+	}
+	return rules
 }
 
 // squashTitleToGitHub maps flow's squash title setting onto GitHub's. A

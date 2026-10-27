@@ -475,6 +475,15 @@ func (g *GitHub) Protection(ctx context.Context, branch string) (core.Protection
 	if err != nil {
 		return core.Protection{}, err
 	}
+	if !protected {
+		// GitHub answers 404 to a non-admin reading classic protection,
+		// exactly as it does for a branch with none. The branch itself
+		// says which, to anybody who can read the repository, along with
+		// the checks it requires (issue #255).
+		if classic, protected, err = g.visibleProtection(ctx, branch); err != nil {
+			return core.Protection{}, err
+		}
+	}
 	rules, ruled, err := g.ruleProtection(ctx, branch)
 	if err != nil {
 		return core.Protection{}, err
@@ -487,6 +496,9 @@ func (g *GitHub) Protection(ctx context.Context, branch string) (core.Protection
 	switch {
 	case protected && ruled:
 		effective = classic.Merge(rules)
+		// The rules in force are read in full, so what they require is
+		// seen; classic protection hidden beside them can only add to it.
+		effective.Unreadable = false
 	case protected:
 		effective = classic
 	case ruled:
@@ -496,6 +508,30 @@ func (g *GitHub) Protection(ctx context.Context, branch string) (core.Protection
 	}
 	effective.Dormant = dormant
 	return effective, nil
+}
+
+// visibleProtection is what anybody who can read the repository can see of a
+// branch's classic protection: whether there is any, and the checks it
+// requires. Where there is some, the rest of it could not be read.
+func (g *GitHub) visibleProtection(ctx context.Context, branch string) (core.Protection, bool, error) {
+	var payload ghBranch
+	if _, err := g.do(ctx, core.Request{Path: g.path("branches", branch), Out: &payload}); err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			return core.Protection{Branch: branch}, false, nil
+		}
+		return core.Protection{}, false, core.Explain(err, "read the branch %s of %s", branch, g.Slug())
+	}
+	if !payload.Protected {
+		return core.Protection{Branch: branch}, false, nil
+	}
+	seen := core.Protection{Branch: branch, Enabled: true, Unreadable: true}
+	for _, context := range payload.Protection.RequiredStatusChecks.Contexts {
+		if !seen.RequiresCheck(context) {
+			seen.RequiredChecks = append(seen.RequiredChecks, context)
+		}
+	}
+	slices.Sort(seen.RequiredChecks)
+	return seen, true, nil
 }
 
 // classicProtection reads branch protection, reporting whether the branch has
@@ -602,10 +638,22 @@ func (g *GitHub) dormantRules(ctx context.Context, branch string) ([]core.Dorman
 	return dormant, nil
 }
 
+// FlowRuleset is the name of the ruleset flow keeps a branch's protection in.
+// It is flow's own, so flow never switches on or rewrites a ruleset a person
+// made — one somebody disabled stays disabled.
+const FlowRuleset = "flow: trunk protection"
+
 // SetProtection applies protection additively: what the branch already
 // requires it goes on requiring, and what it already forbids stays forbidden
-// (spec 06 §4). GitHub's PUT replaces the whole of classic protection, so the
-// merge happens here, against what the branch says now.
+// (spec 06 §4).
+//
+// It is written as a ruleset, not as classic branch protection (issue #255).
+// GitHub lets anyone who can read the repository read the rules in force on a
+// branch, but answers 404 — the same as "not protected" — to a non-admin
+// reading classic protection. A daily run on a non-admin credential could
+// then never see what an admin's apply had set, and reopened the follow-ups
+// that apply had verified and closed. Classic protection already on a branch
+// is left exactly as it is.
 func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Protection) error {
 	switch {
 	case branch == "":
@@ -627,23 +675,60 @@ func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Pro
 	if sameProtection(effective, effective.Merge(want)) {
 		return nil
 	}
-	classic, _, err := g.classicProtection(ctx, branch)
+	held, found, err := g.flowRuleset(ctx, branch)
 	if err != nil {
 		return err
 	}
-	merged := classic.Merge(want)
-	req := core.Request{
-		Method: http.MethodPut,
-		Path:   g.path("branches", branch, "protection"),
-		Body:   protectionRequest(merged),
-		// Writing the same whole state twice leaves the same state, so
-		// a retry cannot do anything the first attempt did not.
-		Retry: core.RetryAlways,
+	base := core.Protection{Branch: branch, Enabled: true, AllowForcePush: true, AllowDeletions: true}
+	if found {
+		base = rulesToProtection(branch, held.Rules)
+	}
+	body := ghRulesetRequest{Name: FlowRuleset, Target: "branch", Enforcement: ghEnforcementActive}
+	body.Conditions.RefName.Include = []string{"refs/heads/" + branch}
+	body.Conditions.RefName.Exclude = []string{}
+	body.Rules = protectionToRules(base.Merge(want))
+	req := core.Request{Method: http.MethodPost, Path: g.path("rulesets"), Body: body}
+	if found {
+		req = core.Request{
+			Method: http.MethodPut,
+			Path:   g.path("rulesets", strconv.FormatInt(held.ID, 10)),
+			Body:   body,
+			// The whole ruleset is sent, so a retry writes the same state.
+			Retry: core.RetryAlways,
+		}
 	}
 	if _, err := g.do(ctx, req); err != nil {
 		return core.Explain(err, "protect %s of %s", branch, g.Slug())
 	}
 	return nil
+}
+
+// flowRuleset finds the ruleset flow keeps this branch's protection in, read in
+// full, and whether there is one.
+func (g *GitHub) flowRuleset(ctx context.Context, branch string) (ghRuleset, bool, error) {
+	var summaries []ghRulesetSummary
+	req := core.Request{
+		Path:  g.path("rulesets"),
+		Query: url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+	}
+	err := paginate(ctx, g, req, func(summary ghRulesetSummary) bool {
+		summaries = append(summaries, summary)
+		return true
+	})
+	if err != nil {
+		return ghRuleset{}, false, core.Explain(err, "read the rulesets of %s", g.Slug())
+	}
+	for _, summary := range summaries {
+		if summary.Name != FlowRuleset {
+			continue
+		}
+		var full ghRuleset
+		if _, err := g.do(ctx, core.Request{Path: g.path("rulesets", strconv.FormatInt(summary.ID, 10)), Out: &full}); err != nil {
+			return ghRuleset{}, false, core.Explain(err, "read the ruleset %q of %s", FlowRuleset, g.Slug())
+		}
+		return full, true, nil
+	}
+	return ghRuleset{}, false, nil
 }
 
 // sameProtection reports whether two protections say the same thing. Every
@@ -662,6 +747,7 @@ func sameProtection(a, b core.Protection) bool {
 		a.EnforceAdmins == b.EnforceAdmins &&
 		a.AllowForcePush == b.AllowForcePush &&
 		a.AllowDeletions == b.AllowDeletions &&
+		a.Unreadable == b.Unreadable &&
 		slices.Equal(a.Dormant, b.Dormant)
 }
 

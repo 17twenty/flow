@@ -171,7 +171,11 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 		if item.ID == core.ItemForgeRequiredStatus {
 			return requiredStatus(protection), nil
 		}
-		return protectionObservation(protection), nil
+		observation := protectionObservation(protection)
+		if protection.Unreadable {
+			observation = unreadProtection(observation, item)
+		}
+		return observation, nil
 
 	case core.ItemForgeMergeSettings:
 		return mergeObservation(repo.Merge), nil
@@ -202,6 +206,28 @@ func protectionObservation(p core.Protection) core.Observation {
 		}},
 		Notes: dormantNotes(p),
 	}
+}
+
+// unreadProtection takes the fields a credential could not read as asked for,
+// and says so (issue #255). The alternative is calling them undone, which is
+// how a daily run on a non-admin credential reopened the follow-ups an admin's
+// apply had just verified. What could be read — that the branch is protected
+// at all — is still the observation's own.
+func unreadProtection(observation core.Observation, item DesiredItem) core.Observation {
+	if len(item.Items) == 0 || len(observation.Items) == 0 {
+		return observation
+	}
+	for _, field := range []string{FieldAllowForcePush, FieldAllowDeletions, FieldRequireLinearHistory, FieldStrictChecks} {
+		if wanted := item.Items[0].Field(field); wanted != "" {
+			observation.Items[0] = observation.Items[0].WithField(field, wanted)
+		}
+	}
+	observation.Notes = append(observation.Notes, core.Note{
+		Text:       "this credential may see that the trunk is protected, and not how: what it could not read is taken as asked for",
+		Fix:        "keep the trunk's protection in a ruleset, which anybody who can read the repository can read — flow apply run by an admin writes one",
+		Unverified: true,
+	})
+	return observation
 }
 
 // requiredStatus is one item per check the trunk already requires.

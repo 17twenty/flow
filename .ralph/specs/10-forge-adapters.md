@@ -646,3 +646,15 @@ duplicate-pipeline hazards). MR closing issues: `GET
   arrives as a rule in spec 09 with a configured threshold, and the counts
   come back with the rule that reads them. Nothing is lost meanwhile: the
   numbers are on every pull request page the forge already serves.
+- **Trunk protection is written as a ruleset, and protection a credential
+  cannot read is a warning, not a fault (#255).** GitHub answers 404 to
+  classic branch protection both when there is none and when the caller is
+  not an admin, so a daily run on a write-only bot read the admin's verified
+  protection as "unprotected" and reopened its tickets. flow now writes one
+  ruleset it owns by name (`flow: trunk protection`), which any collaborator
+  can read through `/rules/branches/{b}`, and never writes classic
+  protection. When classic protection is still in force and unreadable, the
+  adapter falls back to `GET /branches/{b}` (protected, required checks) and
+  marks the rest `Unreadable`: those fields are taken as desired and the
+  outcome is a warning saying which credential could not look — never a
+  change, never a reopened ticket.
