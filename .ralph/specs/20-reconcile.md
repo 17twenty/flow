@@ -37,6 +37,13 @@ narrowed to the live checks whose remedy is flow's own act:
 |---|---|---|
 | Move tickets the configuration gives flow | `live.transitions.flow` | 07 §6, 04 §5 |
 | Close issues a merged pull request names and the forge left open | `live.prs.closed_issues` | 07 §6 |
+| Bring a pull request that passed the gate up to date with the trunk it is behind | `live.prs.current` | 07 §6, issue #240 |
+
+The last is a push to the pull request's branch, so it is made with the
+credential the daily job uses, never the Actions token: GitHub starts no
+checks for a push that token makes, and the pull request would wait for ever
+on checks that never run. On a forge flow cannot update branches on it warns
+rather than fails.
 
 It reads a short window (default `48h`, `--window`), never publishes the
 health report, never proposes the lock, never files follow-ups, and prints

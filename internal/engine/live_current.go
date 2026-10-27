@@ -77,6 +77,12 @@ func (a *audit) prsCurrent() Check {
 			if !env.Fix && canUpdate {
 				return result.Fix(Remediation{Kind: RemedyAuto, Summary: "flow can bring them up to date", Command: "flow sync"})
 			}
+			// Where flow cannot update a branch it is somebody's chore, not a
+			// fault: it warns, so a sync run every hour on such a forge does
+			// not fail over what only a person can do (issue #240).
+			if !canUpdate {
+				result.State = StateWarn
+			}
 			return result.Fix(Remediation{
 				Kind:    RemedyManual,
 				Summary: "bring them up to date with their base",
