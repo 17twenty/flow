@@ -27,6 +27,23 @@ env:
   FLOW_PROJECT_TOKEN: ${{ secrets.FLOW_PROJECT_TOKEN }}   # classic PAT: 'project', plus 'repo' for the daily audit
   FLOW_LOG_FORMAT: json
   FLOW_VERSION: latest            # init writes the build that wrote this; bump deliberately
+  # Installs the released binary for FLOW_VERSION and checks it against the
+  # release's SHA256SUMS: no Go toolchain, nothing compiled on the runner.
+  FLOW_INSTALL: |
+    set -eu
+    v="${FLOW_VERSION:-latest}"
+    if [ "$v" = latest ]; then
+      v=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/17twenty/flow/releases/latest)
+      v="${v##*/}"
+    fi
+    case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "flow: no release for $(uname -m)" >&2; exit 1 ;; esac
+    asset="flow_${v}_linux_${arch}"
+    base="https://github.com/17twenty/flow/releases/download/${v}"
+    cd "$(mktemp -d)"
+    curl -fsSLO "$base/$asset"
+    curl -fsSLO "$base/SHA256SUMS"
+    grep " ${asset}\$" SHA256SUMS | sha256sum -c -
+    if [ -w /usr/local/bin ]; then install -m 0755 "$asset" /usr/local/bin/flow; else sudo install -m 0755 "$asset" /usr/local/bin/flow; fi
 
 jobs:
   gate:
@@ -45,9 +62,7 @@ jobs:
       issues: write               # follow-ups
     steps:
       - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/17twenty/flow@${FLOW_VERSION}
+      - run: sh -c "$FLOW_INSTALL"
       - run: flow check pr
       # Settle what the last merge left behind (spec 20 §3). A merge can
       # start nothing — GitHub lets no event follow one made for the Actions
@@ -65,9 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/17twenty/flow@${FLOW_VERSION}
+      - run: sh -c "$FLOW_INSTALL"
       - run: flow sync || [ $? -eq 2 ]
 
   deploy:
@@ -75,9 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4   # every flow command reads .flow.yaml from the working tree
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/17twenty/flow@${FLOW_VERSION}
+      - run: sh -c "$FLOW_INSTALL"
       - run: flow check deploy
 
   config:
@@ -88,11 +99,8 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: f
         with: { filters: "flow: ['.flow.yaml', '.flow.lock']" }
-      - uses: actions/setup-go@v5
-        if: steps.f.outputs.flow == 'true'
-        with: { go-version: stable }
       - if: steps.f.outputs.flow == 'true'
-        run: go install github.com/17twenty/flow@${FLOW_VERSION} && flow doctor --ci --check 'config.*' --check 'lock.*'
+        run: sh -c "$FLOW_INSTALL" && flow doctor --ci --check 'config.*' --check 'lock.*'
 
   health:
     if: (github.event_name == 'schedule' && github.event.schedule == '17 6 * * *') || github.event_name == 'workflow_dispatch'
@@ -107,9 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/17twenty/flow@${FLOW_VERSION}
+      - run: sh -c "$FLOW_INSTALL"
       - run: flow doctor --ci --fix --timeout 10m --report doctor.md || [ $? -eq 2 ]
       - uses: actions/upload-artifact@v4
         if: always()

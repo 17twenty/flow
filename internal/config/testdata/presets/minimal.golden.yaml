@@ -41,10 +41,10 @@ workflow:
             owner: native
         issue_closed:
             to: done
-            owner: native
+            owner: flow
         pr_merged:
             to: done
-            owner: native
+            owner: flow
         pr_opened_draft:
             to: in_progress
             owner: flow

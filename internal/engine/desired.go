@@ -74,18 +74,39 @@ const (
 // before the label exists, and so could never switch the rule on.
 var ReadyLabels = []string{"ui", "user-facing"}
 
-// proposedFiles are the files flow proposes to a GitHub repository: the
-// template that holds the content, the path it is proposed at, and whether it
-// is the workflow that has to run flow's commands (spec 02 §2, spec 17 §2).
-var proposedFiles = []struct {
+// ProposedFile is one file flow ships for a forge: the template that holds
+// the content, the path it belongs at, and whether it is the workflow that has
+// to run flow's commands (spec 02 §2, spec 17 §2, spec 20 §7).
+type ProposedFile struct {
 	Template string
 	Path     string
 	Workflow bool
-}{
-	{Template: "ci/github-flow.yml", Path: ".github/workflows/flow.yml", Workflow: true},
-	{Template: "pull_request_template.md", Path: ".github/pull_request_template.md"},
-	{Template: "issue-forms/story.yml", Path: ".github/ISSUE_TEMPLATE/story.yml"},
 }
+
+// proposedFiles are the files flow ships per forge. `flow init` writes them
+// and `forge.files` proposes the ones a repository is missing, from this one
+// table, so the two cannot come to disagree about what a forge is given.
+//
+// GitLab's is a file to include rather than the pipeline itself: a
+// repository's `.gitlab-ci.yml` is its own, and flow never edits it. Gitea and
+// Forgejo run GitHub's workflow syntax from their own directory.
+var proposedFiles = map[string][]ProposedFile{
+	config.ForgeGitHub: {
+		{Template: "ci/github-flow.yml", Path: ".github/workflows/flow.yml", Workflow: true},
+		{Template: "pull_request_template.md", Path: ".github/pull_request_template.md"},
+		{Template: "issue-forms/story.yml", Path: ".github/ISSUE_TEMPLATE/story.yml"},
+	},
+	config.ForgeGitLab: {
+		{Template: "ci/gitlab-flow.yml", Path: ".gitlab/flow.gitlab-ci.yml", Workflow: true},
+	},
+	config.ForgeGitea: {
+		{Template: "ci/gitea-flow.yml", Path: ".gitea/workflows/flow.yml", Workflow: true},
+	},
+}
+
+// ProposedFiles are the files flow ships for a forge, empty for one it ships
+// none for.
+func ProposedFiles(forge string) []ProposedFile { return slices.Clone(proposedFiles[forge]) }
 
 // DesiredItem is one thing flow wants to be true about a provider: which
 // capability it needs to make it so, what has to be settled first, and the
@@ -514,16 +535,19 @@ func forgeSquashText(cfg *config.Config) DesiredItem {
 // shipped template byte for byte: a team adds steps of its own to its CI, and
 // calling that drift would make the plan nag forever.
 //
-// Only GitHub's layout is shipped, so only a GitHub repository is proposed to.
+// A forge flow ships nothing for is proposed nothing.
 func forgeFiles(cfg *config.Config, templates fs.FS) (DesiredItem, error) {
-	if cfg.Forge.Type != config.ForgeGitHub {
+	files := proposedFiles[cfg.Forge.Type]
+	if len(files) == 0 {
 		return DesiredItem{}, nil
 	}
 	if templates == nil {
 		return DesiredItem{}, fmt.Errorf("desired state: no file templates were supplied")
 	}
 	runs := []string{"flow check pr", "flow sync"}
-	if cfg.Workflow.DoneOn == config.DoneOnDeployed {
+	// Only GitHub's template reacts to a deployment: the others' forges
+	// record none that flow reads (spec 10).
+	if cfg.Workflow.DoneOn == config.DoneOnDeployed && cfg.Forge.Type == config.ForgeGitHub {
 		runs = append(runs, "flow check deploy")
 	}
 
@@ -533,7 +557,7 @@ func forgeFiles(cfg *config.Config, templates fs.FS) (DesiredItem, error) {
 		Target:     TargetForge,
 		Additive:   true,
 	}
-	for _, file := range proposedFiles {
+	for _, file := range files {
 		content, err := fs.ReadFile(templates, file.Template)
 		if err != nil {
 			return DesiredItem{}, fmt.Errorf("desired state: read template %s: %w", file.Template, err)

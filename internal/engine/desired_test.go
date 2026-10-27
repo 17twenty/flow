@@ -42,6 +42,19 @@ func preset(t *testing.T, name string) *config.Config {
 	return cfg
 }
 
+// nativeMerges leaves the merge transitions to the tracker's own automation:
+// spec 04 §5's other choice, which the presets no longer make (spec 20 §4).
+// It is for the tests whose subject is what flow does about a transition the
+// tracker owns.
+func nativeMerges(cfg *config.Config) *config.Config {
+	for _, event := range []string{config.EventPRMerged, config.EventIssueClosed} {
+		transition := cfg.Workflow.Transitions[event]
+		transition.Owner = config.OwnerNative
+		cfg.Workflow.Transitions[event] = transition
+	}
+	return cfg
+}
+
 // desired derives the desired state from a configuration.
 func desired(t *testing.T, cfg *config.Config) engine.Desired {
 	t.Helper()
@@ -99,7 +112,7 @@ func TestDesiredIsPure(t *testing.T) {
 // TestDesiredCoversSpecTable checks the desired items against spec 06 §1,
 // which is the list flow is held to for the default preset on GitHub.
 func TestDesiredCoversSpecTable(t *testing.T) {
-	state := desired(t, preset(t, config.PresetLeanKanban))
+	state := desired(t, nativeMerges(preset(t, config.PresetLeanKanban)))
 	want := []string{
 		core.ItemTrackerProject,
 		core.ItemTrackerStatusOptions,
@@ -321,9 +334,15 @@ func TestDesiredFiles(t *testing.T) {
 		t.Errorf("done means deployed, but the workflow is only asked to run %q", got)
 	}
 
+	// GitLab is given a file to include, never its pipeline or GitHub's
+	// layout: a repository's .gitlab-ci.yml is its own (spec 20 §7).
 	cfg.Forge.Type = config.ForgeGitLab
-	if _, ok := desired(t, cfg).Find(core.ItemForgeFiles); ok {
-		t.Error("GitHub's files are proposed to a GitLab repository")
+	gitlab, ok := desired(t, cfg).Find(core.ItemForgeFiles)
+	if !ok {
+		t.Fatal("nothing is proposed to a GitLab repository")
+	}
+	if _, found := labelled(gitlab, ".gitlab/flow.gitlab-ci.yml"); !found || len(gitlab.Items) != 1 {
+		t.Errorf("a GitLab repository is proposed %+v, want only .gitlab/flow.gitlab-ci.yml", gitlab.Items)
 	}
 }
 

@@ -94,7 +94,7 @@ What the audit reads today, against the expectations of
 | `live.prs.linked` | every merge named a ticket | ✓ all 17 |
 | `live.prs.reviewed` | a person approved every agent pull request | ✓ all 17 |
 | `live.deploys.lag` | shipped within 2h | ✓ all 17 |
-| `live.transitions.native` | the tracker moved its own cards | ✓ 16 on `pr_merged`, 80 on `issue_closed` |
+| `live.transitions.flow` | flow made the moves it owns, `pr_merged` and `issue_closed` among them since spec 20 | read the health issue |
 | `live.tickets.review_has_pr` | nothing waits for a review of nothing | ✓ both |
 | `live.tickets.ready_dor` | everything Ready meets the Definition of Ready | ✓ nothing is Ready |
 

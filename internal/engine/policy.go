@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -778,9 +779,11 @@ func unlinkedType(cfg *config.Config, title string) (string, bool) {
 // whatever its type (spec 09 §2).
 func GateFiles() []string {
 	files := []string{config.DefaultPath}
-	for _, file := range proposedFiles {
-		if file.Workflow {
-			files = append(files, file.Path)
+	for _, forge := range slices.Sorted(maps.Keys(proposedFiles)) {
+		for _, file := range proposedFiles[forge] {
+			if file.Workflow {
+				files = append(files, file.Path)
+			}
 		}
 	}
 	return files

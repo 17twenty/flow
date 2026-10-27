@@ -8,7 +8,7 @@
     "tracker": "jira-cloud"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:fdd2c7a6ff9098859bb98e24be6a318bd986500f5b4c1abf82a442ad4364d2c0",
+  "desired_hash": "sha256:b65860ab180c3ba3180bac5d4c829ba77ec14d37276115546e169ca5e7c09d6e",
   "items": [
     {
       "id": "tracker.project",
@@ -158,56 +158,6 @@
             "name": "changes_requested",
             "fields": {
               "to": "In progress"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "tracker.native.pr_merged",
-      "target": "tracker",
-      "capability": "native_transition_pr_merged",
-      "depends_on": [
-        "tracker.status_options"
-      ],
-      "outcome": "attest",
-      "why": "flow cannot see this through the API, so a person has to confirm it",
-      "exists": false,
-      "desired_hash": "sha256:9d852996510565fd17bb56be6211a4b5c50bdf73fec43f0afecb3e4898995fcf",
-      "observed_hash": "sha256:1a94aaffc11714aac617db2377fe2b926e0d4b0c23dbb0963805ba3a7ef7b3f8",
-      "changes": [
-        {
-          "what": "tracker.native.pr_merged",
-          "op": "create",
-          "item": {
-            "name": "pr_merged",
-            "fields": {
-              "to": "Done"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "tracker.native.issue_closed",
-      "target": "tracker",
-      "capability": "native_transition_issue_closed",
-      "depends_on": [
-        "tracker.status_options"
-      ],
-      "outcome": "unsupported",
-      "why": "the provider offers no way to do this and nothing else makes up for it",
-      "exists": false,
-      "desired_hash": "sha256:70fe74302f12604db03e4dfc1e95dd91afe6a9987e0f704fa1b75a2e0ae3ec98",
-      "observed_hash": "sha256:e5f9d99cb3a0294315daf3d2db07d90271dbe2ef3826ff9083c129d5597d4c16",
-      "changes": [
-        {
-          "what": "tracker.native.issue_closed",
-          "op": "create",
-          "item": {
-            "name": "issue_closed",
-            "fields": {
-              "to": "Done"
             }
           }
         }
@@ -395,7 +345,7 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:b9622af13b9a7c8ac511e411a88c05d871c6705a499bb101698f4432e4dcddbf",
+      "desired_hash": "sha256:bcda30fdcbad676c28a233a975ec64316a8c9c00c2aba5e29ccdaaafb9715872",
       "observed_hash": "sha256:c0aa4dce547733f8d460a1f80b58cad2d2edd843345605d9ad04c194304bbba6",
       "changes": [
         {
