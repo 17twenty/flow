@@ -29,7 +29,9 @@ Evaluation is pure and deterministic.
 | `ticket.not_blocked` | warn | no linked ticket blocked |
 
 Strictness: relaxed (all → warn except `pr.ticket.linked`, `agent.human_review`),
-standard (table), strict (warn → error). `policy.rules` overrides per id.
+standard (table), strict (warn → error, except `wip.review` and `wip.in_progress`,
+which stay warnings: WIP is the board's, see Decisions). `policy.rules` overrides
+per id, and is the only way to make a WIP rule fail the gate.
 
 Status: `failure` if any error fails; else `success`. Draft PRs: `pending`
 "draft — not enforced". Description ≤ 140 chars, e.g.
@@ -140,6 +142,15 @@ golden; determinism; fork/read-only path; draft path.
   still not be an item. Asking the tracker instead would mean trusting an empty
   column to mean "not on the board", and an item with no status set has an
   empty column too.
+- **§2 WIP is the board's, not the gate's (issue #231).** A limit makes a
+  queue visible and stops work starting; it is not a reason to stop finished
+  work landing, and failing the pull request whose merge would empty the
+  column is the limit working against itself. On 2026-10-27 strict turned
+  `wip.review` into an error and nothing on this repository could merge. The
+  WIP rules now report on the pull request and in `live.wip` and never fail
+  the gate under any strictness; a team that wants them to block says so in
+  `policy.rules`. `tracker.wip`'s compensation by `policy.wip` is therefore
+  visibility, not enforcement, on a tracker that cannot hold a limit itself.
 - **§2 the board gives no arrival order (item 4.3).** `WIPItem.Since` is left
   zero. No tracker flow speaks to records when an item entered a column, and
   filling it with the last-edited time would let an item somebody merely
