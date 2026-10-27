@@ -92,7 +92,7 @@ jobs:
       - run: go build -o bin/flow .
       # Exit 2 is "flow found something somebody must do", which is a report,
       # not a broken job. Anything else fails the run.
-      - run: ./bin/flow doctor --ci --fix --report doctor.md || [ $? -eq 2 ]
+      - run: ./bin/flow doctor --ci --fix --timeout 10m --report doctor.md || [ $? -eq 2 ]
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: doctor-report, path: doctor.md }

@@ -38,6 +38,7 @@ capabilities:
   status_options:
     set: false
     verify: true
+    fold_case: true
     remediation: follow_up
     notes: "Statuses can be created through the status API and a created status is still not a column: which statuses a project's workflow offers is the workflow's business and which column of the board shows one is the board's, and neither is writable in the public Cloud API. Read from GET /project/<key>/statuses."
     by_hand:

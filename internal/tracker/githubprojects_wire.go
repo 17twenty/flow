@@ -319,12 +319,16 @@ type ghStatusOption struct {
 // written by hand (spec 04 §2) and the lock records no id for a column flow
 // never created. Names are folded because [engine.ColumnOf] reads a column
 // back by a folded name, and a move flow could not read back would not be
-// idempotent.
+// idempotent. An exact name wins over a folded one: a board can hold "In
+// Progress" beside "In progress", and the configuration wrote only one.
 func (f ghStatusField) column(to core.ColumnID) (ghStatusOption, bool) {
 	for _, option := range f.Options {
 		if option.ID == string(to) {
 			return option, true
 		}
+	}
+	if option, ok := f.find(string(to)); ok {
+		return option, true
 	}
 	for _, option := range f.Options {
 		if strings.EqualFold(option.Name, string(to)) {
@@ -334,9 +338,11 @@ func (f ghStatusField) column(to core.ColumnID) (ghStatusOption, bool) {
 	return ghStatusOption{}, false
 }
 
-// find returns the option with that display name. A board cannot hold two
-// columns of one name, so a name identifies an option as surely as an id —
-// which matters because a rewrite gives every option it touches a new id.
+// find returns the option with exactly that display name. A board cannot hold
+// two columns of exactly one name, so a name identifies an option as surely
+// as an id — which matters because a rewrite gives every option it touches a
+// new id. It can hold two that differ only in case, which [column] has to
+// tell apart.
 func (f ghStatusField) find(name string) (ghStatusOption, bool) {
 	for _, option := range f.Options {
 		if option.Name == name {

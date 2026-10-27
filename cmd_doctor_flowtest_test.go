@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -711,6 +712,38 @@ func TestDoctorKeepsOneHealthIssueAndRewritesIt(t *testing.T) {
 	}
 	if again.Key != ticket.Key {
 		t.Errorf("the second run wrote to %s, the first to %s", again.Key, ticket.Key)
+	}
+}
+
+// A tracker that will not take the report is weather, and the run exits on
+// what it found. A run that ran out of its own time did not finish: on the
+// day flow's own daily job hit its deadline filing the report, it went green
+// and the health issue quietly stopped being rewritten.
+func TestDoctorThatRanOutOfTimePublishingDidNotFinish(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		err    error
+		want   int
+	}{
+		{"weather", "FindFollowUp", core.Errorf(core.ErrUnavailable, "look for the report"), core.ExitActionRequired},
+		{"deadline", "FindFollowUp", fmt.Errorf("look for the report: %w", context.DeadlineExceeded), core.ExitUnavailable},
+		{"lock deadline", "ProposeFiles", fmt.Errorf("propose: %w", context.DeadlineExceeded), core.ExitUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, _ := gateRepo(t, func(w *fakeWorld) {
+				w.forge.SetPermissions(adminAccess)
+				w.tracker.Fail(tc.method, tc.err)
+				w.forge.Fail(tc.method, tc.err)
+			})
+			code, _, stderr := execAt(t, dir, append([]string{"doctor", "--ci", "--fix"}, owners()...)...)
+			if code != tc.want {
+				t.Errorf("doctor exited %d, want %d: %s", code, tc.want, stderr)
+			}
+			if tc.want == core.ExitUnavailable && !strings.Contains(stderr, "finish within") {
+				t.Errorf("the run does not say it ran out of time: %s", stderr)
+			}
+		})
 	}
 }
 
