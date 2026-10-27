@@ -840,10 +840,18 @@ func (g *GitHub) UpdateBranch(ctx context.Context, number int, headSHA string) e
 		Path:   g.path("pulls", strconv.Itoa(number), "update-branch"),
 		Body:   map[string]string{"expected_head_sha": headSHA},
 	}
-	if _, err := g.do(ctx, req); err != nil {
-		return core.Explain(err, "bring #%d of %s up to date with its base", number, g.Slug())
+	_, err := g.do(ctx, req)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, core.ErrValidation), errors.Is(err, core.ErrConflict):
+		// GitHub answers 422 when the base will not merge into the head, or
+		// the head has moved: either way a person has to look, and the
+		// caller is owed the difference from a forge that is failing.
+		return core.Errorf(core.ErrConflict, "bring #%d of %s up to date with its base", number, g.Slug()).
+			WithWhy("%v", err)
 	}
-	return nil
+	return core.Explain(err, "bring #%d of %s up to date with its base", number, g.Slug())
 }
 
 // SetCommitStatus publishes a status on a commit, unless that context already
