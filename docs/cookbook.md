@@ -518,3 +518,29 @@ What auto-merge does **not** do is lower the bar. The pull request still waits
 for everything the branch requires — `flow/policy` included, and
 `agent.human_review` inside it. It lands the moment a human approves, rather
 than the next time a human looks.
+
+### 9.1 What it costs on GitHub, and why this repository has it off
+
+On GitHub a merge arranged by the gate is performed for the Actions token
+(`GITHUB_TOKEN`), and GitHub lets nothing that token does cause a further
+event. So the merge lands, and then:
+
+- no workflow that runs on a push to the trunk starts — no build of `main`, no
+  release, no deployment;
+- no issue the pull request closes is closed, so its card stays in review.
+
+`flow sync` repairs the second on its next run (spec 20): it closes what a
+merge named and left open, and moves the card. It cannot repair the first —
+what a push starts belongs to the forge — and the daily report's check for
+merges nothing was built for (#215) is how you would find out.
+
+That is what happened here from 2026-10-22 to 2026-10-27: #195, #198 and #205
+landed with no `test` on `main` and no release (#201). So on this repository
+`forge.auto_merge` is `false` (#213), and a person or the bot presses merge,
+which starts everything as it should.
+
+To have auto-merge on GitHub without that cost, the merge has to be arranged
+by a credential that is not the Actions token — the bot's, or a GitHub App's —
+and the gate's job given it; flow's GitHub declaration says so against
+`auto_merge`. Gitea and GitLab perform an armed merge as the person or bot who
+armed it, so their events follow as usual.
