@@ -193,6 +193,7 @@ func liveCheckIDs() []string {
 		engine.CheckLivePRsGated,
 		engine.CheckLivePRsConventional,
 		engine.CheckLivePRsReviewed,
+		engine.CheckLivePRsClosedIssues,
 		engine.CheckLiveDeploysRecent,
 		engine.CheckLiveDeploysLag,
 		engine.CheckLiveTicketsSharedBoard,

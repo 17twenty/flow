@@ -21,6 +21,9 @@ const (
 	MarkerHealth = "health"
 	// MarkerFlag is a feature-flag cleanup ticket (spec 07 §6).
 	MarkerFlag = "flag"
+	// MarkerClosed is flow's note on an issue it closed because the pull
+	// request that closes it merged and the forge did not (spec 07 §6).
+	MarkerClosed = "closed"
 )
 
 // MarkerPrefix begins every marker, in both renderings.
