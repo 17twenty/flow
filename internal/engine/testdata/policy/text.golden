@@ -12,4 +12,5 @@
 ✓ wip.review
 ✓ wip.in_progress
 ✓ ticket.not_blocked
+✓ pr.stacked  this stands on nothing but the trunk
 ✗ 3 errors — pr.ticket.in_project, ticket.ready, pr.title.conventional
