@@ -1218,3 +1218,15 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   as the same sentence under two headings. The steps are the account; the
   evidence of a refused item is the permission that was short and what the
   provider volunteered, which is what a reader does not already have.
+- **A locked board the tracker does not show is kept, not replaced (#261).**
+  Reading back the lock used to treat "the tracker has no such board" as
+  "it was deleted" and start resolution again, and under `--fix` take the
+  only other board the credential could see. GitHub gives the same answer
+  for a board that was deleted and for one never shared with this
+  credential, so a daily run on the bot of a repository whose board was not
+  shared with it would have rebound that repository to another's board —
+  flow's own — and remediated it. Now the lock is kept, nothing else is
+  offered, and the check is a question naming the locked board: share it
+  with the account flow runs as, or name another with `--set`, which is the
+  one thing that may replace it. This is #255's rule applied to the
+  tracker: a run that could not look is not evidence that something is gone.

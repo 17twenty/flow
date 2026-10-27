@@ -124,6 +124,10 @@ type Answer struct {
 	// would not answer. A placeholder nobody can resolve is not an error —
 	// it is a question.
 	Err error
+	// Unseen is the identifier the lock holds that the tracker would not
+	// show this credential. It is kept, never replaced, because a tracker
+	// that says "no such board" may only mean "not to you" (issue #261).
+	Unseen string
 }
 
 // Resolved reports whether there is now an answer, verified and recorded.
@@ -173,7 +177,15 @@ func resolve(ctx context.Context, in ResolveInput, p Placeholder) Answer {
 }
 
 // fromLock takes what flow already knows, having looked to see it is still
-// there. A board that was deleted stops being the answer.
+// there.
+//
+// One the tracker does not show is not replaced, by discovery or by anything
+// else flow could find on its own (issue #261). GitHub answers the same for a
+// board that was deleted and for one this credential was never shown, and a
+// daily run on a credential the board was not shared with took the only
+// other board it could see — another repository's — as the answer, and would
+// have remediated it. Only a person can say which it is: they share the
+// board, or name another with --set.
 func fromLock(ctx context.Context, in ResolveInput, p Placeholder) (Answer, bool) {
 	id := in.Lock.Resolved[p.Path]
 	if id == "" {
@@ -183,7 +195,7 @@ func fromLock(ctx context.Context, in ResolveInput, p Placeholder) (Answer, bool
 	if !p.Discoverable {
 		return Answer{Placeholder: p, How: HowLocked, Ref: ref}, true
 	}
-	verified, candidates, err := verify(ctx, in, p, ref)
+	verified, _, err := verify(ctx, in, p, ref)
 	switch {
 	case err != nil:
 		// Not being able to look is not a reason to forget: the lock is what
@@ -194,12 +206,14 @@ func fromLock(ctx context.Context, in ResolveInput, p Placeholder) (Answer, bool
 	case verified.ID != "":
 		return Answer{Placeholder: p, How: HowLocked, Ref: verified}, true
 	}
-	// It is gone. Fall through to the rest of the ladder, carrying what the
-	// tracker does have, so the next rung does not ask twice.
-	if len(candidates) == 1 && in.Fix {
-		return Answer{Placeholder: p, How: HowDiscovered, Ref: candidates[0].Ref()}, true
+	if strings.TrimSpace(in.Set[p.Path]) != "" {
+		return Answer{}, false
 	}
-	return Answer{}, false
+	return Answer{Placeholder: p, How: HowAsked, Unseen: id, Steps: []string{
+		fmt.Sprintf("open the board the lock names (%s) as somebody who can see it", id),
+		"if it is there, share it with the account flow runs as — a board can have its own list of who may see it",
+		fmt.Sprintf("if it was deleted, run flow doctor --fix --set %s=<the board's URL> to name the one to use", p.Path),
+	}}, true
 }
 
 // fromSet takes what the user put on the command line, which may be an
@@ -474,6 +488,17 @@ func (r Answer) Result() Result {
 	case r.Resolved():
 		return Pass("%s is %s", r.Placeholder.Path, r.describe()).
 			Fix(Remediation{Kind: RemedyNone})
+	case r.Unseen != "":
+		return Result{
+			State:   StateInput,
+			Message: fmt.Sprintf("the lock says %s is %s, and the tracker does not show it to this credential", r.Placeholder.Path, r.Unseen),
+			Remediation: Remediation{
+				Kind:    RemedyInput,
+				Summary: "share the board with this credential, or name the one to use",
+				Command: "flow doctor --fix --set " + r.Placeholder.Path + "=<the board's URL>",
+				Steps:   r.Steps,
+			},
+		}
 	}
 	remediation := Remediation{
 		Kind:    RemedyInput,
