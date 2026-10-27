@@ -161,6 +161,9 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 		return PolicySnapshot{}, core.Explain(err, "read the board")
 	}
 	snapshot.WIP = wipFrom(in.Config, in.Lock, board)
+	if snapshot.StackedOn, err = stackedOn(ctx, in, pr); err != nil {
+		return PolicySnapshot{}, err
+	}
 
 	for _, key := range in.Adapters.Tracker.LinkedKeys(pr) {
 		ticket, err := in.Adapters.Tracker.Ticket(ctx, key)
@@ -282,6 +285,55 @@ func wipFrom(cfg *config.Config, lock *config.Lock, board []core.Ticket) WIPCoun
 		}
 	}
 	return counts
+}
+
+// stackedOn is every open pull request this one stands on (issue #235): one
+// whose branch it targets instead of the trunk, or an older one whose head it
+// contains. The second is the one that hides — a branch made from another
+// pull request's branch and pointed at the trunk looks like any other — so
+// the forge is asked about ancestry, once per older open pull request.
+func stackedOn(ctx context.Context, in GateInput, pr core.PullRequest) ([]StackedPR, error) {
+	repo, err := in.Adapters.Forge.Repo(ctx)
+	if err != nil {
+		return nil, core.Explain(err, "read the trunk's name")
+	}
+	trunk := repo.DefaultBranch
+	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		return nil, core.Explain(err, "read the open pull requests")
+	}
+	var stacks []StackedPR
+	offTrunk := trunk != "" && pr.BaseRef != "" && pr.BaseRef != trunk
+	parented := false
+	for _, other := range open {
+		if other.Number == pr.Number {
+			continue
+		}
+		if offTrunk && other.HeadRef == pr.BaseRef {
+			parented = true
+			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title,
+				Why: fmt.Sprintf("this targets its branch, %s, not %s", other.HeadRef, trunk)})
+			continue
+		}
+		if other.HeadSHA == "" || pr.HeadSHA == "" || !other.CreatedAt.Before(pr.CreatedAt) {
+			continue
+		}
+		comparison, err := in.Adapters.Forge.Compare(ctx, other.HeadSHA, pr.HeadSHA)
+		switch {
+		case errors.Is(err, core.ErrNotFound):
+			continue
+		case err != nil:
+			return nil, core.Explain(err, "compare #%d with #%d", other.Number, pr.Number)
+		}
+		if comparison.Known() && comparison.Contains() {
+			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title,
+				Why: "this carries its commits"})
+		}
+	}
+	if offTrunk && !parented {
+		stacks = append(stacks, StackedPR{Why: fmt.Sprintf("this targets %s, which is not %s and no open pull request is for", pr.BaseRef, trunk)})
+	}
+	return stacks, nil
 }
 
 // wipItem is one board item as the WIP rules read it.

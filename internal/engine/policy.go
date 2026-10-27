@@ -49,6 +49,9 @@ const (
 	RuleWIPInProgress = "wip.in_progress"
 	// RuleTicketNotBlocked notices work that is already stuck.
 	RuleTicketNotBlocked = "ticket.not_blocked"
+	// RulePRStacked notices a pull request standing on another one that has
+	// not landed (issue #235).
+	RulePRStacked = "pr.stacked"
 )
 
 // PolicyRuleIDs is every rule, in the order spec 09 §2 lists them, which is
@@ -65,6 +68,7 @@ func PolicyRuleIDs() []string {
 		RuleWIPReview,
 		RuleWIPInProgress,
 		RuleTicketNotBlocked,
+		RulePRStacked,
 	}
 }
 
@@ -79,6 +83,7 @@ var policyBaseline = map[string]string{
 	RuleWIPReview:           config.SeverityWarn,
 	RuleWIPInProgress:       config.SeverityWarn,
 	RuleTicketNotBlocked:    config.SeverityWarn,
+	RulePRStacked:           config.SeverityWarn,
 }
 
 // policyAlwaysError are the two rules relaxed strictness does not relax. A
@@ -176,6 +181,18 @@ type PolicySnapshot struct {
 	Config *config.Config
 	// Now is the moment the snapshot was taken.
 	Now time.Time
+	// StackedOn are the open pull requests this one stands on.
+	StackedOn []StackedPR
+}
+
+// StackedPR is an open pull request another one stands on, and how.
+type StackedPR struct {
+	// Number is the pull request, zero when the base branch has none.
+	Number int
+	// Title is its title, for the evidence.
+	Title string
+	// Why is how the one under judgement stands on it.
+	Why string
 }
 
 // Finding is one rule's verdict.
@@ -301,6 +318,37 @@ var policyRules = map[string]policyRule{
 	RuleWIPReview:           wipReview,
 	RuleWIPInProgress:       wipInProgress,
 	RuleTicketNotBlocked:    ticketNotBlocked,
+	RulePRStacked:           prStacked,
+}
+
+// prStacked notices a pull request standing on work that has not landed
+// (issue #235). Its checks passed against a parent that is still changing,
+// and when the parent lands as a squash the trunk holds that work as a
+// commit the child does not have: the child then carries the parent's
+// original commits, and a merge of the trunk into it can drop a line without
+// a conflict to say so. The fix is to land the parent first and look again.
+func prStacked(s PolicySnapshot) Finding {
+	finding := Finding{OK: true}
+	if len(s.StackedOn) == 0 {
+		finding.Message = "this stands on nothing but the trunk"
+		return finding
+	}
+	finding.OK = false
+	var names []string
+	for _, parent := range s.StackedOn {
+		text := parent.Why
+		if parent.Number > 0 {
+			names = append(names, fmt.Sprintf("#%d", parent.Number))
+			text = fmt.Sprintf("#%d %s — %s", parent.Number, parent.Title, parent.Why)
+		}
+		finding.Evidence = append(finding.Evidence, Evidence{Text: text})
+	}
+	finding.Message = "this stands on work that has not landed"
+	if len(names) > 0 {
+		finding.Message = "this stands on " + strings.Join(names, ", ") + ", which has not landed"
+	}
+	finding.Fix = "land what this stands on first, then bring this up to date with the trunk and check it again: a squash merge leaves this branch carrying commits the trunk no longer has"
+	return finding
 }
 
 // prTicketLinked insists a pull request says what it is for. The exemption is
