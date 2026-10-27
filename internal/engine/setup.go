@@ -939,6 +939,14 @@ func changeInstruction(change core.Change) string {
 func outcomeResult(item PlanItem, title string) Result {
 	switch item.Outcome {
 	case OutcomeNoop:
+		if slices.ContainsFunc(item.Notes, func(n core.Note) bool { return n.Unverified }) {
+			// Taken as asked for, not seen: a warning, so the report says
+			// flow could not look, and never a failure, so nothing is
+			// reopened for it (issue #255).
+			result := withNotes(Pass("%s", item.Why), item)
+			result.State = StateWarn
+			return result
+		}
 		return Pass("%s", item.Why)
 
 	case OutcomeCompensated:

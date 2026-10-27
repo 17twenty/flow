@@ -277,6 +277,11 @@ type Note struct {
 	// word: an attestation cannot settle a question the provider has
 	// already answered no (spec 07 §8).
 	Refutes bool `json:"refutes,omitempty"`
+	// Unverified says the provider would not show flow part of the item to
+	// this credential, so that part is taken as asked for rather than called
+	// undone. A run that could not look is not evidence that something is
+	// missing (issue #255); it is reported as a warning, never a failure.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // Canonical returns the observation with its items in a fixed order: by name,

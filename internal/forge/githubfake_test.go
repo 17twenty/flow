@@ -111,6 +111,9 @@ type gitHubFake struct {
 	branches map[string]map[string][]byte
 	refs     map[string]string
 	nextPR   int
+	// classicHidden answers 404 for classic protection that is there, as
+	// GitHub does to a credential that is not an admin.
+	classicHidden bool
 
 	mu          sync.Mutex
 	requests    []string
@@ -330,12 +333,19 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.issueComments(w, r, segments[1])
 	case segments[0] == "issues" && len(segments) == 3 && segments[1] == "comments":
 		f.issueComment(w, r, segments[2])
+	case segments[0] == "branches" && len(segments) == 2:
+		f.branch(w, r, segments[1])
 	case segments[0] == "branches" && len(segments) > 2 && segments[len(segments)-1] == "protection":
 		f.protection(w, r, strings.Join(segments[1:len(segments)-1], "/"))
 	case segments[0] == "rules" && len(segments) > 2 && segments[1] == "branches":
 		f.branchRules(w, r, strings.Join(segments[2:], "/"))
+	case segments[0] == "rulesets" && len(segments) == 1 && r.Method == http.MethodPost:
+		f.writeRuleset(w, r, 0)
 	case segments[0] == "rulesets" && len(segments) == 1:
 		f.rulesetList(w, r)
+	case segments[0] == "rulesets" && len(segments) == 2 && r.Method == http.MethodPut:
+		id, _ := strconv.ParseInt(segments[1], 10, 64)
+		f.writeRuleset(w, r, id)
 	case segments[0] == "rulesets" && len(segments) == 2:
 		f.ruleset(w, r, segments[1])
 	case segments[0] == "git" && len(segments) == 2 && segments[1] == "refs":
@@ -683,8 +693,9 @@ func (f *gitHubFake) protection(w http.ResponseWriter, r *http.Request, branch s
 	case http.MethodGet:
 		f.mu.Lock()
 		protection, ok := f.protections[branch]
+		hidden := f.classicHidden
 		f.mu.Unlock()
-		if !ok {
+		if !ok || hidden {
 			f.fail(w, http.StatusNotFound, "Branch not protected")
 			return
 		}
@@ -752,6 +763,7 @@ type ghFakeRuleset struct {
 	enforcement string
 	include     []string
 	exclude     []string
+	rules       []any
 }
 
 // addRuleset writes a ruleset on the repository without putting anything in
@@ -764,6 +776,53 @@ func (f *gitHubFake) addRuleset(ruleset ghFakeRuleset) int64 {
 	ruleset.id = f.nextRuleset
 	f.rulesets = append(f.rulesets, ruleset)
 	return ruleset.id
+}
+
+// writeRuleset creates a ruleset (id 0) or replaces one, and puts its rules
+// in force on the branches it names when it is active, as GitHub does.
+func (f *gitHubFake) writeRuleset(w http.ResponseWriter, r *http.Request, id int64) {
+	var body struct {
+		Name        string `json:"name"`
+		Target      string `json:"target"`
+		Enforcement string `json:"enforcement"`
+		Conditions  struct {
+			RefName struct {
+				Include []string `json:"include"`
+				Exclude []string `json:"exclude"`
+			} `json:"ref_name"`
+		} `json:"conditions"`
+		Rules []any `json:"rules"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusUnprocessableEntity, "the ruleset did not decode")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ruleset := ghFakeRuleset{name: body.Name, target: body.Target, enforcement: body.Enforcement,
+		include: body.Conditions.RefName.Include, exclude: body.Conditions.RefName.Exclude, rules: body.Rules}
+	switch {
+	case id == 0:
+		f.nextRuleset++
+		ruleset.id = f.nextRuleset
+		f.rulesets = append(f.rulesets, ruleset)
+	default:
+		i := slices.IndexFunc(f.rulesets, func(held ghFakeRuleset) bool { return held.id == id })
+		if i < 0 {
+			f.fail(w, http.StatusNotFound, "no such ruleset")
+			return
+		}
+		ruleset.id = id
+		f.rulesets[i] = ruleset
+	}
+	if ruleset.enforcement == "active" {
+		for _, ref := range ruleset.include {
+			if branch, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+				f.rules[branch] = slices.Clone(ruleset.rules)
+			}
+		}
+	}
+	f.writeJSON(w, r, map[string]any{"id": ruleset.id, "name": ruleset.name})
 }
 
 // rulesetList serves the repository's rulesets. GitHub's list is a summary:
@@ -829,6 +888,7 @@ func (f *gitHubFake) ruleset(w http.ResponseWriter, r *http.Request, raw string)
 		"conditions": map[string]any{
 			"ref_name": map[string]any{"include": include, "exclude": exclude},
 		},
+		"rules": found.rules,
 		"_links": map[string]any{
 			"html": map[string]any{
 				"href": "https://github.com/" + f.fx.Repo.Owner + "/" + f.fx.Repo.Name + "/rules/" + raw,
@@ -1182,6 +1242,26 @@ func (f *gitHubFake) readRef(w http.ResponseWriter, r *http.Request, branch stri
 	f.writeJSON(w, r, map[string]any{
 		"ref":    "refs/heads/" + branch,
 		"object": map[string]any{"sha": sha, "type": "commit"},
+	})
+}
+
+// branch serves what anybody who can read the repository may see of a
+// branch: whether it is protected, and the checks it requires.
+func (f *gitHubFake) branch(w http.ResponseWriter, r *http.Request, name string) {
+	f.mu.Lock()
+	protection, ok := f.protections[name]
+	f.mu.Unlock()
+	contexts := []string{}
+	if ok {
+		contexts = append(contexts, protection.RequiredChecks...)
+	}
+	f.writeJSON(w, r, map[string]any{
+		"name":      name,
+		"protected": ok,
+		"protection": map[string]any{
+			"enabled":                ok,
+			"required_status_checks": map[string]any{"contexts": contexts},
+		},
 	})
 }
 

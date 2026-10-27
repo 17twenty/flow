@@ -828,7 +828,7 @@ func TestGitHubProtectsNothingTheBranchAlreadyProtects(t *testing.T) {
 	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
 		t.Fatalf("SetProtection: %v", err)
 	}
-	if slices.Contains(fake.Methods(), "PUT") {
+	if wrote(fake) {
 		t.Error("the adapter rewrote protection a ruleset already provides; a check required either way is required")
 	}
 }
@@ -853,8 +853,103 @@ func TestGitHubDoesNotRewriteProtectionOverARuleNobodyEnabled(t *testing.T) {
 	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
 		t.Fatalf("SetProtection: %v", err)
 	}
-	if slices.Contains(fake.Methods(), "PUT") {
+	if wrote(fake) {
 		t.Error("the trunk's protection was rewritten to say what it already said")
+	}
+}
+
+// wrote reports whether the adapter sent anything but a read: protection is
+// now written as a ruleset, which is a POST to create and a PUT to update.
+func wrote(fake *gitHubFake) bool {
+	return slices.ContainsFunc(fake.Methods(), func(method string) bool { return method != http.MethodGet })
+}
+
+// Protection is written as a ruleset flow owns (issue #255): GitHub lets anyone
+// who can read the repository read the rules on a branch, but answers 404 —
+// the same as "not protected" — to a non-admin reading classic protection, so
+// a daily run on such a credential could never see what an admin's apply had
+// set. Classic protection is left alone, and a second write updates the same
+// ruleset, keeping what it already held.
+func TestGitHubProtectsTheTrunkWithARulesetAnybodyCanRead(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	first := core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}, RequireLinearHistory: true, StrictChecks: true}
+	if err := adapter.SetProtection(t.Context(), "main", first); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	for i, method := range fake.Methods() {
+		if method == http.MethodPut && strings.HasSuffix(fake.Requests()[i], "/protection") {
+			t.Errorf("classic protection was written: %s", fake.Requests()[i])
+		}
+	}
+	if len(fake.rulesets) != 1 || fake.rulesets[0].name != FlowRuleset || fake.rulesets[0].enforcement != "active" {
+		t.Fatalf("the rulesets are %+v, want one active %q", fake.rulesets, FlowRuleset)
+	}
+
+	second := core.Protection{Enabled: true, RequiredChecks: []string{"test"}}
+	if err := adapter.SetProtection(t.Context(), "main", second); err != nil {
+		t.Fatalf("SetProtection again: %v", err)
+	}
+	if len(fake.rulesets) != 1 {
+		t.Fatalf("a second write made another ruleset: %+v", fake.rulesets)
+	}
+	after, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !after.RequiresCheck("flow/policy") || !after.RequiresCheck("test") || !after.RequireLinearHistory || !after.StrictChecks {
+		t.Errorf("the branch reads as %+v, want both writes in force", after)
+	}
+}
+
+// GitHub answers 404 to a non-admin reading classic protection, as it does
+// for a branch with none. The branch itself says which (issue #255): this one
+// is protected, requires flow/policy, and the rest could not be read.
+func TestGitHubTellsProtectionItCannotReadFromNone(t *testing.T) {
+	fx := coretest.ContractForge()
+	fx.Protections["main"] = core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}, RequireLinearHistory: true}
+	fake, srv := newGitHubServer(t, fx)
+	fake.classicHidden = true
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	got, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !got.Enabled || !got.Unreadable || !got.RequiresCheck("flow/policy") {
+		t.Errorf("protection = %+v, want it on, unreadable, and requiring flow/policy", got)
+	}
+
+	bareFx := coretest.ContractForge()
+	delete(bareFx.Protections, "main")
+	bare, srvBare := newGitHubServer(t, bareFx)
+	bare.classicHidden = true
+	none, err := newGitHubAdapter(t, srvBare, bareFx, nil).Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection of a bare branch: %v", err)
+	}
+	if none.Enabled || none.Unreadable {
+		t.Errorf("a branch with no protection reads as %+v", none)
+	}
+}
+
+// A ruleset a person made, even one called Flow, is theirs: flow neither
+// switches on one somebody disabled nor rewrites one they wrote.
+func TestGitHubLeavesSomebodyElsesRulesetAlone(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	theirs := fake.addRuleset(ghFakeRuleset{name: "Flow", target: "branch", enforcement: "disabled", include: []string{"refs/heads/main"}})
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}}); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	for _, held := range fake.rulesets {
+		if held.id == theirs && (held.enforcement != "disabled" || len(held.rules) != 0) {
+			t.Errorf("their ruleset became %+v", held)
+		}
 	}
 }
 
@@ -867,7 +962,7 @@ func TestGitHubRefusesToTakeProtectionOff(t *testing.T) {
 	if !errors.Is(err, core.ErrValidation) {
 		t.Fatalf("SetProtection(disabled) = %v, want it refused as validation", err)
 	}
-	if slices.Contains(fake.Methods(), "PUT") {
+	if wrote(fake) {
 		t.Error("flow wrote protection while being asked to remove it")
 	}
 }

@@ -730,6 +730,36 @@ func TestPlanNeedsAConfiguration(t *testing.T) {
 	}
 }
 
+// TestProtectionACredentialCannotReadIsNotCalledUndone is issue #255. A daily
+// run on a non-admin credential sees that the trunk is protected and which
+// checks it requires, and not the rest. What it cannot see is taken as asked
+// for with a note that says so, and doctor reports that as a warning — not a
+// change for an admin to make, which is how the follow-ups an admin's apply
+// had verified were reopened the next morning.
+func TestProtectionACredentialCannotReadIsNotCalledUndone(t *testing.T) {
+	w := githubProjectsWorld(t)
+	fx := forgeFixture(t)
+	fx.Protections["main"] = core.Protection{Branch: "main", Enabled: true, Unreadable: true, RequiredChecks: []string{engine.DefaultStatusContext}}
+	w.forge = coretest.NewFakeForge(fx)
+	plan := planFor(t, w)
+
+	item, ok := plan.Find(core.ItemForgeProtection)
+	if !ok {
+		t.Fatal("forge.protection is not in the plan")
+	}
+	if item.Outcome != engine.OutcomeNoop {
+		t.Errorf("forge.protection is %s (%s), want noop: what could not be read is not undone", item.Outcome, item.Why)
+	}
+	if !slices.ContainsFunc(item.Notes, func(n core.Note) bool { return n.Unverified }) {
+		t.Errorf("the plan does not say what it could not read: %+v", item.Notes)
+	}
+
+	env := setupEnv(t, preset(t, config.PresetLeanKanban))
+	env.Plan = plan
+	result := setupResult(t, engine.SetupInput{Config: env.Config}, env, core.ItemForgeProtection)
+	wantState(t, result, engine.StateWarn)
+}
+
 // A rule the forge holds for the trunk and does not enforce is a fact about
 // the repository, not a difference flow would act on. It has to reach the
 // report, because it is the difference between "somebody has to write this"
