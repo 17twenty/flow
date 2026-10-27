@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/17twenty/flow/internal/commits"
@@ -82,11 +83,29 @@ func (c *CheckPRCmd) number() (int, error) {
 			WithWhy("pull requests are numbered from 1").
 			WithFix("pass --pr with the number of the pull request to check")
 	}
-	number, err := eventPR(os.Getenv("GITHUB_EVENT_PATH"))
-	if err != nil {
-		return 0, err
+	return ciPR(os.Getenv)
+}
+
+// ciPR is the pull request the CI run is about, asked of the environment in
+// order (spec 20 §7): FLOW_PR, which any CI system can set and which wins
+// everywhere; GitLab CI's merge request; then the event payload GitHub
+// Actions writes, which Gitea and Forgejo Actions write too. Only the last is
+// a file to read, so a runner flow knows nothing about needs one variable.
+func ciPR(getenv func(string) string) (int, error) {
+	for _, name := range []string{"FLOW_PR", "CI_MERGE_REQUEST_IID"} {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			continue
+		}
+		number, err := strconv.Atoi(raw)
+		if err != nil || number < 1 {
+			return 0, core.Errorf(core.ErrValidation, "find the pull request to check").
+				WithWhy("%s is %q, which is not a pull request number", name, raw).
+				WithFix("set %s to the number of the pull request, or pass --pr", name)
+		}
+		return number, nil
 	}
-	return number, nil
+	return eventPR(getenv("GITHUB_EVENT_PATH"))
 }
 
 // eventPR reads the pull request number out of the CI event payload. GitHub
@@ -126,7 +145,15 @@ func eventPR(path string) (int, error) {
 // it says. An environment that does not name a run gets no link rather than a
 // guess: a status pointing at the wrong page is worse than one pointing
 // nowhere.
+//
+// FLOW_RUN_URL wins, so any CI system can name its own page; GitLab CI names
+// its job; GitHub, Gitea and Forgejo Actions name a run by three parts.
 func ciRunURL(getenv func(string) string) string {
+	for _, name := range []string{"FLOW_RUN_URL", "CI_JOB_URL"} {
+		if link := strings.TrimSpace(getenv(name)); link != "" {
+			return link
+		}
+	}
 	server, repo, run := getenv("GITHUB_SERVER_URL"), getenv("GITHUB_REPOSITORY"), getenv("GITHUB_RUN_ID")
 	if server == "" || repo == "" || run == "" {
 		return ""

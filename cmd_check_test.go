@@ -388,6 +388,57 @@ func TestCheckPRNumberRefusesANonsenseFlag(t *testing.T) {
 	}
 }
 
+// TestCIPRAsksTheRunnerInOrder is spec 20 §7: FLOW_PR, which any CI can set,
+// wins; then GitLab's merge request; then the event payload the Actions
+// family writes. A value that is not a number is refused rather than passed
+// over, because a runner that set one meant it.
+func TestCIPRAsksTheRunnerInOrder(t *testing.T) {
+	payload := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(payload, []byte(`{"number":7}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want int
+	}{
+		{"the Actions payload", map[string]string{"GITHUB_EVENT_PATH": payload}, 7},
+		{"GitLab before the payload", map[string]string{"CI_MERGE_REQUEST_IID": "12", "GITHUB_EVENT_PATH": payload}, 12},
+		{"FLOW_PR before anything", map[string]string{"FLOW_PR": "31", "CI_MERGE_REQUEST_IID": "12", "GITHUB_EVENT_PATH": payload}, 31},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ciPR(func(name string) string { return tc.env[name] })
+			if err != nil || got != tc.want {
+				t.Errorf("ciPR = %d, %v; want %d", got, err, tc.want)
+			}
+		})
+	}
+	if _, err := ciPR(func(name string) string { return map[string]string{"FLOW_PR": "seven"}[name] }); !errors.Is(err, core.ErrValidation) {
+		t.Errorf("FLOW_PR=seven gave %v, want ErrValidation", err)
+	}
+	if _, err := ciPR(func(string) string { return "" }); !errors.Is(err, core.ErrNeedsInput) {
+		t.Errorf("an environment naming nothing gave %v, want ErrNeedsInput", err)
+	}
+}
+
+// TestCIRunURLTakesTheRunnersOwnLinkFirst: a runner that names its page is
+// believed before flow composes one.
+func TestCIRunURLTakesTheRunnersOwnLinkFirst(t *testing.T) {
+	env := map[string]string{
+		"FLOW_RUN_URL":      "https://ci.example/run/9",
+		"CI_JOB_URL":        "https://gitlab.example/acme/api/-/jobs/4",
+		"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "acme/api", "GITHUB_RUN_ID": "1",
+	}
+	get := func(name string) string { return env[name] }
+	if got := ciRunURL(get); got != "https://ci.example/run/9" {
+		t.Errorf("ciRunURL = %q, want FLOW_RUN_URL", got)
+	}
+	delete(env, "FLOW_RUN_URL")
+	if got := ciRunURL(get); got != "https://gitlab.example/acme/api/-/jobs/4" {
+		t.Errorf("ciRunURL = %q, want GitLab's job", got)
+	}
+}
+
 // TestCIRunURLNeedsEveryPart holds the status's link to all-or-nothing: three
 // variables name a run, and two of them name a page that is not it.
 func TestCIRunURLNeedsEveryPart(t *testing.T) {
