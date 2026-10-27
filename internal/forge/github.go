@@ -1071,13 +1071,20 @@ func (g *GitHub) ProposeFiles(ctx context.Context, p core.FileProposal) (core.Pu
 }
 
 // ensureBranch creates the proposal's branch at the tip of base when it is not
-// there. A branch that already exists is left where it is: it carries the
-// previous proposal, and resetting it would throw away a commit somebody may
-// have added to the pull request.
+// there, and brings one that is there up to date with base.
+//
+// An existing branch carries the previous proposal, and somebody may have
+// added a commit to it, so base is merged in rather than the branch thrown
+// away. But a proposal is rewritten every day under the same branch, and one
+// left behind a trunk that has since changed the very file it proposes can
+// never merge again: flow's own lock refresh sat conflicting on the trunk for
+// that reason (issue #253). Where base will not merge in, the branch starts
+// again from base — the proposal is about to be written over it in full, and
+// a branch that cannot land is protecting nothing.
 func (g *GitHub) ensureBranch(ctx context.Context, branch, base string) error {
 	switch _, err := g.ref(ctx, branch); {
 	case err == nil:
-		return nil
+		return g.followBase(ctx, branch, base)
 	case !errors.Is(err, core.ErrNotFound):
 		return err
 	}
@@ -1092,6 +1099,46 @@ func (g *GitHub) ensureBranch(ctx context.Context, branch, base string) error {
 	}
 	if _, err := g.do(ctx, req); err != nil {
 		return core.Explain(err, "branch %s off %s of %s", branch, base, g.Slug())
+	}
+	return nil
+}
+
+// followBase merges base into an existing proposal branch, and resets the
+// branch to base where the merge conflicts. GitHub answers 204 when there is
+// nothing to merge, 201 when it merged, and 409 on a conflict.
+func (g *GitHub) followBase(ctx context.Context, branch, base string) error {
+	// Asked first, read-only, so that a proposal already up to date writes
+	// nothing at all on a day it has nothing new to say.
+	if comparison, err := g.Compare(ctx, base, branch); err == nil && comparison.Contains() {
+		return nil
+	}
+	merge := core.Request{
+		Method: http.MethodPost,
+		Path:   g.path("merges"),
+		Body: map[string]string{
+			"base":           branch,
+			"head":           base,
+			"commit_message": "Merge " + base + " into " + branch,
+		},
+	}
+	_, err := g.do(ctx, merge)
+	switch {
+	case err == nil:
+		return nil
+	case !errors.Is(err, core.ErrConflict) && !errors.Is(err, core.ErrValidation):
+		return core.Explain(err, "bring %s up to date with %s of %s", branch, base, g.Slug())
+	}
+	tip, err := g.ref(ctx, base)
+	if err != nil {
+		return err
+	}
+	reset := core.Request{
+		Method: http.MethodPatch,
+		Path:   g.path("git", "refs", "heads/"+branch),
+		Body:   map[string]any{"sha": tip, "force": true},
+	}
+	if _, err := g.do(ctx, reset); err != nil {
+		return core.Explain(err, "start %s again from %s of %s", branch, base, g.Slug())
 	}
 	return nil
 }

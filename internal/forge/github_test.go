@@ -989,6 +989,43 @@ func TestGitHubProposesOnItsOwnBranchAndNeverTheTrunk(t *testing.T) {
 	}
 }
 
+// A proposal is rewritten daily under one branch, and the trunk moves on under
+// it. Flow's own lock refresh sat conflicting with a trunk that had changed
+// the lock since, unable to land for ever (issue #253). The branch takes the
+// trunk in before the proposal is written; where it cannot, it starts again
+// from the trunk, since the proposal is about to be written over it anyway.
+func TestGitHubKeepsAProposalUpToDateWithTheTrunk(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		t.Run(map[bool]string{false: "merges the trunk in", true: "starts again where the trunk will not merge"}[conflict], func(t *testing.T) {
+			fx := coretest.ContractForge()
+			fake, srv := newGitHubServer(t, fx)
+			adapter := newGitHubAdapter(t, srv, fx, nil)
+			proposal := core.FileProposal{
+				ID:    "lock",
+				Title: "chore(config): refresh .flow.lock",
+				Files: []core.ProposedFile{{Path: ".flow.lock", Content: []byte("version: 1\n# monday\n")}},
+			}
+			if _, err := adapter.ProposeFiles(t.Context(), proposal); err != nil {
+				t.Fatalf("ProposeFiles: %v", err)
+			}
+
+			fake.advance(fx.Repo.DefaultBranch, ".flow.yaml", []byte("version: 1\n# changed on the trunk\n"))
+			fake.mergeConflict = conflict
+			proposal.Files[0].Content = []byte("version: 1\n# tuesday\n")
+			if _, err := adapter.ProposeFiles(t.Context(), proposal); err != nil {
+				t.Fatalf("ProposeFiles on a moved trunk: %v", err)
+			}
+
+			if got := string(fake.fileOn("flow/setup-lock", ".flow.yaml")); got != "version: 1\n# changed on the trunk\n" {
+				t.Errorf("the branch does not hold the trunk's change: %q", got)
+			}
+			if got := string(fake.fileOn("flow/setup-lock", ".flow.lock")); got != "version: 1\n# tuesday\n" {
+				t.Errorf("the branch does not hold today's proposal: %q", got)
+			}
+		})
+	}
+}
+
 func TestGitHubCommitsNothingWhenTheBranchAlreadyHoldsTheProposal(t *testing.T) {
 	fx := coretest.ContractForge()
 	fake, srv := newGitHubServer(t, fx)
