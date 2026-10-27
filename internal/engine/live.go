@@ -51,6 +51,9 @@ const (
 	CheckLivePRsConventional = "live.prs.conventional"
 	// CheckLivePRsReviewed is whether a person approved what a machine wrote.
 	CheckLivePRsReviewed = "live.prs.reviewed"
+	// CheckLivePRsClosedIssues is whether every merged pull request closed
+	// the issues it names.
+	CheckLivePRsClosedIssues = "live.prs.closed_issues"
 )
 
 // DefaultWindow is how far back the audit looks when nobody said (spec 07 §6).
@@ -69,6 +72,7 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
+		a.prsClosedIssues(),
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)
 	checks = append(checks, a.transitionChecks(cfg)...)
