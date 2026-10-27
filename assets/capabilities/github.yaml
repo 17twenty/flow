@@ -138,7 +138,7 @@ capabilities:
   auto_merge:
     set: true
     verify: true
-    requires: [pulls_write]
+    requires: [pulls_write, contents_write]
     remediation: follow_up
     notes: "enablePullRequestAutoMerge (GraphQL); the repository setting allow_auto_merge must be on, and needs admin."
     by_hand:
@@ -185,6 +185,25 @@ capabilities:
           requests on {{repo}} — a fine-grained token with "Contents: Read and
           write" and "Pull requests: Read and write" — and it will propose the
           file on the next `flow apply`.
+  update_branch:
+    set: true
+    verify: true
+    requires: [contents_write]
+    remediation: follow_up
+    hazards: ["An update made with the Actions token (GITHUB_TOKEN) is a push GitHub lets cause no further event: the pull request's checks and the gate never run on the new head, and it waits for ever. flow's sync updates branches with the forge credential the health job uses, never the Actions token."]
+    notes: "PUT pulls/{n}/update-branch with expected_head_sha; merges the base into the head branch. 422 when it is not behind or conflicts."
+    by_hand:
+      what: >-
+        Bringing a pull request on {{repo}} up to date with its base, which a
+        trunk that requires branches to be up to date asks of every pull
+        request after each merge.
+      where: >-
+        The "Update branch" button on the pull request.
+      steps:
+        - >-
+          Press "Update branch" on each pull request that is ready to land and
+          behind, or give flow a credential that may write to {{repo}} and
+          sync will do it.
   pr_comments:
     set: true
     verify: true

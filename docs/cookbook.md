@@ -33,6 +33,13 @@ adapter boundary (spec 10) exists to stay thin enough to re-implement for
 GitLab or Gitea. Those forges have machine users and tokens; they do not have
 Apps. See spec 17 Decisions.
 
+What each credential is *for* is said in roles rather than scopes, because
+scopes differ on every forge (spec 15 §3.1): a **reader** for the audit, a
+**gate** that may post `flow/policy` and its comment, and an **actor** that
+moves cards, closes issues, files follow-ups and arms merges — and, with
+admin, changes settings. `flow doctor` says which roles each credential it was
+given can fill, on `auth.forge` and `auth.tracker`.
+
 ### 1.1 Create it
 
 In the UI, as the machine user: sign up, verify a distinct email address.
