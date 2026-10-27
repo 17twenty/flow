@@ -3,8 +3,8 @@
 ## 1. Where it runs
 
 A CI job on pull request events (GitHub: `pull_request` types opened, edited,
-synchronize, reopened, ready_for_review, converted_to_draft; and
-`pull_request_review` submitted). It reads the PR number from the event payload.
+synchronize, reopened, ready_for_review, converted_to_draft, labeled,
+unlabeled; and `pull_request_review` submitted). It reads the PR number from the event payload.
 The template (`assets/templates/ci/github-flow.yml`) uses `pull_request`, never
 `pull_request_target`, and checks out nothing from the PR (flow needs only APIs).
 Fork PRs: token is read-only → flow prints the result and exits 0 without
@@ -299,4 +299,11 @@ golden; determinism; fork/read-only path; draft path.
   second time and skipped the write in silence when they could not find it —
   unreachable code whose only possible effect was the defect above, a move
   reported and not made. The second question is gone from all three.
-
+- **The gate runs again when a label changes (#257).** The snapshot reads
+  labels — `agents.labels` makes a pull request agent work and
+  `workflow.expedite.labels` excuses it from `pr.ticket.linked` — so a
+  verdict given before a label changed is a verdict about a different pull
+  request. The GitHub and Gitea templates trigger on `labeled` and
+  `unlabeled`. GitLab cannot: a merge-request pipeline does not start on a
+  label change, so there the verdict is refreshed by the next push or a
+  pipeline run by hand.

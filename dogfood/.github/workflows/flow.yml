@@ -6,7 +6,7 @@
 name: flow
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
   pull_request_review:
     types: [submitted, dismissed]
   push: {}                        # sync on the trunk; other branches skip every job
