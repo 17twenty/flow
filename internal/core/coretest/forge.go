@@ -285,6 +285,9 @@ func (f *FakeForge) Compare(ctx context.Context, base, head string) (core.Compar
 	switch {
 	case headAt < baseAt:
 		comparison.Status, comparison.AheadBy = core.CompareAhead, baseAt-headAt
+		for _, commit := range f.commits[headAt:baseAt] {
+			comparison.Commits = append(comparison.Commits, commit.SHA)
+		}
 	default:
 		comparison.Status, comparison.BehindBy = core.CompareBehind, headAt-baseAt
 	}
