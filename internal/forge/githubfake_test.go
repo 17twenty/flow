@@ -110,6 +110,10 @@ type gitHubFake struct {
 	branches map[string]map[string][]byte
 	refs     map[string]string
 	nextPR   int
+	// forkedAt is the trunk commit each branch last took in, and
+	// mergeConflict makes merging the trunk into a branch a 409.
+	forkedAt      map[string]string
+	mergeConflict bool
 
 	mu          sync.Mutex
 	requests    []string
@@ -335,6 +339,10 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.ruleset(w, r, segments[1])
 	case segments[0] == "git" && len(segments) == 2 && segments[1] == "refs":
 		f.createRef(w, r)
+	case segments[0] == "git" && len(segments) > 3 && segments[1] == "refs" && segments[2] == "heads" && r.Method == http.MethodPatch:
+		f.updateRef(w, r, strings.Join(segments[3:], "/"))
+	case segments[0] == "merges" && len(segments) == 1 && r.Method == http.MethodPost:
+		f.mergeInto(w, r)
 	case segments[0] == "git" && len(segments) > 3 && segments[1] == "ref" && segments[2] == "heads":
 		f.readRef(w, r, strings.Join(segments[3:], "/"))
 	case segments[0] == "compare" && len(segments) > 1:
@@ -650,6 +658,21 @@ func (f *gitHubFake) compare(w http.ResponseWriter, r *http.Request, basehead st
 	base, head, ok := strings.Cut(basehead, "...")
 	if !ok {
 		f.fail(w, http.StatusBadRequest, "expected base...head")
+		return
+	}
+	// Two branches the fake made: the head contains the base exactly when it
+	// last took in the base's tip.
+	f.mu.Lock()
+	baseTip, baseIsBranch := f.refs[base]
+	_, headIsBranch := f.refs[head]
+	took := f.forkedAt[head]
+	f.mu.Unlock()
+	if baseIsBranch && headIsBranch {
+		status := core.CompareDiverged
+		if took == baseTip {
+			status = core.CompareAhead
+		}
+		f.writeJSON(w, r, map[string]any{"status": status, "ahead_by": 1, "behind_by": 0, "commits": []any{}})
 		return
 	}
 	comparison, err := coretest.NewFakeForge(f.fx).Compare(r.Context(), base, head)
@@ -1180,6 +1203,77 @@ func (f *gitHubFake) readRef(w http.ResponseWriter, r *http.Request, branch stri
 	})
 }
 
+// advance moves a branch on with one changed file, as a merge to it would.
+func (f *gitHubFake) advance(branch, path string, content []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	files := maps.Clone(f.branches[branch])
+	if files == nil {
+		files = map[string][]byte{}
+	}
+	files[path] = content
+	f.branches[branch] = files
+	f.refs[branch] = blobSHA(append([]byte(branch+path), content...))
+}
+
+// mergeInto merges one branch into another: nothing to do when the base
+// already took the head's tip, a conflict when told to, and otherwise the
+// head's files laid under the base's.
+func (f *gitHubFake) mergeInto(w http.ResponseWriter, r *http.Request) {
+	var body struct{ Base, Head string }
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		f.fail(w, http.StatusBadRequest, "the merge did not decode")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.forkedAt == nil {
+		f.forkedAt = map[string]string{}
+	}
+	switch {
+	case f.forkedAt[body.Base] == f.refs[body.Head]:
+		w.WriteHeader(http.StatusNoContent)
+		return
+	case f.mergeConflict:
+		f.fail(w, http.StatusConflict, "Merge conflict")
+		return
+	}
+	merged := maps.Clone(f.branches[body.Head])
+	maps.Copy(merged, f.branches[body.Base])
+	f.branches[body.Base] = merged
+	f.forkedAt[body.Base] = f.refs[body.Head]
+	f.refs[body.Base] = blobSHA([]byte(body.Base + f.refs[body.Head]))
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write([]byte(`{"sha":"` + f.refs[body.Base] + `"}`))
+}
+
+// updateRef moves a branch, as a forced push would, to a commit another
+// branch points at, taking that branch's files.
+func (f *gitHubFake) updateRef(w http.ResponseWriter, r *http.Request, branch string) {
+	var body struct {
+		SHA   string `json:"sha"`
+		Force bool   `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Force {
+		f.fail(w, http.StatusUnprocessableEntity, "Update is not a fast forward")
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for from, sha := range f.refs {
+		if sha == body.SHA {
+			f.branches[branch] = maps.Clone(f.branches[from])
+			if f.forkedAt == nil {
+				f.forkedAt = map[string]string{}
+			}
+			f.forkedAt[branch] = sha
+			break
+		}
+	}
+	f.refs[branch] = body.SHA
+	f.writeJSON(w, r, map[string]any{"ref": "refs/heads/" + branch, "object": map[string]any{"sha": body.SHA}})
+}
+
 // createRef branches off a commit, taking that commit's files with it.
 func (f *gitHubFake) createRef(w http.ResponseWriter, r *http.Request) {
 	var body ghRefRequest
@@ -1207,6 +1301,10 @@ func (f *gitHubFake) createRef(w http.ResponseWriter, r *http.Request) {
 	}
 	f.refs[branch] = body.SHA
 	f.branches[branch] = files
+	if f.forkedAt == nil {
+		f.forkedAt = map[string]string{}
+	}
+	f.forkedAt[branch] = body.SHA
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ref":    body.Ref,
