@@ -77,8 +77,8 @@ workflow:
   transitions:
     pr_opened_draft:     { to: in_progress, owner: flow }
     pr_ready_for_review: { to: in_review,   owner: flow }
-    pr_merged:           { to: done,        owner: native }
-    issue_closed:        { to: done,        owner: native }
+    pr_merged:           { to: done,        owner: flow }
+    issue_closed:        { to: done,        owner: flow }
   expedite: { labels: [incident], max: 1 }
   blocked:  { label: blocked, require_comment: true }
 definition_of_ready: { rules: [acceptance_criteria, parent_link, not_blocked] }
@@ -122,7 +122,7 @@ go install github.com/17twenty/flow@main
 flow init --tracker github-projects --owner 17twenty --project <n> --force   # must reproduce §4 exactly
 flow plan        # expect: native = ruleset + merge settings; attest = built-in workflows; nothing else
 flow apply       # creates ruleset requiring flow/policy + test (forge.required_checks)
-flow attest tracker.native.pr_merged    --note "Project workflow on"   # etc. for each native transition
+flow attest tracker.expedite           --note "what the board does with expedited work"   # the one fact nobody can observe (spec 20 §4)
 ```
 Then adds `.github/workflows/flow.yml` via a PR — which is itself gated by
 `flow/policy`. From here the loop switches to **PR mode** (§6).

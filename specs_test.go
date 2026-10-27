@@ -471,6 +471,9 @@ func TestTheGateIsTheOnlyJobThatMayWriteToTheTrunk(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
 			t.Fatalf("reading %s: %v", path, err)
 		}
+		if len(doc.Jobs) == 0 {
+			continue // not an Actions workflow: a GitLab pipeline's grants are its tokens' (spec 15 §3.1)
+		}
 		gates++
 		armed := false
 		for name, job := range doc.Jobs {

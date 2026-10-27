@@ -297,17 +297,21 @@ The honest summary: creating accounts and clicking Project workflow toggles
 cannot be automated today. Everything else on this page is a one-off `curl`
 that flow either performs itself or checks.
 
-### 6.1 The three this repository owes
+### 6.1 The one this repository owes
 
-`flow doctor` on `17twenty/flow` reports these as `attest`, and an unattested
+`flow doctor` on `17twenty/flow` reports this as `attest`, and an unattested
 check is worth exit 2 (spec 07 §2), so the Stage C streak cannot start until a
 human has looked and said so:
 
 ```sh
-flow attest tracker.native.pr_merged          --note "Project workflow 'Pull request merged' is on and sets Status: Done"
-flow attest tracker.native.issue_closed       --note "Project workflow 'Item closed' is on and sets Status: Done"
 flow attest tracker.expedite                  --note "<what the board does with expedited work, and how you checked>"
 ```
+
+There used to be three. `pr_merged` and `issue_closed` are flow's own now
+(spec 20 §4): `flow sync` moves the card and closes the issue on its next run,
+so there is no automation left to take anybody's word for. The Project's own
+"Pull request merged" and "Item closed" workflows can stay on; they only get
+there first.
 
 Read each one before running its line — an attestation is a person's word,
 not a way to make a check quiet (spec 07 §8). There is no URL for the
@@ -315,7 +319,7 @@ workflows panel: it is an overlay, not a page. Open
 <https://github.com/users/17twenty/projects/2>, click the **…** menu at the
 top right, and choose **Workflows**.
 
-There were four. `changes_requested` was dropped from `.flow.yaml` instead of
+Before that there were four. `changes_requested` was dropped from `.flow.yaml` instead of
 attested, because the workflow it named is not one of the seven this project
 has switched on — asking GraphQL for `projectV2 { workflows { name enabled } }`
 is a quicker way to read the overlay than opening it, and the only way to find
@@ -525,3 +529,29 @@ What auto-merge does **not** do is lower the bar. The pull request still waits
 for everything the branch requires — `flow/policy` included, and
 `agent.human_review` inside it. It lands the moment a human approves, rather
 than the next time a human looks.
+
+### 9.1 What it costs on GitHub, and why this repository has it off
+
+On GitHub a merge arranged by the gate is performed for the Actions token
+(`GITHUB_TOKEN`), and GitHub lets nothing that token does cause a further
+event. So the merge lands, and then:
+
+- no workflow that runs on a push to the trunk starts — no build of `main`, no
+  release, no deployment;
+- no issue the pull request closes is closed, so its card stays in review.
+
+`flow sync` repairs the second on its next run (spec 20): it closes what a
+merge named and left open, and moves the card. It cannot repair the first —
+what a push starts belongs to the forge — and the daily report's check for
+merges nothing was built for (#215) is how you would find out.
+
+That is what happened here from 2026-10-22 to 2026-10-27: #195, #198 and #205
+landed with no `test` on `main` and no release (#201). So on this repository
+`forge.auto_merge` is `false` (#213), and a person or the bot presses merge,
+which starts everything as it should.
+
+To have auto-merge on GitHub without that cost, the merge has to be arranged
+by a credential that is not the Actions token — the bot's, or a GitHub App's —
+and the gate's job given it; flow's GitHub declaration says so against
+`auto_merge`. Gitea and GitLab perform an armed merge as the person or bot who
+armed it, so their events follow as usual.

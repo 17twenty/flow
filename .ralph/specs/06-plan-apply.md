@@ -92,7 +92,10 @@ each successful mutation (atomic) and at the end. Summary.
 - **§1 only GitHub is proposed to (item 2.4).** `.github/workflows/flow.yml`
   and its neighbours are GitHub's layout, and flow ships no other. A forge
   flow has no templates for is asked for no files rather than offered
-  GitHub's.
+  GitHub's. *Superseded by spec 20 §7 (issue #218):* each forge is given its
+  own — GitLab a file to include from its `.gitlab-ci.yml`, Gitea and Forgejo
+  an Actions workflow in `.gitea/workflows` — from one table that `flow init`
+  writes from as well, and a forge with none is still asked for nothing.
 - **§2 the canonical form is legible (item 2.4).** An observation and a
   desired item encode to one quoted record per line — items in a fixed order,
   fields sorted by name — and the hash is the hash of those bytes. Quoting is

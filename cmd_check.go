@@ -49,6 +49,15 @@ func (c *CheckPRCmd) Run(app *Context) error {
 	if err := s.connect(app); err != nil {
 		return err
 	}
+	// The mode is how much the team has let flow write yet (spec 20 §8):
+	// observing posts nothing, and gating posts the verdict and does not act.
+	switch {
+	case !s.Config.Gates():
+		c.DryRun = true
+	case !s.Config.Acts():
+		c.NoTransitions = true
+		s.Config.Forge.AutoMerge = false
+	}
 
 	gate, err := engine.RunGate(app.Ctx, engine.GateInput{
 		PR:            number,
@@ -177,6 +186,9 @@ func (c *CheckDeployCmd) Run(app *Context) error {
 	s, err := app.open()
 	if err != nil {
 		return err
+	}
+	if !s.Config.Acts() {
+		c.DryRun = true // moving a ticket is acting (spec 20 §8)
 	}
 	watched, _ := engine.WatchesDeployments(s.Config)
 	sha, environment, err := eventDeployment(os.Getenv("GITHUB_EVENT_PATH"))

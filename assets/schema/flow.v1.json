@@ -392,6 +392,15 @@
       },
       "additionalProperties": false
     },
+    "mode": {
+      "description": "How much flow may write: observe (nothing), gate (the gate's status and comment), automate (everything; the default).",
+      "type": "string",
+      "enum": [
+        "observe",
+        "gate",
+        "automate"
+      ]
+    },
     "policy": {
       "description": "How the pull request gate presents itself (spec 09).",
       "type": "object",
