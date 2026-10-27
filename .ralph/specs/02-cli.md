@@ -25,8 +25,9 @@ Help groups: **Setup** (init, plan, apply, attest), **Verify** (doctor, sync),
 ### `flow init`
 Writes `.flow.yaml` (+ CI workflow, PR template, optional issue form, optional
 hook). Flags: `--preset` (lean-kanban), `--forge`, `--tracker`, `--tracker-url`,
-`--project`, `--owner` (GitHub Projects owner login), `--force`, `--no-hooks`,
-`--no-templates`, `--yes`.
+`--project`, `--owner` (GitHub Projects owner login), `--mode` (observe | gate |
+automate, spec 20 §8; written to `.flow.yaml`, absent means automate), `--force`,
+`--no-hooks`, `--no-templates`, `--yes`.
 MUST: refuse outside git (64, hint `git init`); refuse existing config without
 `--force`; succeed offline; never write secrets; never write to the default
 branch remotely (local files only — the user commits them via PR).

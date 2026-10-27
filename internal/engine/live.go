@@ -72,6 +72,7 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsGated(),
 		a.prsConventional(),
 		a.prsReviewed(),
+		a.prsCurrent(),
 		a.prsClosedIssues(),
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)

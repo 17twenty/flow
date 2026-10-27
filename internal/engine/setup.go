@@ -453,6 +453,7 @@ func (in SetupInput) authTracker() Check {
 type prober interface {
 	Kind() string
 	Probe(ctx context.Context) (core.Permissions, error)
+	Capabilities() core.CapabilitySet
 }
 
 // probe resolves a credential and reports what it turned out to allow.
@@ -482,7 +483,56 @@ func (in SetupInput) probe(ctx context.Context, target string, adapter prober, k
 	for _, evidence := range permissions.Evidence {
 		result = result.Saw(core.Redact(evidence), "")
 	}
-	return result
+	return result.Saw("can act as "+strings.Join(Roles(target, adapter.Capabilities(), permissions), ", ")+" (spec 15 §3.1)", "")
+}
+
+// Credential roles (spec 15 §3.1, spec 20 §5).
+const (
+	RoleReader = "reader"
+	RoleGate   = "gate"
+	RoleActor  = "actor"
+)
+
+// roleNeeds is which declared capabilities a credential must be allowed for
+// it to fill a role on each side. Reading them from the declaration rather
+// than from scopes is what keeps roles one vocabulary across providers whose
+// scopes have nothing in common.
+var roleNeeds = map[string]map[string][]string{
+	TargetForge: {
+		RoleGate:  {core.CapCommitStatusWrite, core.CapPRComments},
+		RoleActor: {core.CapAutoMerge},
+	},
+	TargetTracker: {
+		RoleActor: {core.CapTicketMove, core.CapFollowUpTickets},
+	},
+}
+
+// Roles is the roles a credential that was accepted can fill, given what the
+// adapter declares each capability requires. A forge actor that may also
+// change protection says so, because settings are the one act that needs an
+// administrator.
+func Roles(target string, declared core.CapabilitySet, permissions core.Permissions) []string {
+	allowed := func(names ...string) bool {
+		for _, name := range names {
+			capability := declared.Capability(name)
+			if !capability.Set || len(permissions.Missing(capability.Requires)) > 0 {
+				return false
+			}
+		}
+		return true
+	}
+	roles := []string{RoleReader}
+	for _, role := range []string{RoleGate, RoleActor} {
+		needs, asked := roleNeeds[target][role]
+		if !asked || !allowed(needs...) {
+			continue
+		}
+		if role == RoleActor && target == TargetForge && allowed(core.CapBranchProtection) {
+			role = RoleActor + " (and settings)"
+		}
+		roles = append(roles, role)
+	}
+	return roles
 }
 
 // noCredential is the refusal when there is nothing to probe with.

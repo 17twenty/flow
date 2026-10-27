@@ -24,6 +24,11 @@ func (c *ApplyCmd) Run(app *Context) error {
 	if err != nil {
 		return err
 	}
+	if !s.Config.Acts() {
+		return core.Errorf(core.ErrValidation, "apply the plan").
+			WithWhy("mode is %s, so flow may not change the forge or the tracker (spec 20 §8)", s.Config.Mode).
+			WithFix("run flow plan to see what apply would do, or set mode: automate in .flow.yaml")
+	}
 	if err := s.connect(app); err != nil {
 		return err
 	}

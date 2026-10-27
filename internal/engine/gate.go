@@ -162,7 +162,17 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 		return PolicySnapshot{}, core.Explain(err, "read the board")
 	}
 	snapshot.WIP = wipFrom(in.Config, in.Lock, board)
-	if err := arrivals(ctx, in, &snapshot.WIP); err != nil {
+	// The open pull requests are listed once, for the two questions that
+	// read them: the review column's arrival order and what this one stands
+	// on.
+	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		return PolicySnapshot{}, core.Explain(err, "read the open pull requests")
+	}
+	if err := arrivals(ctx, in, open, &snapshot.WIP); err != nil {
+		return PolicySnapshot{}, err
+	}
+	if snapshot.StackedOn, err = stackedOn(ctx, in, pr, open); err != nil {
 		return PolicySnapshot{}, err
 	}
 
@@ -292,24 +302,27 @@ func wipFrom(cfg *config.Config, lock *config.Lock, board []core.Ticket) WIPCoun
 // none, from the forge: each ticket arrived when the oldest open, ready pull
 // request that closes it was opened (spec 09 §2 Decisions, issue #231).
 //
-// It is read only when the column is over its limit, because that is the only
-// time the order decides anything, and it costs a read per open pull request.
+// It is worked out only when the column is over its limit, because that is the
+// only time the order decides anything, and it costs a read per open pull
+// request on top of the listing the gate already has.
 // Without it no tracker flow speaks to gives an order, the "entered review
 // before the limit" exemption never applies, and a column over its limit
 // fails every pull request in it — including the ones whose merge would
 // bring it back under. A queue that cannot drain is the WIP rule defeating
 // its own purpose. The opening of a pull request is not something an edit
 // can move, which is what the board's last-edited time would have been.
-func arrivals(ctx context.Context, in GateInput, counts *WIPCounts) error {
+func arrivals(ctx context.Context, in GateInput, open []core.PullRequest, counts *WIPCounts) error {
 	column, found := columnFor(in.Config, config.EventPRReadyForReview)
 	if !found || column.WIP == nil || column.WIP.Limit <= 0 || len(counts.Review) <= column.WIP.Limit {
 		return nil
 	}
-	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
-	if err != nil {
-		return core.Explain(err, "read the open pull requests")
+	// The order only changes a verdict where WIP can block, which is only
+	// where policy.rules makes it an error (issue #239). As a warning it is
+	// not worth a read per open pull request (issue #244).
+	if PolicySeverity(in.Config, RuleWIPReview) != config.SeverityError {
+		return nil
 	}
-	ready := slices.DeleteFunc(open, func(pr core.PullRequest) bool { return pr.Draft })
+	ready := slices.DeleteFunc(slices.Clone(open), func(pr core.PullRequest) bool { return pr.Draft })
 	// A listing carries no closing issues (spec 10 §2), so each one is read.
 	full, err := detailed(ctx, in.Adapters.Forge, ready)
 	if err != nil {
@@ -330,6 +343,55 @@ func arrivals(ctx context.Context, in GateInput, counts *WIPCounts) error {
 		}
 	}
 	return nil
+}
+
+// stackedOn is every open pull request this one stands on (issue #235): one
+// whose branch it targets instead of the trunk, or one whose head commit it
+// carries. The second is the one that hides — a branch made from another pull
+// request's branch and pointed at the trunk looks like any other — so the
+// forge is asked once what this pull request has that the trunk has not, and
+// every other open pull request's head is looked for in that answer.
+//
+// Once, not once per open pull request: the gate runs on every event of every
+// pull request on the Actions token's hourly budget, and a comparison per
+// pull request made that cost grow with the square of the queue until GitHub
+// refused the gate outright (issue #244).
+func stackedOn(ctx context.Context, in GateInput, pr core.PullRequest, open []core.PullRequest) ([]StackedPR, error) {
+	repo, err := in.Adapters.Forge.Repo(ctx)
+	if err != nil {
+		return nil, core.Explain(err, "read the trunk's name")
+	}
+	trunk := repo.DefaultBranch
+	if trunk != "" && pr.BaseRef != "" && pr.BaseRef != trunk {
+		for _, other := range open {
+			if other.Number != pr.Number && other.HeadRef == pr.BaseRef {
+				return []StackedPR{{Number: other.Number, Title: other.Title,
+					Why: fmt.Sprintf("this targets its branch, %s, not %s", other.HeadRef, trunk)}}, nil
+			}
+		}
+		return []StackedPR{{Why: fmt.Sprintf("this targets %s, which is not %s and no open pull request is for", pr.BaseRef, trunk)}}, nil
+	}
+	if trunk == "" || pr.HeadSHA == "" || len(open) < 2 {
+		return nil, nil
+	}
+	comparison, err := in.Adapters.Forge.Compare(ctx, trunk, pr.HeadSHA)
+	switch {
+	case errors.Is(err, core.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, core.Explain(err, "compare #%d with %s", pr.Number, trunk)
+	}
+	carried := map[string]bool{}
+	for _, sha := range comparison.Commits {
+		carried[sha] = true
+	}
+	var stacks []StackedPR
+	for _, other := range open {
+		if other.Number != pr.Number && other.HeadSHA != "" && carried[other.HeadSHA] {
+			stacks = append(stacks, StackedPR{Number: other.Number, Title: other.Title, Why: "this carries its commits"})
+		}
+	}
+	return stacks, nil
 }
 
 // wipItem is one board item as the WIP rules read it.

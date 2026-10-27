@@ -360,12 +360,17 @@ func (g *GitHub) Compare(ctx context.Context, base, head string) (core.Compariso
 			WithWhy("the provider called the ancestry %q, which flow does not understand", payload.Status).
 			WithFix("this is a provider or flow bug; report it with the command you ran")
 	}
+	commits := make([]string, 0, len(payload.Commits))
+	for _, commit := range payload.Commits {
+		commits = append(commits, commit.SHA)
+	}
 	return core.Comparison{
 		Base:     base,
 		Head:     head,
 		Status:   payload.Status,
 		AheadBy:  payload.AheadBy,
 		BehindBy: payload.BehindBy,
+		Commits:  commits,
 	}, nil
 }
 
@@ -788,6 +793,20 @@ func (g *GitHub) CommitStatuses(ctx context.Context, sha string) ([]core.CommitS
 		return nil, core.Explain(err, "read the statuses on %s of %s", sha, g.Slug())
 	}
 	return statuses, nil
+}
+
+// UpdateBranch merges a pull request's base into its head, as the "Update
+// branch" button does, provided the head is still headSHA.
+func (g *GitHub) UpdateBranch(ctx context.Context, number int, headSHA string) error {
+	req := core.Request{
+		Method: http.MethodPut,
+		Path:   g.path("pulls", strconv.Itoa(number), "update-branch"),
+		Body:   map[string]string{"expected_head_sha": headSHA},
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return core.Explain(err, "bring #%d of %s up to date with its base", number, g.Slug())
+	}
+	return nil
 }
 
 // SetCommitStatus publishes a status on a commit, unless that context already

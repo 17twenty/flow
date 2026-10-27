@@ -55,7 +55,7 @@ policy rule it names, has to exist.
 
 ## Bootstrap (summary — full detail in specs/17-dogfood.md §5)
 1. **Stage A (human, ~30 min):** repo, user Project (Kanban template), built-in
-   workflows, labels, agent GitHub App, `FLOW_PROJECT_TOKEN` secret, copy files
+   workflows, labels, agent machine user, `FLOW_PROJECT_TOKEN` secret, copy files
    (not `flow.yml` yet), `./bootstrap/seed-issues.sh 17twenty/flow <project#>`.
 2. Loop in `direct` mode (Phases 0–4.3): `AGENT_CMD="claude -p" ./loop.sh`.
 3. **Stage B (human, after 4.3):** `flow init/plan/apply/attest` on the repo,
@@ -120,5 +120,6 @@ What the audit reads today, against the expectations of
 | 17 | Dogfooding: flow builds flow |
 | 18 | Serve mode (future constraints) |
 | 19 | Acceptance scenarios |
+| 20 | Reconcile, credential roles, runners, adoption modes |
 
 RFC 2119 language. Specs win over examples; fix examples in the same change.
