@@ -18,7 +18,7 @@ Evaluation is pure and deterministic.
 
 | id | default | Pass |
 |---|---|---|
-| `pr.ticket.linked` | error | ≥1 linked ticket, unless title type ∈ `commits.unlinked_types` |
+| `pr.ticket.linked` | error | ≥1 linked ticket, unless title type ∈ `commits.unlinked_types` or the PR is expedited (`workflow.expedite.labels`) |
 | `pr.ticket.in_project` | error | (github-projects) every linked issue is a project item |
 | `ticket.ready` | error | every linked ticket passes DoR now, OR is already in in_progress/in_review (DoR was the entry gate; don't re-litigate edits) |
 | `pr.title.conventional` | error | title passes `cc.header.format`, `cc.type.allowed`, `cc.scope.*`, `cc.header.length` |
@@ -161,6 +161,17 @@ golden; determinism; fork/read-only path; draft path.
   a warning, an error under `strict`, and a team that stacks on purpose sets
   `policy.rules: { pr.stacked: off }`. Ancestry costs one comparison per
   older open pull request.
+- **§2 urgent work lands first and is written up after.** An expedited pull
+  request — a security fix, an outage — passes `pr.ticket.linked` with no
+  ticket, and says so; `live.prs.linked` names it every morning until it has
+  one, so the link is late rather than lost. An unlinked one's remedy names
+  every way out (a closing keyword, a ticket-free type, the expedite label)
+  rather than only the first, because a fix nobody can see how to land is a
+  fix that waits.
+- **§2 every finding says where to read more.** The gate's comment links each
+  rule to its section of `docs/rules.md` — what it asks, why, every way to
+  resolve it — and ends with a "Why am I seeing this?" line. A test holds the
+  page to the gate's rules in both directions, at the anchors the links use.
 - **§2 the board gives no arrival order (item 4.3).** `WIPItem.Since` is left
   zero. No tracker flow speaks to records when an item entered a column, and
   filling it with the last-edited time would let an item somebody merely

@@ -55,8 +55,10 @@ Setup checks + live-health audit (spec 07).
 
 ### `flow sync`
 The catch-ups flow owns, and nothing else (spec 20 §2): the transitions the
-configuration gives flow (`live.transitions.flow`) and the issues a merged pull
-request names and the forge left open (`live.prs.closed_issues`), performed as
+configuration gives flow (`live.transitions.flow`), the issues a merged pull
+request names and the forge left open (`live.prs.closed_issues`), and pull
+requests that passed the gate and are only behind the trunk
+(`live.prs.current`), performed as
 `flow doctor --fix` would perform them. `--window <dur>` (default 48h). Makes
 no plan, publishes no health report, proposes no lock and files no follow-up.
 Runs after the gate, hourly and on push to the trunk (spec 20 §3). Exit 0 all
@@ -66,7 +68,10 @@ does not stop it; one it does (the board) fails the check that reads it.
 
 ### `flow check pr`
 The CI gate (spec 09). Runs in CI on pull request events.
-Flags: `--pr <n>` (default: from CI event payload, e.g. `GITHUB_EVENT_PATH`),
+Flags: `--pr <n>` (default, in order: `FLOW_PR`; GitLab CI's
+`CI_MERGE_REQUEST_IID`; the event payload at `GITHUB_EVENT_PATH`, which GitHub,
+Gitea and Forgejo Actions write — spec 20 §7. The status links to `FLOW_RUN_URL`,
+else GitLab's `CI_JOB_URL`, else the Actions run),
 `--dry-run` (evaluate and print; post nothing), `--no-transitions`.
 Behaviour: evaluate policy → post `flow/policy` status → upsert/delete
 explanation comment → perform flow-owned transitions for linked tickets
