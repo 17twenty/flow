@@ -321,9 +321,15 @@ func TestDesiredFiles(t *testing.T) {
 		t.Errorf("done means deployed, but the workflow is only asked to run %q", got)
 	}
 
+	// GitLab is given a file to include, never its pipeline or GitHub's
+	// layout: a repository's .gitlab-ci.yml is its own (spec 20 §7).
 	cfg.Forge.Type = config.ForgeGitLab
-	if _, ok := desired(t, cfg).Find(core.ItemForgeFiles); ok {
-		t.Error("GitHub's files are proposed to a GitLab repository")
+	gitlab, ok := desired(t, cfg).Find(core.ItemForgeFiles)
+	if !ok {
+		t.Fatal("nothing is proposed to a GitLab repository")
+	}
+	if _, found := labelled(gitlab, ".gitlab/flow.gitlab-ci.yml"); !found || len(gitlab.Items) != 1 {
+		t.Errorf("a GitLab repository is proposed %+v, want only .gitlab/flow.gitlab-ci.yml", gitlab.Items)
 	}
 }
 
