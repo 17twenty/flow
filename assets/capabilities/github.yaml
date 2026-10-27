@@ -138,7 +138,7 @@ capabilities:
   auto_merge:
     set: true
     verify: true
-    requires: [pulls_write]
+    requires: [pulls_write, contents_write]
     remediation: follow_up
     hazards: ["A merge armed by the Actions token (GITHUB_TOKEN) is performed for that token, and GitHub lets it cause no further event: no push workflow runs on the trunk (no build, no release, no deploy) and no issue it closes is closed. flow sync closes the issues and moves the cards; push-triggered work needs the gate to arm with another credential, or auto_merge off."]
     notes: "enablePullRequestAutoMerge (GraphQL); the repository setting allow_auto_merge must be on, and needs admin."
