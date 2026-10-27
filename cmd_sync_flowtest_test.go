@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -111,5 +112,30 @@ func TestSyncMovesTheCardAMergeLeftBehind(t *testing.T) {
 	}
 	if !ticket.Closed {
 		t.Error("#42 was moved and left open: both catch-ups belong to one run")
+	}
+}
+
+// TestSyncNamesAPullRequestOnlyBehindWithoutFailing is issue #240 on a forge
+// flow cannot update branches on: the pull request that passed the gate and
+// is only behind is named, and sync says somebody has something to do (2)
+// rather than failing (1) — it runs every hour, and a chore only a person can
+// do must not turn every one of those runs red.
+func TestSyncNamesAPullRequestOnlyBehindWithoutFailing(t *testing.T) {
+	dir, _ := gateRepo(t, func(w *fakeWorld) {
+		w.forge.SetPermissions(adminAccess)
+		pr := gatePR(14, "feat(engine): ready")
+		pr.Mergeability = core.MergeabilityBehind
+		w.forge.SetPullRequest(pr)
+		if err := w.forge.SetCommitStatus(t.Context(), pr.HeadSHA, core.CommitStatus{Context: engine.DefaultStatusContext, State: core.StatusSuccess}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	code, stdout, stderr := execAt(t, dir, "sync")
+	if code != core.ExitActionRequired {
+		t.Fatalf("sync exited %d, want %d: %s", code, core.ExitActionRequired, stderr)
+	}
+	if !strings.Contains(stdout, "#14") || !strings.Contains(stdout, engine.CheckLivePRsCurrent) {
+		t.Errorf("sync does not name the pull request waiting on being behind:\n%s", stdout)
 	}
 }
