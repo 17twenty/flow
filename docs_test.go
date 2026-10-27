@@ -2,10 +2,12 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
@@ -303,4 +305,49 @@ func TestTheReadmeSaysWhereTheVerificationIs(t *testing.T) {
 	if !strings.Contains(string(content), deliveryBoardDoc) {
 		t.Errorf("README.md does not say where %s is", deliveryBoardDoc)
 	}
+}
+
+// TestEveryGateRuleIsExplained holds docs/rules.md to the gate: each rule the
+// gate applies has a section, at the anchor the gate's "Why am I seeing this?"
+// link points at, and no section explains a rule the gate does not have.
+func TestEveryGateRuleIsExplained(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("docs", "rules.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchors := map[string]string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		heading, ok := strings.CutPrefix(line, "## ")
+		if !ok {
+			continue
+		}
+		anchors[gitHubAnchor(heading)] = heading
+	}
+	rules := engine.PolicyRuleIDs()
+	for _, rule := range rules {
+		_, anchor, _ := strings.Cut(engine.RuleDocURL(rule), "#")
+		if anchors[anchor] != rule {
+			t.Errorf("the gate links %s to #%s, and docs/rules.md has no section there", rule, anchor)
+		}
+	}
+	for _, heading := range anchors {
+		if !slices.Contains(rules, heading) {
+			t.Errorf("docs/rules.md explains %q, which is not a rule the gate applies", heading)
+		}
+	}
+}
+
+// gitHubAnchor is the id GitHub gives a heading: lower case, punctuation
+// other than hyphens and underscores dropped, spaces made hyphens.
+func gitHubAnchor(heading string) string {
+	var out strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(heading)) {
+		switch {
+		case r == ' ':
+			out.WriteRune('-')
+		case r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r):
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }

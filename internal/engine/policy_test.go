@@ -1024,3 +1024,29 @@ func TestCommitSettingsFallsBackToTheDefaults(t *testing.T) {
 		t.Fatalf("an empty convention was not filled in: %+v", settings)
 	}
 }
+
+// TestAnUrgentFixMayLandBeforeItsTicket: a security fix or an outage is the
+// agreed exception. Labelled for expedite, it merges without a ticket, and
+// the finding says the audit will ask for one; unlabelled, the remedy names
+// every way out rather than only one.
+func TestAnUrgentFixMayLandBeforeItsTicket(t *testing.T) {
+	s := snapshot(t)
+	s.PR.Title = "fix(api): close the hole"
+	s.Tickets = nil
+
+	got := finding(t, engine.CheckPolicy(s), engine.RulePRTicketLinked)
+	if got.OK {
+		t.Fatal("an unlinked fix passed without being expedited")
+	}
+	for _, way := range append([]string{"Closes #123"}, append(s.Config.Commits.UnlinkedTypes, s.Config.Workflow.Expedite.Labels...)...) {
+		if !strings.Contains(got.Fix, way) {
+			t.Errorf("the remedy does not mention %q: %s", way, got.Fix)
+		}
+	}
+
+	s.PR.Labels = s.Config.Workflow.Expedite.Labels[:1]
+	got = finding(t, engine.CheckPolicy(s), engine.RulePRTicketLinked)
+	if !got.OK || got.Skipped || !strings.Contains(got.Message, "audit") {
+		t.Errorf("an expedited fix: %+v, want it to pass and say the audit will ask", got)
+	}
+}
