@@ -81,6 +81,15 @@ type Forge interface {
 	ProposeFiles(ctx context.Context, p FileProposal) (PullRequest, error)
 }
 
+// BranchUpdater is a forge that can bring a pull request's branch up to date
+// with its base itself, which a trunk requiring branches to be up to date
+// asks of every pull request after each merge (issue #234). headSHA is the
+// head the caller judged: a forge refuses the update if the branch has moved
+// since, so flow never updates work it has not looked at.
+type BranchUpdater interface {
+	UpdateBranch(ctx context.Context, number int, headSHA string) error
+}
+
 // Tracker is the ticket system: the board, its columns, its items, and the
 // follow-ups flow files against itself (spec 01 §3).
 type Tracker interface {

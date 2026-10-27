@@ -84,6 +84,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.prs.gated` | Did every merged PR have a `flow/policy` success status on its final head SHA at merge time? (critical) | commit statuses |
 | `live.prs.conventional` | Is every squash commit on the default branch a valid conventional header? | git log / forge commits |
 | `live.prs.reviewed` | Did agent-authored PRs get a human approval? (critical when `require_human_review`) | reviews |
+| `live.prs.current` | Is any PR that passed the gate waiting only on being behind its base? `--fix` brings it up to date (issue #234) | open PRs + gate status |
 | `live.prs.closed_issues` | Did every merge close the issues it names? `--fix` closes any it left open | PR closing references + issue state |
 | `live.deploys.recent` | Was there a successful deployment to `deploys.environment` within `max_age`? | deploy records |
 | `live.deploys.lag` | Did every merged PR reach the environment within `max_lag`? (merge SHA ⊑ some deployed SHA, via forge compare API, results cached) | PRs + deploy records |
