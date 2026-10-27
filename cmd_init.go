@@ -11,6 +11,7 @@ import (
 	"github.com/17twenty/flow/assets"
 	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
+	"github.com/17twenty/flow/internal/engine"
 	"github.com/17twenty/flow/internal/git"
 	"github.com/17twenty/flow/internal/ui"
 )
@@ -380,30 +381,30 @@ func (c *InitCmd) write(app *Context, root string, source []byte) ([]initFile, e
 	if err != nil {
 		return nil, core.Errorf(core.ErrNotFound, "read the shipped templates").WithWhy("%s", err)
 	}
-	for _, t := range repoTemplates {
-		content, err := fs.ReadFile(templates, t.asset)
+	// The files are the forge's, from the same table forge.files proposes
+	// from (spec 20 §7). The configuration was validated before it was
+	// written, so a parse failure here is a forge nobody named yet, which
+	// is given nothing.
+	forge := ""
+	if cfg, err := config.Parse(source, configFile); err == nil {
+		forge = cfg.Forge.Type
+	}
+	for _, t := range engine.ProposedFiles(forge) {
+		content, err := fs.ReadFile(templates, t.Template)
 		if err != nil {
-			return nil, core.Errorf(core.ErrNotFound, "read the %s template", t.asset).WithWhy("%s", err)
+			return nil, core.Errorf(core.ErrNotFound, "read the %s template", t.Template).WithWhy("%s", err)
 		}
 		// A template is scaffolding, not configuration: flow writes it once
 		// and never again, because the version in the repository is the one
 		// the team edited. --force is about .flow.yaml, not about reverting
 		// somebody's pull request template.
-		file, err := c.writeFile(root, t.path, content, false)
+		file, err := c.writeFile(root, t.Path, content, false)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, file)
 	}
 	return files, nil
-}
-
-// repoTemplates are the files init scaffolds beside the configuration
-// (spec 02 §2).
-var repoTemplates = []struct{ asset, path string }{
-	{asset: "ci/github-flow.yml", path: ".github/workflows/flow.yml"},
-	{asset: "pull_request_template.md", path: ".github/pull_request_template.md"},
-	{asset: "issue-forms/story.yml", path: ".github/ISSUE_TEMPLATE/story.yml"},
 }
 
 // writeFile writes one file, reporting what it did. An existing file is kept
