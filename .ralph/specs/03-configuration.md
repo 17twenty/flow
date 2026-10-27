@@ -20,6 +20,7 @@ Durations accept Go syntax plus `d`/`w`. First line written by init:
 ```yaml
 version: 1
 preset: lean-kanban
+mode: automate                    # observe | gate | automate (spec 20 §8): how much flow may write
 
 forge:
   type: github                    # github | gitea | gitlab
