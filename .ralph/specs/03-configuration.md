@@ -113,9 +113,11 @@ health:
 - Every transition `to` names a column; events from the vocabulary (spec 04 §4).
 - `done_on: deployed` ⇔ `transitions.deployed` present and `deploys.source != none`.
 - `done_on: merged` ⇒ `transitions.deployed` absent (deploy lag is verified, not tracked as status).
-- Owner `native` only allowed for events the tracker capability file marks
-  `native_transition_<event>: set|verify` true; otherwise error with hint
-  "use owner: flow".
+- Owner `native` only allowed for events whose `native_transition_<event>`
+  capability the tracker declares as something it has: `set` or `verify`
+  true, or `remediation: attest` (an automation flow cannot read back is still
+  an automation, spec 05 §4). A tracker that declares none of the three has no
+  such automation, and the error's hint is "use owner: flow".
 - Placeholders allowed only in: `tracker.project`, `followups.owners.*`.
 - `auth.*_env` must be env var NAMES; heuristic secret detection on all strings.
 
