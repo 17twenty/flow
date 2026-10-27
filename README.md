@@ -121,5 +121,6 @@ What the audit reads today, against the expectations of
 | 17 | Dogfooding: flow builds flow |
 | 18 | Serve mode (future constraints) |
 | 19 | Acceptance scenarios |
+| 20 | Reconcile, credential roles, runners, adoption modes |
 
 RFC 2119 language. Specs win over examples; fix examples in the same change.

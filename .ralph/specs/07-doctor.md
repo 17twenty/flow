@@ -840,6 +840,12 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   closes what is still open with a comment naming the merge. It is flow's
   own catch-up, like `live.transitions.flow`, rather than a second credential
   for arming: the team chose a day's lag over another secret to hold.
+- **§4 one fact, one follow-up (issue #202).** A follow-up is keyed by the
+  doctor check it is reported under, and `flow apply` files under the same
+  id (`engine.CheckOf`): the deployment records are the one item whose check
+  id differs (`deploys.source`). A ticket an earlier flow filed under the
+  item id is closed as not planned by the next round, with a comment naming
+  the ticket that stands, and dropped from the lock.
 - **§2 failing to propose the lock is not the run's verdict (item 5.8).** The
   report has already said everything doctor found about the workflow, and the
   lock is flow's own bookkeeping. A forge that will not take the proposal is
