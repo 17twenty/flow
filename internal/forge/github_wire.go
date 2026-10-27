@@ -298,6 +298,9 @@ type ghCompare struct {
 	Status   string `json:"status"`
 	AheadBy  int    `json:"ahead_by"`
 	BehindBy int    `json:"behind_by"`
+	Commits  []struct {
+		SHA string `json:"sha"`
+	} `json:"commits"`
 }
 
 // ghCompareStatuses are the statuses GitHub's compare endpoint reports, which

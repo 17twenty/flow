@@ -360,12 +360,17 @@ func (g *GitHub) Compare(ctx context.Context, base, head string) (core.Compariso
 			WithWhy("the provider called the ancestry %q, which flow does not understand", payload.Status).
 			WithFix("this is a provider or flow bug; report it with the command you ran")
 	}
+	commits := make([]string, 0, len(payload.Commits))
+	for _, commit := range payload.Commits {
+		commits = append(commits, commit.SHA)
+	}
 	return core.Comparison{
 		Base:     base,
 		Head:     head,
 		Status:   payload.Status,
 		AheadBy:  payload.AheadBy,
 		BehindBy: payload.BehindBy,
+		Commits:  commits,
 	}, nil
 }
 

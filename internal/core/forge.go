@@ -514,6 +514,9 @@ type Comparison struct {
 	// AheadBy and BehindBy are how many commits separate them.
 	AheadBy  int `json:"ahead_by"`
 	BehindBy int `json:"behind_by"`
+	// Commits are the commits head has and base does not, as the forge lists
+	// them in the same answer (GitHub: up to 250). Empty where it lists none.
+	Commits []string `json:"commits,omitempty"`
 }
 
 // Known reports whether the comparison's status is one flow understands. An

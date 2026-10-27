@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +65,7 @@ func TestAncestryAsksOnceForOnePair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compare again: %v", err)
 	}
-	if first != second {
+	if !reflect.DeepEqual(first, second) {
 		t.Errorf("the remembered answer is %+v, want the one that was given: %+v", second, first)
 	}
 	if !second.Contains() {
