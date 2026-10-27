@@ -790,6 +790,20 @@ func (g *GitHub) CommitStatuses(ctx context.Context, sha string) ([]core.CommitS
 	return statuses, nil
 }
 
+// UpdateBranch merges a pull request's base into its head, as the "Update
+// branch" button does, provided the head is still headSHA.
+func (g *GitHub) UpdateBranch(ctx context.Context, number int, headSHA string) error {
+	req := core.Request{
+		Method: http.MethodPut,
+		Path:   g.path("pulls", strconv.Itoa(number), "update-branch"),
+		Body:   map[string]string{"expected_head_sha": headSHA},
+	}
+	if _, err := g.do(ctx, req); err != nil {
+		return core.Explain(err, "bring #%d of %s up to date with its base", number, g.Slug())
+	}
+	return nil
+}
+
 // SetCommitStatus publishes a status on a commit, unless that context already
 // says exactly this — GitHub keeps every status it is told, so publishing the
 // same verdict on every run would fill a commit's history with repetitions of

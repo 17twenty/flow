@@ -86,7 +86,7 @@ func ApplyFollowUps(ctx context.Context, in ApplyFollowUpInput) []FollowUpOutcom
 // doctor check and the attestation use, so one ticket serves all three.
 func applyCheck(planned PlanItem, item AppliedItem) Check {
 	return Check{
-		ID:       item.ID,
+		ID:       CheckOf(item.ID),
 		Title:    "set up " + item.ID,
 		Category: categoryOf(planned.Target),
 	}
