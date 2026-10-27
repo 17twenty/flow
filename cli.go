@@ -50,6 +50,7 @@ type CLI struct {
 	Attest AttestCmd `cmd:"" group:"setup" help:"Record a human confirmation for a check flow cannot verify."`
 
 	Doctor DoctorCmd `cmd:"" group:"verify" help:"Prove the setup is intact and the workflow is behaving."`
+	Sync   SyncCmd   `cmd:"" group:"verify" help:"Perform the catch-ups flow owns: owed moves, issues a merge left open."`
 
 	Check CheckCmd `cmd:"" group:"ci" help:"CI entry points: pr, deploy, commit."`
 
