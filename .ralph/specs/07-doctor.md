@@ -814,6 +814,13 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   rather than opening thirty mornings in a row. A lock that already matches
   is proposed not at all — a daily pull request against a file nobody changed
   is how a team learns to ignore them.
+- **§10 running out of time is not weather (issue #197).** A provider that
+  will not take the report or the lock proposal is weather and is logged; the
+  run's own `--timeout` expiring while it files them is the run not
+  finishing, and it exits as one (`ErrUnavailable`, "finish within"). Logging
+  that too let flow's daily job go green for a week while its health issue
+  stopped being rewritten. The daily job is given `--timeout 10m`: a
+  fortnight's audit of a busy board does not fit in the interactive 2m.
 - **§6 flow's own bookkeeping is not delivered work (issue #203).**
   `live.tickets.done_merged` leaves out a ticket carrying flow's follow-up or
   health marker and says how many it left out. A follow-up is settings work
