@@ -6,7 +6,7 @@ forge:
   type: github
   repo: 17twenty/flow
   required_checks: [test]         # the build, by the name the check run goes by (not "ci / test", which is the UI's label)
-  auto_merge: false               # off until flow reconciles after a merge (#201): an Actions-token merge starts no ci, no release and closes no issue
+  auto_merge: false               # the gate arms with the Actions token, and GitHub starts nothing after such a merge: no ci, no release (spec 20, #213)
   auth: { token_env: GITHUB_TOKEN }
 tracker:
   type: github-projects
