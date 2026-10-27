@@ -249,6 +249,38 @@ func TestRecordReplacesTheSameThing(t *testing.T) {
 	}
 }
 
+// A required status check is only its name. Two of them are two things, and
+// the second must not overwrite the record of the first.
+func TestRecordKeepsTwoThingsWithNoID(t *testing.T) {
+	lock := NewLock("v0")
+	lock.Record(Creation{Kind: "forge.required_status", Name: "flow/policy", At: lockTime})
+	lock.Record(Creation{Kind: "forge.required_status", Name: "test", At: lockTime})
+	lock.Record(Creation{Kind: "forge.required_status", Name: "test", At: lockTime.Add(time.Hour)})
+	if len(lock.Created) != 2 {
+		t.Fatalf("created %d things, want 2: %v", len(lock.Created), lock.Created)
+	}
+}
+
+// An earlier flow wrote `forge.required_statu` (issue #204). This one reads
+// it as the check it was, so the record still counts and is rewritten right.
+func TestLockReadsTheKindAnEarlierFlowMisspelt(t *testing.T) {
+	src := "version: 1\nflow_version: v0\ncreated:\n  - kind: forge.required_statu\n    name: flow/policy\n    at: 2026-10-26T22:23:10Z\n"
+	lock, err := ParseLock([]byte(src), "")
+	if err != nil {
+		t.Fatalf("ParseLock: %v", err)
+	}
+	if got := lock.Created[0].Kind; got != "forge.required_status" {
+		t.Errorf("the kind reads as %q, want forge.required_status", got)
+	}
+	out, err := lock.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "required_statu\n") {
+		t.Errorf("the lock is written back misspelt:\n%s", out)
+	}
+}
+
 func TestWriteLockIsAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, LockPath)
