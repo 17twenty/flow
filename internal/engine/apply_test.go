@@ -94,8 +94,8 @@ func TestApplyMakesTheProviderAgree(t *testing.T) {
 	if failed != 0 {
 		t.Fatalf("%d items failed", failed)
 	}
-	if done != 7 || skipped != 8 {
-		t.Errorf("%d done and %d skipped, want 7 and 8", done, skipped)
+	if done != 7 || skipped != 6 {
+		t.Errorf("%d done and %d skipped, want 7 and 6", done, skipped)
 	}
 
 	// The board now holds what was asked of it, and no longer holds the
@@ -434,7 +434,7 @@ func TestApplySkipsWhatIsNotFlowsToDo(t *testing.T) {
 	for _, id := range []string{
 		core.ItemTrackerWIP,
 		core.ItemTrackerExpedite,
-		core.NativeItem("issue_closed"),
+		core.NativeItem("changes_requested"),
 		core.ItemDeploysRecords,
 	} {
 		skipped := item(t, applied, id)

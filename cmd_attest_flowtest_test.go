@@ -65,8 +65,8 @@ func TestAttestRecordsAHumanWord(t *testing.T) {
 	dir := fakeRepo(t)
 	boards(dir, core.Candidate{ID: "2", Name: "flow", URL: "https://github.test/users/acme/projects/2"})
 
-	doc, code, stderr := attestJSON(t, dir, "tracker.native.pr_merged",
-		"--by", "@17twenty", "--note", "watched a PR merge and the card move to Done")
+	doc, code, stderr := attestJSON(t, dir, "tracker.native.changes_requested",
+		"--by", "@17twenty", "--note", "asked for changes on a PR and watched the card go back to In progress")
 
 	if code != core.ExitOK {
 		t.Fatalf("attest exited %d, want %d: %s", code, core.ExitOK, stderr)
@@ -82,7 +82,7 @@ func TestAttestRecordsAHumanWord(t *testing.T) {
 	if len(recorded) != 1 {
 		t.Fatalf("the lock holds %d attestations, want one: %+v", len(recorded), recorded)
 	}
-	if recorded[0].Check != "tracker.native.pr_merged" || recorded[0].By != "@17twenty" {
+	if recorded[0].Check != "tracker.native.changes_requested" || recorded[0].By != "@17twenty" {
 		t.Errorf("the lock records %+v, want the check and who vouched for it", recorded[0])
 	}
 	if recorded[0].Inputs == "" {
@@ -92,8 +92,8 @@ func TestAttestRecordsAHumanWord(t *testing.T) {
 	// The promise must settle the check it was made about: a doctor run that
 	// still asks for it means attest and doctor disagree about one board.
 	report, doctorCode := doctorJSON(t, dir, append([]string{"--fix"}, owners()...)...)
-	if got := report.checkState(t, "tracker.native.pr_merged"); got != "pass" {
-		t.Errorf("doctor says %s is %q, want pass: the attestation settles nothing", "tracker.native.pr_merged", got)
+	if got := report.checkState(t, "tracker.native.changes_requested"); got != "pass" {
+		t.Errorf("doctor says %s is %q, want pass: the attestation settles nothing", "tracker.native.changes_requested", got)
 	}
 	if doctorCode != core.ExitOK && doctorCode != core.ExitActionRequired {
 		t.Errorf("doctor exited %d", doctorCode)
@@ -136,12 +136,12 @@ func TestAttestRefusesWhatFlowCanCheckItself(t *testing.T) {
 func TestAttestOffersTheIdsThereAre(t *testing.T) {
 	dir := fakeRepo(t)
 
-	_, code, stderr := attestJSON(t, dir, "tracker.native.pr_merge", "--by", "@17twenty", "--note", "typo")
+	_, code, stderr := attestJSON(t, dir, "tracker.native.changes_request", "--by", "@17twenty", "--note", "typo")
 
 	if code != core.ExitUsage {
 		t.Fatalf("attest exited %d, want %d: %s", code, core.ExitUsage, stderr)
 	}
-	if !strings.Contains(stderr, "tracker.native.pr_merged") {
+	if !strings.Contains(stderr, "tracker.native.changes_requested") {
 		t.Errorf("the refusal does not offer the ids that exist:\n%s", stderr)
 	}
 }
@@ -169,7 +169,7 @@ func TestAttestTakesTheHandleFromUserConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code, stderr = attestAs(t, dir, empty,
-		"tracker.native.issue_closed", "--note", "nobody is signing this")
+		"tracker.native.changes_requested", "--note", "nobody is signing this")
 	if code != core.ExitUsage {
 		t.Errorf("attest exited %d with nobody to sign it, want %d: %s", code, core.ExitUsage, stderr)
 	}
@@ -298,8 +298,8 @@ func TestAttestingOneCheckDoesNotReviveTheRest(t *testing.T) {
 		t.Fatalf("%s plans as %q before the run, want attest: the lapsed promise is not lapsed, so this proves nothing", core.ItemTrackerExpedite, item.Outcome)
 	}
 
-	if _, code, stderr := attestJSON(t, dir, "tracker.native.pr_merged",
-		"--by", "@17twenty", "--note", "watched a PR merge and the card move to Done"); code != core.ExitOK {
+	if _, code, stderr := attestJSON(t, dir, "tracker.native.changes_requested",
+		"--by", "@17twenty", "--note", "asked for changes on a PR and watched the card go back to In progress"); code != core.ExitOK {
 		t.Fatalf("attest exited %d: %s", code, stderr)
 	}
 

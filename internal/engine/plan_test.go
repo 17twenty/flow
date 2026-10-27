@@ -304,7 +304,9 @@ func TestPlanOutcomes(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			plan := planFor(t, tc.world(t))
+			// What each tracker makes of a transition it owns is the
+			// subject, so the merge transitions are left to it here.
+			plan := planWith(t, tc.world(t), nativeMerges(preset(t, config.PresetLeanKanban)))
 			for id, want := range tc.want {
 				item, ok := plan.Find(id)
 				if !ok {
@@ -970,4 +972,20 @@ func planItem(plan engine.Plan, id string) (engine.PlanItem, bool) {
 		}
 	}
 	return engine.PlanItem{}, false
+}
+
+// TestThePresetAsksNoTrackerForWhatItCannotDo is spec 20 §4 on Jira: flow
+// owns the merge transitions, so the shipped workflow no longer asks Jira for
+// an issue-closed automation it does not have, and planning it is not a
+// refusal (exit 1) but ordinary pending work (exit 2).
+func TestThePresetAsksNoTrackerForWhatItCannotDo(t *testing.T) {
+	plan := planFor(t, jiraWorld(t))
+	for _, item := range plan.Items {
+		if item.Outcome == engine.OutcomeUnsupported {
+			t.Errorf("%s is unsupported under the shipped preset: %s", item.ID, item.Why)
+		}
+	}
+	if got := plan.ExitCode(); got != 2 {
+		t.Errorf("plan exits %d, want 2", got)
+	}
 }

@@ -84,9 +84,13 @@ Engine rules for flow-owned transitions:
 6. No transition comments (noise). Transitions are visible in tracker history.
 
 GitHub Projects defaults (research): a new project enables "Item closed → Done"
-and "Pull request merged → Done" automatically. Hence the lean-kanban preset
-assigns `pr_merged` and `issue_closed` to `native`, and assigns the PR-opened
-transitions (which GitHub's built-ins don't offer) to `flow`.
+and "Pull request merged → Done" automatically. The shipped presets nevertheless
+assign `pr_merged` and `issue_closed` to `flow` (spec 20 §4): `flow sync`
+performs them on its next run whatever the tracker offers, so no adopter has to
+attest an automation flow cannot see, and a native automation that gets there
+first only leaves flow nothing to do. `owner: native` remains for a team that
+wants the tracker alone to move its cards. The PR-opened transitions, which
+GitHub's built-ins don't offer, were always `flow`'s.
 
 ## 6. Done: merged vs deployed
 

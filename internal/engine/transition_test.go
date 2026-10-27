@@ -143,7 +143,7 @@ func TestTransitionIsIdempotent(t *testing.T) {
 }
 
 func TestTransitionLeavesNativeTransitionsToTheTracker(t *testing.T) {
-	cfg := preset(t, "lean-kanban") // pr_merged: { to: done, owner: native }
+	cfg := nativeMerges(preset(t, "lean-kanban")) // pr_merged: { to: done, owner: native }
 
 	move := engine.Transition(work(cfg, "in_review", linked(mergedPR(7))))
 
@@ -445,7 +445,7 @@ func TestTransitionKeepsTheTicketWhereItIsWhileOtherWorkIsOpen(t *testing.T) {
 // A ticket with a merge behind it is further on than any closed tab. The
 // trunk has part of the answer and abandoning the rest does not take it back.
 func TestTransitionDoesNotTakeBackATicketThatHasAlreadyLandedSomething(t *testing.T) {
-	cfg := preset(t, "lean-kanban")
+	cfg := nativeMerges(preset(t, "lean-kanban"))
 	cfg.Workflow.Transitions[config.EventPRClosedUnmerged] = config.Transition{To: "in_progress", Owner: config.OwnerFlow}
 
 	move := engine.Transition(work(cfg, "in_review", linked(mergedPR(7)), linked(closedPR(9))))
@@ -758,7 +758,7 @@ func TestTransitionWithoutAConfigDoesNothing(t *testing.T) {
 }
 
 func TestTransitionText(t *testing.T) {
-	cfg := preset(t, "lean-kanban")
+	cfg := nativeMerges(preset(t, "lean-kanban"))
 
 	moved := engine.Transition(work(cfg, "ready", linked(draftPR(7))))
 	if got, want := moved.Text(), "#12  ready → in_progress  (pr_opened_draft)"; got != want {
