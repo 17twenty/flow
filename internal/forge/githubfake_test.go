@@ -39,6 +39,9 @@ type gitHubFake struct {
 	// gets.
 	statuses   map[string][]core.CommitStatus
 	nextStatus int
+	// checkRuns are the check runs reported against each commit, which GitHub
+	// serves wrapped in an object rather than as a bare page.
+	checkRuns map[string][]ghCheckRun
 	// updated records each "Update branch": the pull request and the head
 	// it was asked to expect.
 	updated map[string]string
@@ -314,6 +317,8 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.commits(w, r)
 	case segments[0] == "commits" && len(segments) == 3 && segments[2] == "statuses":
 		f.commitStatuses(w, r, segments[1])
+	case segments[0] == "commits" && len(segments) == 3 && segments[2] == "check-runs":
+		f.commitCheckRuns(w, r, segments[1])
 	case segments[0] == "statuses" && len(segments) == 2:
 		f.publishStatus(w, r, segments[1])
 	case segments[0] == "issues" && len(segments) == 3 && segments[2] == "comments":
@@ -454,6 +459,35 @@ func (f *gitHubFake) commits(w http.ResponseWriter, r *http.Request) {
 		page = append(page, ghCommitJSON(commit))
 	}
 	f.writePage(w, r, page)
+}
+
+// commitCheckRuns serves a commit's check runs a page at a time, wrapped the
+// way GitHub wraps them, with the same Link header every listing carries.
+func (f *gitHubFake) commitCheckRuns(w http.ResponseWriter, r *http.Request, sha string) {
+	f.mu.Lock()
+	runs := slices.Clone(f.checkRuns[sha])
+	f.mu.Unlock()
+	page := 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			page = n
+		}
+	}
+	start := min((page-1)*f.pageSize, len(runs))
+	end := min(start+f.pageSize, len(runs))
+	if end < len(runs) {
+		next := *r.URL
+		query := next.Query()
+		query.Set("page", strconv.Itoa(page+1))
+		next.RawQuery = query.Encode()
+		next.Scheme, next.Host = "http", r.Host
+		w.Header().Set("Link", `<`+next.String()+`>; rel="next"`)
+	}
+	slice := runs[start:end]
+	if slice == nil {
+		slice = []ghCheckRun{}
+	}
+	f.writeJSON(w, r, ghCheckRuns{CheckRuns: slice})
 }
 
 // commitStatuses serves a commit's status history, newest first.

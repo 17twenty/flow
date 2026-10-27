@@ -193,6 +193,7 @@ func liveCheckIDs() []string {
 		engine.CheckLivePRsGated,
 		engine.CheckLivePRsConventional,
 		engine.CheckLivePRsReviewed,
+		engine.CheckLiveTrunkBuilt,
 		engine.CheckLivePRsCurrent,
 		engine.CheckLiveDeploysRecent,
 		engine.CheckLiveDeploysLag,
@@ -264,7 +265,9 @@ func TestTheLiveAuditIsRegisteredAsSpecSixDescribesIt(t *testing.T) {
 // were fine" would be unreadable on the dashboard that is the whole point of
 // the daily run.
 func TestAQuietFortnightIsNotIllHealth(t *testing.T) {
-	env, _ := liveEnv(t, liveConfig(), coretest.ForgeFixture{})
+	cfg := liveConfig()
+	cfg.Forge.RequiredChecks = []string{"test"} // so live.trunk.built has something to say about silence too
+	env, _ := liveEnv(t, cfg, coretest.ForgeFixture{})
 	answered := 0
 	for _, id := range liveCheckIDs() {
 		result := liveResult(t, env, id)
