@@ -93,7 +93,9 @@ func TestEveryCapabilityFlowCanNeverSetSaysHowAPersonDoes(t *testing.T) {
 	want := []string{
 		"deploys deploy_records",
 		"gitea squash_text",
+		"gitea update_branch", // flow does not update branches there yet (issue #234)
 		"github-projects project",
+		"gitlab update_branch", // nor there: GitLab's API rebases, which rewrites the branch
 		"jira-cloud project",
 		"jira-cloud status_options",
 		"jira-cloud status_categories",
