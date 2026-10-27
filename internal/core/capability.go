@@ -69,6 +69,12 @@ type Capability struct {
 	// Hazards are the ways using this API can hurt, for humans to read before
 	// they approve a plan.
 	Hazards []string `yaml:"hazards,omitempty"`
+	// FoldCase is whether the provider reads two names in this set that
+	// differ only in case as one name — a column flow moves to by a folded
+	// name is the column it must plan against. It is the adapter's answer
+	// about its own set: a required status context and a file path are
+	// case-sensitive to the forge, and a board's columns are not to flow.
+	FoldCase bool `yaml:"fold_case,omitempty"`
 	// Notes is what the research found, in prose.
 	Notes string `yaml:"notes,omitempty"`
 	// ByHand is how a person makes this true when flow may not. It is

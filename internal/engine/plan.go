@@ -200,11 +200,11 @@ var readOnly = core.Capability{Verify: true, Remediation: core.RemediationFollow
 // item plans one desired item.
 func (in PlanInput) item(wanted DesiredItem) PlanItem {
 	observation := in.Observations[wanted.ID]
-	changes := in.changes(wanted, observation)
 	declared := readOnly
 	if wanted.Capability != "" {
 		declared = in.Providers[wanted.Target].Capabilities.Capability(wanted.Capability)
 	}
+	changes := in.changes(wanted, declared, observation)
 
 	resolution := Resolve(Difference{
 		Capability: wanted.Capability,
@@ -278,15 +278,21 @@ func (in PlanInput) recipe(declared core.Capability, changes []core.Change) core
 // so an observed item matches when it says everything the desired one says,
 // not when it says exactly the same things ([core.Item.Matches]).
 //
+// Whether two names are one name is the provider's question about that set,
+// so the declaration answers it ([core.Capability.FoldCase]). A thing found
+// under another case is the thing, and the change renames it in place —
+// keeping its identifier, so whatever points at it follows — rather than
+// adding a second one beside it.
+//
 // A resolve item has no contents: the work is finding it, which doctor does
 // (spec 07 §3), so there is nothing here to change.
-func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []core.Change {
+func (in PlanInput) changes(wanted DesiredItem, declared core.Capability, observation core.Observation) []core.Change {
 	if wanted.Resolve {
 		return nil
 	}
 	var changes []core.Change
 	for _, want := range wanted.Items {
-		found, ok := observation.Find(want.Name)
+		found, ok := find(declared, observation, want.Name)
 		switch {
 		case !ok:
 			changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeCreate, Item: want})
@@ -300,7 +306,7 @@ func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []
 			})
 		}
 	}
-	return append(changes, in.deletions(wanted, observation)...)
+	return append(changes, in.deletions(wanted, declared, observation)...)
 }
 
 // deletions are the things the provider holds that the configuration does not
@@ -316,10 +322,13 @@ func (in PlanInput) changes(wanted DesiredItem, observation core.Observation) []
 //
 // Whether a proposed removal actually happens is `--prune`'s decision at
 // apply time; the plan's job is to say what is there.
-func (in PlanInput) deletions(wanted DesiredItem, observation core.Observation) []core.Change {
+func (in PlanInput) deletions(wanted DesiredItem, declared core.Capability, observation core.Observation) []core.Change {
 	var changes []core.Change
 	for _, found := range observation.Items {
-		if slices.ContainsFunc(wanted.Items, func(want core.Item) bool { return want.Name == found.Name }) {
+		if slices.ContainsFunc(wanted.Items, func(want core.Item) bool {
+			match, ok := find(declared, observation, want.Name)
+			return ok && match.ID == found.ID && match.Name == found.Name
+		}) {
 			continue
 		}
 		if wanted.Additive && !in.created(wanted.ID, found) {
@@ -328,6 +337,22 @@ func (in PlanInput) deletions(wanted DesiredItem, observation core.Observation) 
 		changes = append(changes, core.Change{What: wanted.ID, Op: core.ChangeDelete, Item: found})
 	}
 	return changes
+}
+
+// find is the observed thing a desired one of that name is about: the one of
+// exactly that name, or where the provider folds case in that set, the first
+// one of that name in any case. Exact wins so that a provider already holding
+// both spellings is matched to the one the configuration wrote.
+func find(declared core.Capability, observation core.Observation, name string) (core.Item, bool) {
+	if item, ok := observation.Find(name); ok || !declared.FoldCase {
+		return item, ok
+	}
+	for _, item := range observation.Items {
+		if strings.EqualFold(item.Name, name) {
+			return item, true
+		}
+	}
+	return core.Item{}, false
 }
 
 // created reports whether the lock records this thing as flow's own doing.
