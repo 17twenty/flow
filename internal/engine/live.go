@@ -73,6 +73,7 @@ func LiveChecks(cfg *config.Config) []Check {
 		a.prsConventional(),
 		a.prsReviewed(),
 		a.trunkBuilt(),
+		a.prsCurrent(),
 	}, a.deployChecks()...)
 	checks = append(checks, a.ticketChecks()...)
 	checks = append(checks, a.transitionChecks(cfg)...)

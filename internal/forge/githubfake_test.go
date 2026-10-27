@@ -42,6 +42,9 @@ type gitHubFake struct {
 	// checkRuns are the check runs reported against each commit, which GitHub
 	// serves wrapped in an object rather than as a bare page.
 	checkRuns map[string][]ghCheckRun
+	// updated records each "Update branch": the pull request and the head
+	// it was asked to expect.
+	updated map[string]string
 	// comments are the comments on each issue, in the order they were
 	// written, and nextID is the identity the next one gets.
 	comments map[int][]ghComment
@@ -294,6 +297,18 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.editPull(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 2:
 		f.pull(w, r, segments[1])
+	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "update-branch" && r.Method == http.MethodPut:
+		var body struct {
+			ExpectedHeadSHA string `json:"expected_head_sha"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		if f.updated == nil {
+			f.updated = map[string]string{}
+		}
+		f.updated[segments[1]] = body.ExpectedHeadSHA
+		f.mu.Unlock()
+		f.write(w, r, http.StatusAccepted, []byte(`{"message":"Updating pull request branch."}`), "application/json")
 	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "reviews":
 		f.reviews(w, r, segments[1])
 	case segments[0] == "pulls" && len(segments) == 3 && segments[2] == "files":

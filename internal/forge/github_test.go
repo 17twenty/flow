@@ -1079,6 +1079,21 @@ func TestGitHubReadsTheCheckRunsOnACommit(t *testing.T) {
 	var _ core.CheckRunReader = adapter
 }
 
+// "Update branch" is asked for at the head flow judged, so GitHub refuses it
+// if somebody pushed in between (issue #234).
+func TestGitHubUpdatesABranchAtTheHeadItWasGiven(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	if err := adapter.UpdateBranch(t.Context(), 7, "abc123"); err != nil {
+		t.Fatalf("UpdateBranch: %v", err)
+	}
+	if got := fake.updated["7"]; got != "abc123" {
+		t.Errorf("GitHub was asked to expect %q, want abc123", got)
+	}
+	var _ core.BranchUpdater = adapter
+}
+
 func TestGitHubLeavesAStatusWithNoIdentityWithout(t *testing.T) {
 	if got := (ghStatus{ID: 4321, Context: "ci/deploy"}).toCommitStatus().ID; got != "4321" {
 		t.Errorf("the identity is %q, want the provider's own", got)

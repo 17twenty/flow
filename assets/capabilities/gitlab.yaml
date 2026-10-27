@@ -170,6 +170,22 @@ capabilities:
         - >-
           Or give flow a credential with the Developer role on {{repo}} and it
           will propose the file on the next `flow apply`.
+  update_branch:
+    set: false
+    verify: false
+    remediation: follow_up
+    notes: "flow does not bring branches up to date on this forge yet (issue #234)."
+    by_hand:
+      what: >-
+        Bringing a pull request on {{repo}} up to date with its base, which a
+        trunk that requires branches to be up to date asks of every pull
+        request after each merge.
+      where: >-
+        The pull request's own page, or a merge of the base branch into it.
+      steps:
+        - >-
+          Merge the base branch into each pull request that is ready to land
+          and behind, or rebase it, and push.
   pr_comments:
     set: true
     verify: true
