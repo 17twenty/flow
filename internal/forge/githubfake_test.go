@@ -43,8 +43,9 @@ type gitHubFake struct {
 	// serves wrapped in an object rather than as a bare page.
 	checkRuns map[string][]ghCheckRun
 	// updated records each "Update branch": the pull request and the head
-	// it was asked to expect.
-	updated map[string]string
+	// it was asked to expect. updateConflict makes every one a 422.
+	updated        map[string]string
+	updateConflict bool
 	// comments are the comments on each issue, in the order they were
 	// written, and nextID is the identity the next one gets.
 	comments map[int][]ghComment
@@ -302,6 +303,10 @@ func (f *gitHubFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ExpectedHeadSHA string `json:"expected_head_sha"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if f.updateConflict {
+			f.fail(w, http.StatusUnprocessableEntity, "merge conflict between base and head")
+			return
+		}
 		f.mu.Lock()
 		if f.updated == nil {
 			f.updated = map[string]string{}

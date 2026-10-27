@@ -17,10 +17,14 @@ import (
 // updatingForge is the reference forge with the "Update branch" button.
 type updatingForge struct {
 	*coretest.FakeForge
-	updated map[int]string
+	updated  map[int]string
+	conflict bool
 }
 
 func (f *updatingForge) UpdateBranch(_ context.Context, number int, headSHA string) error {
+	if f.conflict {
+		return core.Errorf(core.ErrConflict, "bring #%d up to date", number).WithWhy("merge conflict between base and head")
+	}
 	f.updated[number] = headSHA
 	return nil
 }
@@ -105,7 +109,29 @@ func TestAForgeThatCannotUpdateGetsTheButton(t *testing.T) {
 	result, _ := currentResult(t, true, false, coretest.ForgeFixture{PullRequests: []core.PullRequest{ready}, Statuses: passed(ready)})
 
 	wantState(t, result, engine.StateWarn)
-	if result.Remediation.Kind != engine.RemedyManual || !strings.Contains(strings.Join(result.Remediation.Steps, " "), "auth.forge") {
+	steps := strings.Join(result.Remediation.Steps, " ")
+	if result.Remediation.Kind != engine.RemedyManual || !strings.Contains(steps, "auth.forge") {
 		t.Errorf("the remedy is %+v, want a person's steps", result.Remediation)
+	}
+	if strings.Contains(steps, "{{") {
+		t.Errorf("the steps carry an unfilled placeholder: %s", steps)
+	}
+}
+
+// A pull request reported behind can turn out to conflict when the forge is
+// asked to merge the base in. That is somebody's to resolve: it is named as
+// a conflict, with a remedy a person can follow, and it warns rather than
+// failing sync's hourly run.
+func TestAConflictFoundWhileUpdatingIsSomebodysToResolve(t *testing.T) {
+	ready := readyAndBehind(1, "feat(api): clashes after all")
+	env, forge := liveEnv(t, liveConfig(), coretest.ForgeFixture{PullRequests: []core.PullRequest{ready}, Statuses: passed(ready)})
+	env.Fix = true
+	env.Adapters.Forge = &updatingForge{FakeForge: forge, updated: map[int]string{}, conflict: true}
+
+	result := liveResult(t, env, engine.CheckLivePRsCurrent)
+	wantState(t, result, engine.StateWarn)
+	evidenceMentions(t, result, "conflicts with")
+	if strings.Contains(strings.Join(result.Remediation.Steps, " "), "Update branch") {
+		t.Errorf("the remedy tells a person to press a button that cannot resolve a conflict: %+v", result.Remediation)
 	}
 }
