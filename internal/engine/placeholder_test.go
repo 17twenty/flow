@@ -423,45 +423,62 @@ func TestTheLockSurvivesATrackerThatWouldNotAnswer(t *testing.T) {
 	}
 }
 
-// TestALockedBoardThatIsGoneIsNotTheAnswer: the other side of reading back.
-// When the tracker answers and the board is not among what it has, the
-// identifier has stopped being true and resolution starts again.
-func TestALockedBoardThatIsGoneIsNotTheAnswer(t *testing.T) {
+// TestALockedBoardTheTrackerDoesNotShowIsKept is issue #261. A tracker that
+// says it has no such board may only mean "not to you": GitHub answers the
+// same for a deleted board and for one never shared with this credential. A
+// daily run on such a credential took the one other board it could see —
+// another repository's — and would have remediated it. The lock is kept, no
+// other board is offered, and the question is a person's.
+func TestALockedBoardTheTrackerDoesNotShowIsKept(t *testing.T) {
 	t.Parallel()
 
-	lock := config.NewLock("v0.3.0")
-	lock.Resolve(core.ItemTrackerProject, "PVT_DELETED")
+	only := core.Candidate{ID: "PVT_1", Name: "Somebody else's", URL: "https://tracker.test/projects/1"}
+	for name, tracker := range map[string]*coretest.FakeTracker{
+		"one other board":  resolveTracker(t, only),
+		"two other boards": resolveTracker(t),
+	} {
+		t.Run(name, func(t *testing.T) {
+			lock := config.NewLock("v0.3.0")
+			lock.Resolve(core.ItemTrackerProject, "PVT_HIDDEN")
 
-	answers, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t), Lock: lock, Fix: true})
+			answers, after := resolve(t, engine.ResolveInput{Tracker: tracker, Lock: lock, Fix: true})
 
-	got := answer(t, answers, core.ItemTrackerProject)
-	if got.How != engine.HowAsked {
-		t.Fatalf("how = %q, want the ladder to have started again", got.How)
-	}
-	if len(got.Candidates) != 2 {
-		t.Errorf("candidates = %v, want what the tracker does have", got.Candidates)
+			got := answer(t, answers, core.ItemTrackerProject)
+			if got.Resolved() || got.Unseen != "PVT_HIDDEN" || len(got.Candidates) != 0 {
+				t.Fatalf("answer = %+v, want the locked board unseen, nothing taken and nothing offered", got)
+			}
+			if after.Resolved[core.ItemTrackerProject] != "PVT_HIDDEN" {
+				t.Errorf("lock resolved = %v, want it left alone", after.Resolved)
+			}
+			result := got.Result()
+			if result.State != engine.StateInput || !strings.Contains(result.Message, "PVT_HIDDEN") ||
+				!strings.Contains(result.Remediation.Command, "--set "+core.ItemTrackerProject) {
+				t.Errorf("result = %+v, want a question naming the locked board and how to name another", result)
+			}
+		})
 	}
 }
 
-// TestADeletedBoardWithOneReplacementIsTakenStraightAway: having already
-// asked the tracker what it has, resolution does not ask again.
-func TestADeletedBoardWithOneReplacementIsTakenStraightAway(t *testing.T) {
+// TestALockedBoardTheTrackerDoesNotShowCanBeReplacedByAPerson: the way out
+// of the question above is a person naming the board, and the lock does not
+// stand in their way.
+func TestALockedBoardTheTrackerDoesNotShowCanBeReplacedByAPerson(t *testing.T) {
 	t.Parallel()
 
 	lock := config.NewLock("v0.3.0")
 	lock.Resolve(core.ItemTrackerProject, "PVT_DELETED")
-	only := core.Candidate{ID: "PVT_1", Name: "Delivery", URL: "https://tracker.test/projects/1"}
 
 	answers, after := resolve(t, engine.ResolveInput{
-		Tracker: resolveTracker(t, only), Lock: lock, Fix: true,
+		Tracker: resolveTracker(t), Lock: lock, Fix: true,
+		Set: map[string]string{core.ItemTrackerProject: "PVT_1"},
 	})
 
 	got := answer(t, answers, core.ItemTrackerProject)
-	if got.How != engine.HowDiscovered || got.Ref.ID != "PVT_1" {
-		t.Fatalf("how = %q, ref = %+v, want the one board that is left", got.How, got.Ref)
+	if got.How != engine.HowSet || got.Ref.ID != "PVT_1" {
+		t.Fatalf("how = %q, ref = %+v, want the board the person named", got.How, got.Ref)
 	}
 	if after.Resolved[core.ItemTrackerProject] != "PVT_1" {
-		t.Errorf("lock resolved = %v, want the replacement", after.Resolved)
+		t.Errorf("lock resolved = %v, want the board the person named", after.Resolved)
 	}
 }
 
