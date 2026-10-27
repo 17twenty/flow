@@ -302,8 +302,8 @@ func TestDesiredFiles(t *testing.T) {
 	if !found {
 		t.Fatal("the CI workflow is not proposed")
 	}
-	if got := workflow.Field(engine.FieldRuns); got != "flow check pr" {
-		t.Errorf("the workflow must run %q; done_on is merged, so there is no deploy to check", got)
+	if got := workflow.Field(engine.FieldRuns); got != "flow check pr, flow sync" {
+		t.Errorf("the workflow must run the gate and sync (spec 20 §3), and no deploy check while done_on is merged; it runs %q", got)
 	}
 	for _, file := range item.Files {
 		if len(file.Content) == 0 {
