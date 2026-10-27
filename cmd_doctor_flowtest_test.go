@@ -528,7 +528,7 @@ func TestDoctorReportsABrokenConfigurationRatherThanRefusingToStart(t *testing.T
 	t.Run("semantics", func(t *testing.T) {
 		dir, _ := gateRepo(t, func(*fakeWorld) {})
 		source := configOf(t, dir)
-		broken := strings.Replace(source, "{ to: done,        owner: native }", "{ to: shipped,     owner: native }", 1)
+		broken := strings.Replace(source, "{ to: done,        owner: flow   }", "{ to: shipped,     owner: flow   }", 1)
 		if broken == source {
 			t.Fatal("the preset no longer has the transition this test breaks")
 		}

@@ -25,8 +25,8 @@ workflow:
   transitions:
     pr_opened_draft:     { to: in_progress, owner: flow }
     pr_ready_for_review: { to: in_review,   owner: flow }
-    pr_merged:           { to: done,        owner: native }
-    issue_closed:        { to: done,        owner: native }
+    pr_merged:           { to: done,        owner: flow }     # flow sync catches it up; the Project's own workflow may beat it there (spec 20 §4)
+    issue_closed:        { to: done,        owner: flow }
   expedite: { labels: [incident], max: 1 }
   blocked:  { label: blocked, require_comment: true }
 definition_of_ready: { rules: [acceptance_criteria, parent_link, not_blocked] }
