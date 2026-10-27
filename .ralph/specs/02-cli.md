@@ -55,8 +55,10 @@ Setup checks + live-health audit (spec 07).
 
 ### `flow sync`
 The catch-ups flow owns, and nothing else (spec 20 §2): the transitions the
-configuration gives flow (`live.transitions.flow`) and the issues a merged pull
-request names and the forge left open (`live.prs.closed_issues`), performed as
+configuration gives flow (`live.transitions.flow`), the issues a merged pull
+request names and the forge left open (`live.prs.closed_issues`), and pull
+requests that passed the gate and are only behind the trunk
+(`live.prs.current`), performed as
 `flow doctor --fix` would perform them. `--window <dur>` (default 48h). Makes
 no plan, publishes no health report, proposes no lock and files no follow-up.
 Runs after the gate, hourly and on push to the trunk (spec 20 §3). Exit 0 all
