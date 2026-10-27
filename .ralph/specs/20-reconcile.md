@@ -136,10 +136,13 @@ whatever toolchain the runner has.
 | `gate` | `flow/policy` and its comment | reader + gate |
 | `automate` (default) | everything this set of specs describes | all three |
 
-`flow init --mode observe` writes a workflow with only the daily health job,
-so an existing repository and board can see their report the same day,
-before anybody grants flow a write. Raising the mode is a one-line change the
-gate judges like any other.
+The workflow is the same in every mode: the mode in `.flow.yaml` governs what
+each command writes, so `flow init --mode observe` gives an existing
+repository and board their report the same day, before anybody grants flow a
+write, and raising the mode is a one-line change the gate judges like any
+other. Below automate, `apply` refuses, `doctor` ignores `--fix`, `check
+deploy` and `sync` change nothing, and `check pr` posts only what the mode
+allows.
 
 ## 9. Order of work
 

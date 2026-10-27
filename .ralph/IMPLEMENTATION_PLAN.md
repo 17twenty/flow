@@ -501,7 +501,7 @@ Human-only steps use ids `H.<n>` (never seeded).
   - AC: a GitLab CI template and a Forgejo/Gitea Actions template ship beside GitHub's
 - [ ] 9.9 `mode: observe | gate | automate` — specs: 20 §8, 03 — deps: 9.1 (#219)
   - AC: observe writes nothing anywhere and needs only a reader; gate writes only the status and its comment
-  - AC: `flow init --mode observe` writes a workflow with only the health job
+  - AC: `flow init --mode observe` writes the mode; the workflow is the same in every mode
 - [ ] 9.10 Specs agree with themselves — specs: 02, 03, 07 — deps: — (#220)
   - AC: one attestation lifetime in specs 02, 03, 07 and the cookbook
   - AC: spec 03's rule for `owner: native` matches what `config.semantics` accepts
