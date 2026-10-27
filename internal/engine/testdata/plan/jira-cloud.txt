@@ -27,14 +27,6 @@ deploys  forge_deployments
     flow cannot see this through the API, so a person has to confirm it
     create "changes_requested" to="In progress"
 
-✎ attest → flow attest tracker.native.pr_merged  tracker.native.pr_merged (native_transition_pr_merged)
-    flow cannot see this through the API, so a person has to confirm it
-    create "pr_merged" to="Done"
-
-✗ unsupported  tracker.native.issue_closed (native_transition_issue_closed)
-    the provider offers no way to do this and nothing else makes up for it
-    create "issue_closed" to="Done"
-
 ↻ compensated → policy.wip  tracker.wip (wip_limits)
     the provider cannot be made to do this, so flow enforces the same intent through policy.wip
     update "In review" limit="3"
@@ -71,4 +63,4 @@ deploys  forge_deployments
 · up to date  deploys.records (deploy_records)
     the provider already matches what was asked for
 
-15 items · 3 up to date · 5 native · 1 compensated · 1 follow-up · 4 attest · 1 unsupported
+13 items · 3 up to date · 5 native · 1 compensated · 1 follow-up · 3 attest

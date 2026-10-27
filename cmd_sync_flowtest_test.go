@@ -92,3 +92,24 @@ func TestSyncLooksOnlyAsFarBackAsItsWindow(t *testing.T) {
 		t.Error("a wider window did not reach the merge it covers")
 	}
 }
+
+// The merge transitions are flow's in the shipped preset (spec 20 §4), so a
+// merge whose card the tracker never moved is moved by the next sync — no
+// automation of the tracker's to attest, and nothing for a person to do.
+func TestSyncMovesTheCardAMergeLeftBehind(t *testing.T) {
+	dir, world := gateRepo(t, mergedAndLeftOpen(time.Now().Add(-3*time.Hour)))
+
+	if code, _, stderr := execAt(t, dir, "sync"); code != core.ExitOK {
+		t.Fatalf("sync exited %d: %s", code, stderr)
+	}
+	ticket, err := world().tracker.Ticket(t.Context(), "#42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Status.Name != "Done" {
+		t.Errorf("#42 is in %q after sync, want Done: pr_merged is flow's in the preset", ticket.Status.Name)
+	}
+	if !ticket.Closed {
+		t.Error("#42 was moved and left open: both catch-ups belong to one run")
+	}
+}

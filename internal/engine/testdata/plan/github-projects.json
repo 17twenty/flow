@@ -130,56 +130,6 @@
       ]
     },
     {
-      "id": "tracker.native.pr_merged",
-      "target": "tracker",
-      "capability": "native_transition_pr_merged",
-      "depends_on": [
-        "tracker.status_options"
-      ],
-      "outcome": "noop",
-      "why": "flow cannot verify this, and a human has attested that it is true",
-      "exists": false,
-      "desired_hash": "sha256:9d852996510565fd17bb56be6211a4b5c50bdf73fec43f0afecb3e4898995fcf",
-      "observed_hash": "sha256:1a94aaffc11714aac617db2377fe2b926e0d4b0c23dbb0963805ba3a7ef7b3f8",
-      "changes": [
-        {
-          "what": "tracker.native.pr_merged",
-          "op": "create",
-          "item": {
-            "name": "pr_merged",
-            "fields": {
-              "to": "Done"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "tracker.native.issue_closed",
-      "target": "tracker",
-      "capability": "native_transition_issue_closed",
-      "depends_on": [
-        "tracker.status_options"
-      ],
-      "outcome": "attest",
-      "why": "flow cannot see this through the API, so a person has to confirm it",
-      "exists": false,
-      "desired_hash": "sha256:70fe74302f12604db03e4dfc1e95dd91afe6a9987e0f704fa1b75a2e0ae3ec98",
-      "observed_hash": "sha256:e5f9d99cb3a0294315daf3d2db07d90271dbe2ef3826ff9083c129d5597d4c16",
-      "changes": [
-        {
-          "what": "tracker.native.issue_closed",
-          "op": "create",
-          "item": {
-            "name": "issue_closed",
-            "fields": {
-              "to": "Done"
-            }
-          }
-        }
-      ]
-    },
-    {
       "id": "tracker.wip",
       "target": "tracker",
       "capability": "wip_limits",
