@@ -760,6 +760,50 @@ func TestProtectionACredentialCannotReadIsNotCalledUndone(t *testing.T) {
 	wantState(t, result, engine.StateWarn)
 }
 
+// Protection kept where only an admin can read it is a change for apply to
+// make even when it says everything asked of it (issue #258): left there, a
+// run on any other credential can never see it. Where it says something flow
+// could not carry, it is no change at all — a warning naming what is in the
+// way, because only a person can move it.
+func TestProtectionOnlyAnAdminCanReadIsMovedUnlessItCannotBe(t *testing.T) {
+	planned := func(adminOnly bool, immovable ...string) engine.Plan {
+		w := githubProjectsWorld(t)
+		fx := forgeFixture(t)
+		protection := fx.Protections["main"]
+		protection.RequireLinearHistory, protection.StrictChecks = true, true
+		protection.AdminOnly, protection.Immovable = adminOnly, immovable
+		fx.Protections["main"] = protection
+		w.forge = coretest.NewFakeForge(fx)
+		return planFor(t, w)
+	}
+	if plain, _ := planned(false).Find(core.ItemForgeProtection); plain.Outcome != engine.OutcomeNoop {
+		t.Fatalf("forge.protection plans as %s %+v where anybody can read it, want noop for this test to mean anything", plain.Outcome, plain.Changes)
+	}
+
+	item, _ := planned(true).Find(core.ItemForgeProtection)
+	if item.Outcome != engine.OutcomeNative || len(item.Changes) != 1 || item.Changes[0].Op != core.ChangeUpdate {
+		t.Fatalf("admin-only protection plans as %s %+v, want one update", item.Outcome, item.Changes)
+	}
+	if got := item.Changes[0].Item.Field(engine.FieldAdminOnly); got != "false" {
+		t.Errorf("the update asks for admin_only=%q, want false", got)
+	}
+	if !slices.ContainsFunc(item.Notes, func(n core.Note) bool { return !n.Unverified && strings.Contains(n.Fix, "flow apply moves it") }) {
+		t.Errorf("the plan does not say why it would move the protection: %+v", item.Notes)
+	}
+
+	stuck := planned(true, "who may push")
+	item, _ = stuck.Find(core.ItemForgeProtection)
+	if item.Outcome != engine.OutcomeNoop {
+		t.Errorf("protection flow cannot move plans as %s %+v, want noop", item.Outcome, item.Changes)
+	}
+	if !slices.ContainsFunc(item.Notes, func(n core.Note) bool { return n.Unverified && strings.Contains(n.Text, "who may push") }) {
+		t.Errorf("the plan does not say what is in the way: %+v", item.Notes)
+	}
+	env := setupEnv(t, preset(t, config.PresetLeanKanban))
+	env.Plan = stuck
+	wantState(t, setupResult(t, engine.SetupInput{Config: env.Config}, env, core.ItemForgeProtection), engine.StateWarn)
+}
+
 // A rule the forge holds for the trunk and does not enforce is a fact about
 // the repository, not a difference flow would act on. It has to reach the
 // report, because it is the difference between "somebody has to write this"

@@ -652,8 +652,13 @@ const FlowRuleset = "flow: trunk protection"
 // branch, but answers 404 — the same as "not protected" — to a non-admin
 // reading classic protection. A daily run on a non-admin credential could
 // then never see what an admin's apply had set, and reopened the follow-ups
-// that apply had verified and closed. Classic protection already on a branch
-// is left exactly as it is.
+// that apply had verified and closed.
+//
+// Classic protection already on the branch is moved into the ruleset and
+// then removed, ruleset first so that the branch is never unprotected
+// (issue #258). Where it does not enforce its rules on admins, the ruleset
+// lets admins past, so the move makes nothing stricter. Where it says
+// something the ruleset would not carry, it is left exactly as it is.
 func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Protection) error {
 	switch {
 	case branch == "":
@@ -672,7 +677,8 @@ func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Pro
 	if err != nil {
 		return err
 	}
-	if sameProtection(effective, effective.Merge(want)) {
+	move := effective.AdminOnly && len(effective.Immovable) == 0
+	if sameProtection(effective, effective.Merge(want)) && !move {
 		return nil
 	}
 	held, found, err := g.flowRuleset(ctx, branch)
@@ -686,6 +692,17 @@ func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Pro
 	body := ghRulesetRequest{Name: FlowRuleset, Target: "branch", Enforcement: ghEnforcementActive}
 	body.Conditions.RefName.Include = []string{"refs/heads/" + branch}
 	body.Conditions.RefName.Exclude = []string{}
+	body.BypassActors = held.BypassActors
+	if move {
+		classic, _, err := g.classicProtection(ctx, branch)
+		if err != nil {
+			return err
+		}
+		base = base.Merge(classic)
+		if !classic.EnforceAdmins && !slices.Contains(body.BypassActors, ghAdminsBypass) {
+			body.BypassActors = append(body.BypassActors, ghAdminsBypass)
+		}
+	}
 	body.Rules = protectionToRules(base.Merge(want))
 	req := core.Request{Method: http.MethodPost, Path: g.path("rulesets"), Body: body}
 	if found {
@@ -699,6 +716,13 @@ func (g *GitHub) SetProtection(ctx context.Context, branch string, want core.Pro
 	}
 	if _, err := g.do(ctx, req); err != nil {
 		return core.Explain(err, "protect %s of %s", branch, g.Slug())
+	}
+	if !move {
+		return nil
+	}
+	remove := core.Request{Method: http.MethodDelete, Path: g.path("branches", branch, "protection"), Retry: core.RetryAlways}
+	if _, err := g.do(ctx, remove); err != nil && !errors.Is(err, core.ErrNotFound) {
+		return core.Explain(err, "remove the classic protection of %s on %s, now that its ruleset holds it", branch, g.Slug())
 	}
 	return nil
 }
@@ -748,6 +772,8 @@ func sameProtection(a, b core.Protection) bool {
 		a.AllowForcePush == b.AllowForcePush &&
 		a.AllowDeletions == b.AllowDeletions &&
 		a.Unreadable == b.Unreadable &&
+		a.AdminOnly == b.AdminOnly &&
+		slices.Equal(a.Immovable, b.Immovable) &&
 		slices.Equal(a.Dormant, b.Dormant)
 }
 

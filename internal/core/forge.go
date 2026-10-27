@@ -127,6 +127,16 @@ type Protection struct {
 	// not read in full: only Enabled and RequiredChecks are known, and the
 	// other fields say nothing (issue #255).
 	Unreadable bool
+	// AdminOnly says some of the protection is kept where only an
+	// administrator may read it — GitHub's classic branch protection — so a
+	// run on any other credential cannot see it (issue #258). Read by an
+	// admin, it is a thing flow can move; read by anybody else it is
+	// Unreadable instead.
+	AdminOnly bool
+	// Immovable names what in the admin-only protection flow has no way to
+	// carry anywhere else, so moving it would lose it. Empty when it can all
+	// be moved.
+	Immovable []string
 	// Dormant are rules the forge holds for this branch that are not in
 	// force. Nothing in one is enforced, so none of it is protection — but
 	// the difference between "somebody has to write this" and "somebody has

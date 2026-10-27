@@ -114,6 +114,9 @@ type gitHubFake struct {
 	// classicHidden answers 404 for classic protection that is there, as
 	// GitHub does to a credential that is not an admin.
 	classicHidden bool
+	// classicExtra is what classic protection says beyond the fields
+	// [core.Protection] names, served beside them.
+	classicExtra map[string]any
 	// forkedAt is the trunk commit each branch last took in, and
 	// mergeConflict makes merging the trunk into a branch a 409.
 	forkedAt      map[string]string
@@ -722,7 +725,19 @@ func (f *gitHubFake) protection(w http.ResponseWriter, r *http.Request, branch s
 			f.fail(w, http.StatusNotFound, "Branch not protected")
 			return
 		}
-		f.writeJSON(w, r, ghProtectionJSON(protection))
+		doc := ghProtectionJSON(protection)
+		maps.Copy(doc, f.classicExtra)
+		f.writeJSON(w, r, doc)
+	case http.MethodDelete:
+		f.mu.Lock()
+		_, ok := f.protections[branch]
+		delete(f.protections, branch)
+		f.mu.Unlock()
+		if !ok {
+			f.fail(w, http.StatusNotFound, "Branch not protected")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPut:
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -787,6 +802,7 @@ type ghFakeRuleset struct {
 	include     []string
 	exclude     []string
 	rules       []any
+	bypass      []any
 }
 
 // addRuleset writes a ruleset on the repository without putting anything in
@@ -814,7 +830,8 @@ func (f *gitHubFake) writeRuleset(w http.ResponseWriter, r *http.Request, id int
 				Exclude []string `json:"exclude"`
 			} `json:"ref_name"`
 		} `json:"conditions"`
-		Rules []any `json:"rules"`
+		Rules  []any `json:"rules"`
+		Bypass []any `json:"bypass_actors"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		f.fail(w, http.StatusUnprocessableEntity, "the ruleset did not decode")
@@ -823,7 +840,8 @@ func (f *gitHubFake) writeRuleset(w http.ResponseWriter, r *http.Request, id int
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	ruleset := ghFakeRuleset{name: body.Name, target: body.Target, enforcement: body.Enforcement,
-		include: body.Conditions.RefName.Include, exclude: body.Conditions.RefName.Exclude, rules: body.Rules}
+		include: body.Conditions.RefName.Include, exclude: body.Conditions.RefName.Exclude, rules: body.Rules,
+		bypass: body.Bypass}
 	switch {
 	case id == 0:
 		f.nextRuleset++
@@ -911,7 +929,8 @@ func (f *gitHubFake) ruleset(w http.ResponseWriter, r *http.Request, raw string)
 		"conditions": map[string]any{
 			"ref_name": map[string]any{"include": include, "exclude": exclude},
 		},
-		"rules": found.rules,
+		"rules":         found.rules,
+		"bypass_actors": found.bypass,
 		"_links": map[string]any{
 			"html": map[string]any{
 				"href": "https://github.com/" + f.fx.Repo.Owner + "/" + f.fx.Repo.Name + "/rules/" + raw,

@@ -44,6 +44,7 @@ const (
 	FieldAllowDeletions       = "allow_deletions"
 	FieldRequireLinearHistory = "require_linear_history"
 	FieldStrictChecks         = "strict_checks"
+	FieldAdminOnly            = "admin_only"
 )
 
 // Merge settings fields, named after [core.MergeSettings]'s members.
@@ -410,6 +411,9 @@ func forgeProtection(cfg *config.Config) DesiredItem {
 		FieldAllowForcePush: "false",
 		FieldAllowDeletions: "false",
 		FieldStrictChecks:   strconv.FormatBool(len(requiredContexts(cfg)) > 0),
+		// Kept where every credential flow runs on can read it, or a run
+		// on one that is not an admin cannot tell it is there (#258).
+		FieldAdminOnly: "false",
 	}
 	if cfg.Commits.MergeStrategy != "" && cfg.Commits.MergeStrategy != config.MergeCommit {
 		fields[FieldRequireLinearHistory] = "true"

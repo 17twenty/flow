@@ -2,6 +2,7 @@ package forge
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -607,7 +608,7 @@ func TestGitHubKeepsTheProtectionItWasNotAskedAbout(t *testing.T) {
 		DismissStaleReviews: true,
 		EnforceAdmins:       true,
 	}
-	_, srv := newGitHubServer(t, fx)
+	fake, srv := newGitHubServer(t, fx)
 	adapter := newGitHubAdapter(t, srv, fx, nil)
 
 	want := core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}, RequireLinearHistory: true}
@@ -621,8 +622,13 @@ func TestGitHubKeepsTheProtectionItWasNotAskedAbout(t *testing.T) {
 	if !after.RequiresCheck("ci/test") || !after.RequiresCheck("flow/policy") {
 		t.Errorf("RequiredChecks = %v, want both: GitHub's PUT replaces, so the adapter merges", after.RequiredChecks)
 	}
-	if after.RequiredApprovals != 2 || !after.DismissStaleReviews || !after.EnforceAdmins {
+	if after.RequiredApprovals != 2 || !after.DismissStaleReviews {
 		t.Errorf("protection = %+v, want the settings flow never mentioned kept", after)
+	}
+	// Enforced on admins, the classic protection moved into a ruleset that
+	// lets nobody past.
+	if held := flowRulesetOf(t, fake); len(held.bypass) != 0 {
+		t.Errorf("the ruleset lets %v past, want nobody: the classic protection held admins to it", held.bypass)
 	}
 	if !after.RequireLinearHistory {
 		t.Error("SetProtection did not apply what it was asked for")
@@ -822,6 +828,10 @@ func TestGitHubProtectsNothingTheBranchAlreadyProtects(t *testing.T) {
 			"required_status_checks": []any{map[string]any{"context": "flow/policy"}},
 		},
 	})
+	// Classic protection flow could move would be moved, which is a write
+	// for another reason; this one says something no ruleset of flow's
+	// carries, so it stays where it is.
+	fake.classicExtra = signedCommits
 	adapter := newGitHubAdapter(t, srv, fx, nil)
 
 	want := core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy", "ci/test"}}
@@ -847,6 +857,7 @@ func TestGitHubDoesNotRewriteProtectionOverARuleNobodyEnabled(t *testing.T) {
 		enforcement: "disabled",
 		include:     []string{ghRefDefaultBranch},
 	})
+	fake.classicExtra = signedCommits
 	adapter := newGitHubAdapter(t, srv, fx, nil)
 
 	want := core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}, RequiredApprovals: 1}
@@ -864,12 +875,161 @@ func wrote(fake *gitHubFake) bool {
 	return slices.ContainsFunc(fake.Methods(), func(method string) bool { return method != http.MethodGet })
 }
 
+// signedCommits is classic protection saying something the ruleset flow
+// writes would not carry.
+var signedCommits = map[string]any{"required_signatures": map[string]any{"enabled": true}}
+
+// flowRulesetOf is the ruleset flow keeps the trunk's protection in.
+func flowRulesetOf(t *testing.T, fake *gitHubFake) ghFakeRuleset {
+	t.Helper()
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, held := range fake.rulesets {
+		if held.name == FlowRuleset {
+			return held
+		}
+	}
+	t.Fatalf("there is no ruleset %q: %+v", FlowRuleset, fake.rulesets)
+	return ghFakeRuleset{}
+}
+
+// requestAt is where a request was first made, or -1.
+func requestAt(fake *gitHubFake, method, suffix string) int {
+	methods, paths := fake.Methods(), fake.Requests()
+	for i := range methods {
+		if methods[i] == method && strings.HasSuffix(paths[i], suffix) {
+			return i
+		}
+	}
+	return -1
+}
+
+// Classic protection an admin can read is moved into flow's ruleset even
+// when it already says everything asked of it (issue #258): left where it
+// is, a run on any other credential can never see it. The ruleset is written
+// before the classic protection is removed, so the branch is never
+// unprotected, and classic protection that let admins past still does.
+func TestGitHubMovesClassicProtectionIntoItsRuleset(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	before, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !before.AdminOnly || len(before.Immovable) != 0 {
+		t.Fatalf("classic protection reads as %+v, want it admin-only and movable", before)
+	}
+
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}}); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	wroteAt, removedAt := requestAt(fake, http.MethodPost, "/rulesets"), requestAt(fake, http.MethodDelete, "/branches/main/protection")
+	if wroteAt < 0 || removedAt < 0 || removedAt < wroteAt {
+		t.Fatalf("ruleset written at %d and classic protection removed at %d: want both, the ruleset first (%v %v)",
+			wroteAt, removedAt, fake.Methods(), fake.Requests())
+	}
+	admins := map[string]any{"actor_id": float64(5), "actor_type": "RepositoryRole", "bypass_mode": "always"}
+	if !slices.ContainsFunc(flowRulesetOf(t, fake).bypass, func(actor any) bool { return reflect.DeepEqual(actor, admins) }) {
+		t.Errorf("the ruleset lets %v past, want the admins the classic protection did not hold", flowRulesetOf(t, fake).bypass)
+	}
+
+	// A later change rewrites the ruleset whole, and keeps who it lets past.
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}}); err != nil {
+		t.Fatalf("SetProtection again: %v", err)
+	}
+	if requestAt(fake, http.MethodPut, "/rulesets/1") < 0 {
+		t.Fatalf("the second change did not update the ruleset: %v %v", fake.Methods(), fake.Requests())
+	}
+	if !slices.ContainsFunc(flowRulesetOf(t, fake).bypass, func(actor any) bool { return reflect.DeepEqual(actor, admins) }) {
+		t.Errorf("updating the ruleset dropped who it lets past: %v", flowRulesetOf(t, fake).bypass)
+	}
+
+	after, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if after.AdminOnly || !after.RequiresCheck("ci/test") || !after.RequiresCheck("flow/policy") || after.RequiredApprovals != 1 {
+		t.Errorf("the branch reads as %+v, want the classic protection's checks and approvals, readable by anybody", after)
+	}
+}
+
+// Every piece of classic protection flow's ruleset would not carry is named,
+// and an empty list of who may do something names nobody.
+func TestGitHubNamesWhatClassicProtectionHoldsThatItCannotCarry(t *testing.T) {
+	someone := `{"users":[{"login":"x"}],"teams":[],"apps":[]}`
+	nobody := `{"users":[],"teams":[],"apps":[]}`
+	for _, tc := range []struct{ doc, want string }{
+		{`{"restrictions":` + someone + `}`, "who may push"},
+		{`{"restrictions":` + nobody + `}`, ""},
+		{`{"required_signatures":{"enabled":true}}`, "signed commits"},
+		{`{"lock_branch":{"enabled":true}}`, "a locked branch"},
+		{`{"block_creations":{"enabled":true}}`, "blocked branch creation"},
+		{`{"allow_fork_syncing":{"enabled":true}}`, "fork syncing"},
+		{`{"required_pull_request_reviews":{"require_code_owner_reviews":true}}`, "code owner review"},
+		{`{"required_pull_request_reviews":{"require_last_push_approval":true}}`, "approval of the last push"},
+		{`{"required_pull_request_reviews":{"dismissal_restrictions":` + someone + `}}`, "who may dismiss a review"},
+		{`{"required_pull_request_reviews":{"bypass_pull_request_allowances":` + someone + `}}`, "who may skip review"},
+		{`{"required_pull_request_reviews":{"bypass_pull_request_allowances":` + nobody + `}}`, ""},
+	} {
+		t.Run(tc.doc, func(t *testing.T) {
+			var payload ghProtection
+			if err := json.Unmarshal([]byte(tc.doc), &payload); err != nil {
+				t.Fatal(err)
+			}
+			got := payload.toProtection("main").Immovable
+			if want := []string{tc.want}; tc.want == "" && len(got) != 0 || tc.want != "" && !slices.Equal(got, want) {
+				t.Errorf("Immovable = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Classic protection that says something flow's ruleset would not carry is
+// never moved: removing it would lose that (issue #258). It reads as
+// admin-only, names what is in the way, and a change flow does need still
+// lands in the ruleset beside it.
+func TestGitHubLeavesClassicProtectionItCannotCarry(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	fake.classicExtra = map[string]any{"restrictions": map[string]any{
+		"users": []any{map[string]any{"login": "release-bot"}}, "teams": []any{}, "apps": []any{},
+	}}
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+
+	got, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !got.AdminOnly || !slices.Equal(got.Immovable, []string{"who may push"}) {
+		t.Fatalf("protection = %+v, want it admin-only with who may push in the way", got)
+	}
+
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}}); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	if wrote(fake) {
+		t.Errorf("nothing was asked for that the branch lacks, and it wrote: %v %v", fake.Methods(), fake.Requests())
+	}
+
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}}); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	if requestAt(fake, http.MethodDelete, "/protection") >= 0 {
+		t.Error("classic protection naming who may push was removed")
+	}
+	if held := flowRulesetOf(t, fake); len(held.bypass) != 0 {
+		t.Errorf("a ruleset beside classic protection lets %v past, want nobody", held.bypass)
+	}
+}
+
 // Protection is written as a ruleset flow owns (issue #255): GitHub lets anyone
 // who can read the repository read the rules on a branch, but answers 404 —
 // the same as "not protected" — to a non-admin reading classic protection, so
 // a daily run on such a credential could never see what an admin's apply had
-// set. Classic protection is left alone, and a second write updates the same
-// ruleset, keeping what it already held.
+// set. Classic protection is never written, and a second write updates the
+// same ruleset, keeping what it already held.
 func TestGitHubProtectsTheTrunkWithARulesetAnybodyCanRead(t *testing.T) {
 	fx := coretest.ContractForge()
 	fake, srv := newGitHubServer(t, fx)
