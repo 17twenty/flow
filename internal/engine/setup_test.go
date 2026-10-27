@@ -1172,3 +1172,34 @@ func hasEvidence(result engine.Result, want string) bool {
 	}
 	return false
 }
+
+// TestRolesAreReadFromTheDeclaration is spec 15 §3.1: what a credential can
+// do is said in roles, worked out from what the adapter declares each
+// capability needs, so the words are the same whichever provider it is.
+func TestRolesAreReadFromTheDeclaration(t *testing.T) {
+	registry := testRegistry(t)
+	for _, tc := range []struct {
+		name   string
+		target string
+		kind   string
+		tokens []string
+		want   []string
+	}{
+		{"a read-only token reads", engine.TargetForge, "github", []string{"pull"}, []string{engine.RoleReader}},
+		// Arming a merge arranges a write to the trunk, so a token that may
+		// post the gate's status and not write contents gates and does not act
+		// (#190).
+		{"the gate's token gates", engine.TargetForge, "github", []string{"pull", "statuses_write", "pulls_write"}, []string{engine.RoleReader, engine.RoleGate}},
+		{"a token that may write contents acts", engine.TargetForge, "github", []string{"pull", "statuses_write", "pulls_write", "contents_write"}, []string{engine.RoleReader, engine.RoleGate, engine.RoleActor}},
+		{"an administrator may change settings", engine.TargetForge, "github", []string{"pull", "statuses_write", "pulls_write", "contents_write", "admin"}, []string{engine.RoleReader, engine.RoleGate, engine.RoleActor + " (and settings)"}},
+		{"a board writer acts on the tracker", engine.TargetTracker, "github-projects", []string{"project_read", "project_write", "issues_write"}, []string{engine.RoleReader, engine.RoleActor}},
+		{"a board reader only reads", engine.TargetTracker, "github-projects", []string{"project_read"}, []string{engine.RoleReader}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := engine.Roles(tc.target, registry[tc.kind], core.Permissions{Tokens: tc.tokens})
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("roles = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
