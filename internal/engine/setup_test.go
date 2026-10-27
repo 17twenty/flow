@@ -657,23 +657,27 @@ func TestAFreshFollowUpIsHealthy(t *testing.T) {
 	}
 }
 
-// A follow-up that has been verified or withdrawn is finished work, and must
-// not keep the check company for ever.
+// A follow-up flow has closed — verified or withdrawn — is finished work, and
+// must not keep the check company for ever. The lock is seeded with what the
+// follow-up writer records, not with the names of what flow did: a fixture in
+// the reader's own vocabulary agreed with the reader and with nothing else,
+// and every closed follow-up counted as open (#269).
 func TestASettledFollowUpIsNotOutstanding(t *testing.T) {
 	now := time.Date(2025, 3, 4, 9, 0, 0, 0, time.UTC)
 	env := setupEnv(t, setupConfig())
 	env.Clock = coretest.NewClock(now)
 	env.Lock = config.NewLock("v0.1.0")
 	env.Lock.FollowUps = []config.FollowUp{
-		{Check: "a", Ticket: "acme/api#1", State: engine.FollowUpVerified, OpenedAt: now.Add(-365 * 24 * time.Hour)},
-		{Check: "b", Ticket: "acme/api#2", State: engine.FollowUpWithdrawn, OpenedAt: now.Add(-365 * 24 * time.Hour)},
+		{Check: "a", Ticket: "acme/api#1", State: config.FollowUpClosed, OpenedAt: now.Add(-365 * 24 * time.Hour)},
+		{Check: "b", Ticket: "acme/api#2", State: config.FollowUpClosed, OpenedAt: now.Add(-365 * 24 * time.Hour)},
+		{Check: "c", Ticket: "acme/api#3", State: config.FollowUpOpen, OpenedAt: now.Add(-24 * time.Hour)},
 	}
 
 	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, engine.CheckFollowUpsHealth)
 
 	wantState(t, result, engine.StatePass)
-	if strings.Contains(result.Message, "open") {
-		t.Errorf("a settled follow-up is still being counted: %s", result.Message)
+	if !strings.Contains(result.Message, "1 follow-up open") {
+		t.Errorf("want only the open follow-up counted, and not stale: %s", result.Message)
 	}
 }
 
