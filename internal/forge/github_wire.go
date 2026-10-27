@@ -344,6 +344,47 @@ func (s ghStatus) toCommitStatus() core.CommitStatus {
 	}
 }
 
+// ghCheckRuns is GET /repos/{owner}/{repo}/commits/{sha}/check-runs.
+type ghCheckRuns struct {
+	CheckRuns []ghCheckRun `json:"check_runs"`
+}
+
+// ghCheckRun is one check run.
+type ghCheckRun struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Conclusion  string    `json:"conclusion"`
+	DetailsURL  string    `json:"details_url"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+// toCommitStatus reads a check run as the status it amounts to.
+func (r ghCheckRun) toCommitStatus() core.CommitStatus {
+	state := core.StatusPending
+	if r.Status == "completed" {
+		switch r.Conclusion {
+		case "success", "neutral", "skipped":
+			state = core.StatusSuccess
+		default:
+			state = core.StatusFailure
+		}
+	}
+	updated := r.CompletedAt
+	if updated.IsZero() {
+		updated = r.StartedAt
+	}
+	return core.CommitStatus{
+		ID:        strconv.FormatInt(r.ID, 10),
+		Context:   r.Name,
+		State:     state,
+		TargetURL: r.DetailsURL,
+		CreatedAt: r.StartedAt,
+		UpdatedAt: updated,
+	}
+}
+
 // ghStatusRequest is POST /repos/{owner}/{repo}/statuses/{sha}.
 type ghStatusRequest struct {
 	State       string `json:"state"`

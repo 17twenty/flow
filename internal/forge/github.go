@@ -790,6 +790,43 @@ func (g *GitHub) CommitStatuses(ctx context.Context, sha string) ([]core.CommitS
 	return statuses, nil
 }
 
+// CheckRuns reads the check runs reported against a commit, which is how
+// GitHub Actions jobs report (spec 20 §6). It follows GitHub's pages itself:
+// the endpoint wraps its runs in an object, which [core.Paginate] does not
+// read. A run still going is pending; one that finished is a success when it
+// passed or was neutral or skipped, and a failure otherwise.
+func (g *GitHub) CheckRuns(ctx context.Context, sha string) ([]core.CommitStatus, error) {
+	if sha == "" {
+		return nil, core.Errorf(core.ErrValidation, "read the check runs on a commit of %s", g.Slug()).
+			WithWhy("no commit was named")
+	}
+	var runs []core.CommitStatus
+	req := core.Request{
+		Path:  g.path("commits", sha, "check-runs"),
+		Query: url.Values{"per_page": []string{strconv.Itoa(gitHubPageSize)}},
+	}
+	for page := 0; ; page++ {
+		if page >= core.MaxPages {
+			return nil, core.Errorf(core.ErrUnavailable, "read the check runs on %s of %s", sha, g.Slug()).
+				WithWhy("GitHub offered more than %d pages", core.MaxPages)
+		}
+		var payload ghCheckRuns
+		req.Out = &payload
+		res, err := g.do(ctx, req)
+		if err != nil {
+			return nil, core.Explain(err, "read the check runs on %s of %s", sha, g.Slug())
+		}
+		for _, run := range payload.CheckRuns {
+			runs = append(runs, run.toCommitStatus())
+		}
+		next := res.Links["next"]
+		if next == "" || len(payload.CheckRuns) == 0 {
+			return runs, nil
+		}
+		req = core.Request{Path: next}
+	}
+}
+
 // SetCommitStatus publishes a status on a commit, unless that context already
 // says exactly this — GitHub keeps every status it is told, so publishing the
 // same verdict on every run would fill a commit's history with repetitions of

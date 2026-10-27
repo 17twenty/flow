@@ -1044,6 +1044,41 @@ func TestGitHubRefusesAProposalThatCouldNotBeOffered(t *testing.T) {
 // of a commit status points at it by its identity (spec 13 §1), and an
 // identity of "0" points at nothing. A provider that did not give one has to
 // read as not having given one.
+// A GitHub Actions job reports as a check run, not a status, so a merge whose
+// build ran is invisible to a reader of statuses alone (spec 20 §6). Every
+// page is read, and each run reads as the verdict it amounts to.
+func TestGitHubReadsTheCheckRunsOnACommit(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGitHubServer(t, fx)
+	adapter := newGitHubAdapter(t, srv, fx, nil)
+	at := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	fake.checkRuns = map[string][]ghCheckRun{"merge1": {
+		{ID: 1, Name: "test", Status: "completed", Conclusion: "success", StartedAt: at, CompletedAt: at.Add(time.Minute)},
+		{ID: 2, Name: "lint", Status: "completed", Conclusion: "failure", StartedAt: at},
+		{ID: 3, Name: "release", Status: "in_progress", StartedAt: at},
+		{ID: 4, Name: "docs", Status: "completed", Conclusion: "skipped", StartedAt: at},
+		{ID: 5, Name: "deploy", Status: "completed", Conclusion: "cancelled", StartedAt: at},
+	}}
+
+	runs, err := adapter.CheckRuns(t.Context(), "merge1")
+	if err != nil {
+		t.Fatalf("CheckRuns: %v", err)
+	}
+	want := map[string]string{"test": core.StatusSuccess, "lint": core.StatusFailure, "release": core.StatusPending, "docs": core.StatusSuccess, "deploy": core.StatusFailure}
+	if len(runs) != len(want) {
+		t.Fatalf("read %d runs across the pages, want %d: %+v", len(runs), len(want), runs)
+	}
+	for _, run := range runs {
+		if run.State != want[run.Context] {
+			t.Errorf("%s reads as %q, want %q", run.Context, run.State, want[run.Context])
+		}
+	}
+	if none, err := adapter.CheckRuns(t.Context(), "nothing-ran"); err != nil || len(none) != 0 {
+		t.Errorf("a commit nothing ran on reads as %+v, %v; want none and no error", none, err)
+	}
+	var _ core.CheckRunReader = adapter
+}
+
 func TestGitHubLeavesAStatusWithNoIdentityWithout(t *testing.T) {
 	if got := (ghStatus{ID: 4321, Context: "ci/deploy"}).toCommitStatus().ID; got != "4321" {
 		t.Errorf("the identity is %q, want the provider's own", got)

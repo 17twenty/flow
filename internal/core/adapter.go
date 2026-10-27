@@ -81,6 +81,22 @@ type Forge interface {
 	ProposeFiles(ctx context.Context, p FileProposal) (PullRequest, error)
 }
 
+// CheckRunReader is a forge whose CI can report through something other than
+// commit statuses, and which can read that too: GitHub, whose Actions jobs
+// report as check runs. A forge whose CI writes commit statuses — Gitea,
+// Forgejo, GitLab — needs nothing beyond [Forge.CommitStatuses], and does not
+// implement it.
+//
+// It is kept apart from CommitStatuses because the two need different grants:
+// the gate's own token may read statuses and not check runs, and a gate that
+// could not read its own status because of a permission it never needed would
+// be a broken gate (spec 20 §6).
+type CheckRunReader interface {
+	// CheckRuns returns the check runs reported against a commit, as
+	// statuses: the run's name as the context, and its outcome as the state.
+	CheckRuns(ctx context.Context, sha string) ([]CommitStatus, error)
+}
+
 // Tracker is the ticket system: the board, its columns, its items, and the
 // follow-ups flow files against itself (spec 01 §3).
 type Tracker interface {

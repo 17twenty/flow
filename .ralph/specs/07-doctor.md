@@ -85,6 +85,7 @@ links. Thresholds: `pass` at 100%; `warn` below; `fail` below `fail_below`
 | `live.prs.conventional` | Is every squash commit on the default branch a valid conventional header? | git log / forge commits |
 | `live.prs.reviewed` | Did agent-authored PRs get a human approval? (critical when `require_human_review`) | reviews |
 | `live.prs.closed_issues` | Did every merge close the issues it names? `--fix` closes any it left open | PR closing references + issue state |
+| `live.trunk.built` | Did every merge start one of `forge.required_checks` on its merge commit? (spec 20 §6) | commit statuses + check runs |
 | `live.deploys.recent` | Was there a successful deployment to `deploys.environment` within `max_age`? | deploy records |
 | `live.deploys.lag` | Did every merged PR reach the environment within `max_lag`? (merge SHA ⊑ some deployed SHA, via forge compare API, results cached) | PRs + deploy records |
 | `live.tickets.shared_board` | Is every repository whose tickets are on this board named in `tracker.shared_with`? | tracker |
