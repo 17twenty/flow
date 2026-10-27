@@ -9,8 +9,10 @@ on:
     types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
   pull_request_review:
     types: [submitted, dismissed]
+  push: {}                        # sync on the trunk; other branches skip every job
   schedule:
     - cron: '17 6 * * *'          # daily doctor; the 14-day streak is read from the health issue
+    - cron: '41 * * * *'          # hourly sync
   workflow_dispatch: {}
 
 permissions:
@@ -50,6 +52,25 @@ jobs:
         with: { go-version-file: go.mod }
       - run: go build -o bin/flow .
       - run: ./bin/flow check pr
+      # Settle what the last merge left behind (spec 20 §3). It never fails
+      # the gate: the status above is the verdict.
+      - run: ./bin/flow sync || [ $? -eq 2 ]
+        continue-on-error: true
+
+  sync:
+    name: sync
+    # A push to the trunk where the forge delivers it, and an hourly backstop
+    # where it does not (spec 20 §3).
+    if: >-
+      (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'schedule' && github.event.schedule == '41 * * * *')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: go build -o bin/flow .
+      - run: ./bin/flow sync || [ $? -eq 2 ]
 
   config:
     name: setup checks
@@ -75,7 +96,7 @@ jobs:
 
   health:
     name: daily health
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'schedule' && github.event.schedule == '17 6 * * *') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # The audit reads what protects the trunk, and GitHub does not let a
