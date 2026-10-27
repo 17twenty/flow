@@ -25,6 +25,28 @@ const (
 var PresetNames = []string{PresetLeanKanban, PresetDeployDone, PresetMinimal}
 
 // Forge kinds (spec 03 §1).
+// Modes (spec 20 §8): how much flow may write, so that a team can adopt it in
+// stages — see the report first, then let it gate, then let it act.
+const (
+	// ModeObserve writes nothing anywhere: doctor reports, the gate and sync
+	// say what they would do.
+	ModeObserve = "observe"
+	// ModeGate writes the gate's status and its comment, and nothing else.
+	ModeGate = "gate"
+	// ModeAutomate writes everything the configuration asks of flow.
+	ModeAutomate = "automate"
+)
+
+// modes is the vocabulary, in the order a team climbs it.
+var modes = []string{ModeObserve, ModeGate, ModeAutomate}
+
+// Acts reports whether flow may make changes beyond the gate's own verdict:
+// move tickets, close issues, file follow-ups, arm merges, apply settings.
+func (c *Config) Acts() bool { return c == nil || c.Mode == "" || c.Mode == ModeAutomate }
+
+// Gates reports whether flow may post the gate's status and its comment.
+func (c *Config) Gates() bool { return c.Acts() || c.Mode == ModeGate }
+
 const (
 	ForgeGitHub = "github"
 	ForgeGitea  = "gitea"
@@ -173,6 +195,9 @@ type Config struct {
 	Version int `yaml:"version"`
 	// Preset names the shipped starting point this file was derived from.
 	Preset string `yaml:"preset,omitempty"`
+	// Mode is how much flow may write: observe, gate or automate (spec 20
+	// §8). Empty is automate, which is everything the other specs describe.
+	Mode string `yaml:"mode,omitempty"`
 
 	// Forge is where the code and the pull requests live.
 	Forge Forge `yaml:"forge"`

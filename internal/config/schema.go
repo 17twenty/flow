@@ -76,6 +76,7 @@ func ConfigSchema() *Schema {
 		props{
 			"version": integer("Schema version. Only 1 exists."),
 			"preset":  enum("The shipped starting point this file was derived from.", "lean-kanban", "deploy-done", "minimal"),
+			"mode":    enum("How much flow may write: observe (nothing), gate (the gate's status and comment), automate (everything; the default).", ModeObserve, ModeGate, ModeAutomate),
 
 			"forge": object("The Git host: pull requests, reviews, branch protection, commit statuses.", props{
 				"type": enum("Which forge adapter to use.", ForgeGitHub, ForgeGitea, ForgeGitLab),
