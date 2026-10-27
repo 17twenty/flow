@@ -9,6 +9,11 @@ import (
 	"github.com/17twenty/flow/internal/core"
 )
 
+// SyncChecks are the live checks whose remedy is flow's own act, which is
+// what `flow sync` runs (spec 20 §2). `doctor --fix` runs the same checks
+// through the same code, so the two cannot disagree about what is owed.
+var SyncChecks = []string{CheckLiveTransitionsFlow, CheckLivePRsClosedIssues}
+
 // prsClosedIssues asks whether every merged pull request closed the issues
 // the forge says it closes, and under --fix closes the ones it did not.
 //
