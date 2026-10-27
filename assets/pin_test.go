@@ -2,8 +2,11 @@ package assets_test
 
 import (
 	"io/fs"
+	"os/exec"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/17twenty/flow/assets"
 )
@@ -94,12 +97,67 @@ func TestPinningTheWorkflowLeavesEveryOtherTemplateAlone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read pinned %s: %v", name, err)
 		}
+		// Every CI template carries the pin, one per forge (spec 20 §7).
+		ci := strings.HasPrefix(name, "ci/")
 		switch {
-		case name == workflowTemplate && string(before) == string(after):
+		case ci && string(before) == string(after):
 			t.Errorf("%s was not pinned", name)
-		case name == workflowTemplate:
+		case ci:
 		case string(before) != string(after):
 			t.Errorf("%s changed because of the version", name)
 		}
 	}
+}
+
+// TestEveryInstallStepIsShell: the step that fetches the released binary is
+// shell held inside YAML, where a stray quote is invisible until a runner
+// tries it. Every CI template's copy is parsed by sh itself.
+func TestEveryInstallStepIsShell(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh on this machine")
+	}
+	tree, err := assets.Templates("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ci/github-flow.yml", "ci/gitea-flow.yml", "ci/gitlab-flow.yml"} {
+		raw, err := fs.ReadFile(tree, name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var doc map[string]any
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s is not YAML: %v", name, err)
+		}
+		script := installScript(doc)
+		if !strings.Contains(script, "SHA256SUMS") {
+			t.Fatalf("%s has no install step that checks the release's sums", name)
+		}
+		cmd := exec.Command(sh, "-n")
+		cmd.Stdin = strings.NewReader(script)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("%s: the install step is not valid shell: %v\n%s", name, err, out)
+		}
+	}
+}
+
+// installScript finds the install step in either shape: GitHub's workflow
+// keeps it in env.FLOW_INSTALL, GitLab's in the hidden job's before_script.
+func installScript(doc map[string]any) string {
+	if env, ok := doc["env"].(map[string]any); ok {
+		if script, ok := env["FLOW_INSTALL"].(string); ok {
+			return script
+		}
+	}
+	if job, ok := doc[".flow"].(map[string]any); ok {
+		if steps, ok := job["before_script"].([]any); ok {
+			for _, step := range steps {
+				if script, ok := step.(string); ok && strings.Contains(script, "SHA256SUMS") {
+					return script
+				}
+			}
+		}
+	}
+	return ""
 }

@@ -534,3 +534,36 @@ func TestAnInstalledBuildPinsTheReleaseItWasInstalledAt(t *testing.T) {
 		}
 	})
 }
+
+// TestInitWritesTheFilesOfTheForgeItIsFor is spec 20 §7: each forge is given
+// its own, from the one table forge.files proposes from. GitLab gets a file to
+// include, because a repository's .gitlab-ci.yml is its own; GitHub's layout
+// goes to nobody else.
+func TestInitWritesTheFilesOfTheForgeItIsFor(t *testing.T) {
+	for _, tc := range []struct {
+		forge, remote string
+		want, not     []string
+	}{
+		{"github", "git@github.com:acme/api.git", []string{".github/workflows/flow.yml", ".github/pull_request_template.md"}, []string{".gitlab/flow.gitlab-ci.yml"}},
+		{"gitlab", "git@gitlab.com:acme/api.git", []string{".gitlab/flow.gitlab-ci.yml"}, []string{".github/workflows/flow.yml", ".gitlab-ci.yml"}},
+		{"gitea", "git@gitea.example:acme/api.git", []string{".gitea/workflows/flow.yml"}, []string{".github/workflows/flow.yml"}},
+	} {
+		t.Run(tc.forge, func(t *testing.T) {
+			dir := initRepo(t, tc.remote)
+			code, _, stderr := exec(t, "-C", dir, "init", "--forge", tc.forge, "--tracker", "github-projects", "--owner", "acme", "--yes")
+			if code != core.ExitOK {
+				t.Fatalf("exited %d: %s", code, stderr)
+			}
+			for _, path := range tc.want {
+				if _, err := os.Stat(filepath.Join(dir, path)); err != nil {
+					t.Errorf("%s was not written: %v", path, err)
+				}
+			}
+			for _, path := range tc.not {
+				if _, err := os.Stat(filepath.Join(dir, path)); err == nil {
+					t.Errorf("%s was written for a %s repository", path, tc.forge)
+				}
+			}
+		})
+	}
+}

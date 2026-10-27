@@ -8,7 +8,7 @@
     "tracker": "jira-cloud"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:7914c203fc0472aaacfdb556f04330239d65db259006be88f3625b7738d4d89a",
+  "desired_hash": "sha256:b65860ab180c3ba3180bac5d4c829ba77ec14d37276115546e169ca5e7c09d6e",
   "items": [
     {
       "id": "tracker.project",
@@ -345,7 +345,7 @@
       "outcome": "native",
       "why": "flow can set it through the provider's API",
       "exists": true,
-      "desired_hash": "sha256:b9622af13b9a7c8ac511e411a88c05d871c6705a499bb101698f4432e4dcddbf",
+      "desired_hash": "sha256:bcda30fdcbad676c28a233a975ec64316a8c9c00c2aba5e29ccdaaafb9715872",
       "observed_hash": "sha256:c0aa4dce547733f8d460a1f80b58cad2d2edd843345605d9ad04c194304bbba6",
       "changes": [
         {

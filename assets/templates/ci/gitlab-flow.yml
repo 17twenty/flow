@@ -1,0 +1,62 @@
+# Written by `flow init`. flow gate (check pr), catch-ups (sync), daily health (doctor).
+#
+# Include it from the repository's own pipeline, which flow never edits:
+#   include: { local: .gitlab/flow.gitlab-ci.yml }
+# and add two pipeline schedules under CI/CD → Schedules, one with the
+# variable FLOW_JOB=sync hourly and one with FLOW_JOB=health daily. The
+# forge and tracker tokens are masked CI/CD variables named as .flow.yaml
+# names them (auth.token_env).
+variables:
+  FLOW_VERSION: latest            # init writes the build that wrote this; bump deliberately
+
+.flow:
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl >/dev/null
+    # Installs the released binary for FLOW_VERSION and checks it against the
+    # release's SHA256SUMS: no Go toolchain, nothing compiled on the runner.
+    - |
+      set -eu
+      v="${FLOW_VERSION:-latest}"
+      if [ "$v" = latest ]; then
+        v=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/17twenty/flow/releases/latest)
+        v="${v##*/}"
+      fi
+      case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "flow: no release for $(uname -m)" >&2; exit 1 ;; esac
+      asset="flow_${v}_linux_${arch}"
+      base="https://github.com/17twenty/flow/releases/download/${v}"
+      dir="$(mktemp -d)"
+      (cd "$dir" && curl -fsSLO "$base/$asset" && curl -fsSLO "$base/SHA256SUMS" && grep " ${asset}\$" SHA256SUMS | sha256sum -c -)
+      install -m 0755 "$dir/$asset" /usr/local/bin/flow
+
+# The gate, on every merge request pipeline. check pr finds the merge
+# request through CI_MERGE_REQUEST_IID, and sync settles what the last merge
+# left behind without being able to fail the gate (spec 20 §3).
+flow:gate:
+  extends: .flow
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - flow check pr
+    - flow sync || [ $? -eq 2 ] || true
+
+# Catch-ups on a push to the default branch, and hourly from the schedule.
+flow:sync:
+  extends: .flow
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $FLOW_JOB == "sync"
+  script:
+    - flow sync || [ $? -eq 2 ]
+
+# The daily audit and its health issue. Exit 2 is "somebody must do
+# something", which is a report, not a broken job.
+flow:health:
+  extends: .flow
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $FLOW_JOB == "health"
+  script:
+    - flow doctor --ci --fix --timeout 10m --report doctor.md || [ $? -eq 2 ]
+  artifacts:
+    when: always
+    paths: [doctor.md]
