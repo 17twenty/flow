@@ -1042,3 +1042,58 @@ func TestATitleThatImprovedIsRewrittenEvenThoughTheBodyDidNot(t *testing.T) {
 		t.Errorf("the title is still %q, which is the one the ticket was filed under", after.Title)
 	}
 }
+
+// TestOneFactHasOneFollowUp is issue #202. apply filed the deployment history
+// under the item id and doctor under its check id, so one repository held two
+// tickets about one thing. apply now files under the check, and doctor closes
+// the one an earlier flow left under the item, saying which ticket stands.
+func TestOneFactHasOneFollowUp(t *testing.T) {
+	t.Parallel()
+
+	if got := engine.CheckOf(core.ItemDeploysRecords); got != engine.CheckDeploysSource {
+		t.Fatalf("CheckOf(%s) = %s, want %s", core.ItemDeploysRecords, got, engine.CheckDeploysSource)
+	}
+	if got := engine.CheckOf(core.ItemForgeProtection); got != core.ItemForgeProtection {
+		t.Errorf("CheckOf(%s) = %s, want it unchanged", core.ItemForgeProtection, got)
+	}
+
+	w := newFollowUpWorld(t)
+	formerMarker := engine.FollowUpMarker(core.ItemDeploysRecords, "acme/widget")
+	former, err := w.tracker.CreateFollowUp(t.Context(), core.FollowUp{Marker: formerMarker, Title: "flow: make deploys.records true by hand"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.lock.FollowUps = append(w.lock.FollowUps, config.FollowUp{Check: core.ItemDeploysRecords, Ticket: former.Key, State: config.FollowUpOpen})
+
+	out := engine.ReconcileFollowUp(t.Context(), engine.FollowUpInput{
+		Check:   engine.Check{ID: engine.CheckDeploysSource, Title: "Flow can read the deployment history", Category: engine.CategoryDeploys},
+		Result:  needsAHuman(),
+		Config:  w.cfg,
+		Lock:    w.lock,
+		Tracker: w.tracker,
+		Repo:    "acme/widget",
+		Clock:   w.clock,
+		Fix:     true,
+	})
+	if out.Err != nil {
+		t.Fatalf("reconcile: %v", out.Err)
+	}
+	if out.Ticket.Key == "" || out.Ticket.Key == former.Key {
+		t.Fatalf("the check's ticket is %q; want one of its own beside %s", out.Ticket.Key, former.Key)
+	}
+	stale, err := w.tracker.FindFollowUp(t.Context(), formerMarker)
+	if err != nil || stale == nil {
+		t.Fatalf("the former ticket is gone: %v", err)
+	}
+	if !stale.Closed {
+		t.Errorf("%s is still open beside %s", former.Key, out.Ticket.Key)
+	}
+	for _, f := range w.lock.FollowUps {
+		if f.Check == core.ItemDeploysRecords {
+			t.Errorf("the lock still records a follow-up under %s: %+v", core.ItemDeploysRecords, f)
+		}
+	}
+	if calls := w.tracker.Calls("Comment"); calls == 0 {
+		t.Errorf("%s was closed without saying which ticket stands for it", former.Key)
+	}
+}
