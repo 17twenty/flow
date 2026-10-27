@@ -814,6 +814,20 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   rather than opening thirty mornings in a row. A lock that already matches
   is proposed not at all — a daily pull request against a file nobody changed
   is how a team learns to ignore them.
+- **§10 running out of time is not weather (issue #197).** A provider that
+  will not take the report or the lock proposal is weather and is logged; the
+  run's own `--timeout` expiring while it files them is the run not
+  finishing, and it exits as one (`ErrUnavailable`, "finish within"). Logging
+  that too let flow's daily job go green for a week while its health issue
+  stopped being rewritten. The daily job is given `--timeout 10m`: a
+  fortnight's audit of a busy board does not fit in the interactive 2m.
+- **§6 flow's own bookkeeping is not delivered work (issue #203).**
+  `live.tickets.done_merged` leaves out a ticket carrying flow's follow-up or
+  health marker and says how many it left out. A follow-up is settings work
+  with no pull request by design, and flow closing it is its own evidence the
+  work is done; counting it turned the audit red for a fortnight after every
+  fix to a repository's setup. A flag cleanup ticket is still counted: it is
+  flow's writing, but the work it asks for is a change to the code.
 - **§4 one fact, one follow-up (issue #202).** A follow-up is keyed by the
   doctor check it is reported under, and `flow apply` files under the same
   id (`engine.CheckOf`): the deployment records are the one item whose check

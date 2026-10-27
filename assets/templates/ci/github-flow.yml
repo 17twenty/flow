@@ -88,7 +88,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/17twenty/flow@${FLOW_VERSION}
-      - run: flow doctor --ci --fix --report doctor.md || [ $? -eq 2 ]
+      - run: flow doctor --ci --fix --timeout 10m --report doctor.md || [ $? -eq 2 ]
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: doctor-report, path: doctor.md }
