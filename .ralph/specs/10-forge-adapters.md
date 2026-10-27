@@ -658,3 +658,19 @@ duplicate-pipeline hazards). MR closing issues: `GET
   marks the rest `Unreadable`: those fields are taken as desired and the
   outcome is a warning saying which credential could not look — never a
   change, never a reopened ticket.
+- **Classic protection is moved into flow's ruleset, unless moving it would
+  lose something (#258).** Writing new protection as a ruleset was not
+  enough: a repository whose classic protection already said everything
+  asked of it was up to date to an admin, so apply wrote nothing, and every
+  run on any other credential warned that it could not look. Classic
+  protection read by an admin is `AdminOnly`, and the desired protection
+  asks for `admin_only: false`, so the plan shows an update. Apply writes the
+  ruleset carrying everything the classic protection required and only then
+  deletes the classic protection, so the branch is never unprotected; where
+  the classic protection did not enforce its rules on admins, the ruleset
+  lets the admin role past, so the move makes nothing stricter. Classic
+  protection that says anything the ruleset would not carry — who may push,
+  signed commits, a lock, code-owner review, approval of the last push, who
+  may dismiss or skip review, blocked creation, fork syncing — is listed in
+  `Immovable` and left exactly where it is; its place is taken as asked for
+  and reported as a warning naming what a person would have to move.

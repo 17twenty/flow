@@ -218,6 +218,7 @@
           "item": {
             "name": "protection",
             "fields": {
+              "admin_only": "false",
               "allow_deletions": "false",
               "allow_force_push": "false",
               "enabled": "true",
