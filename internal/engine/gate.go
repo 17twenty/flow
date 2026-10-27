@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -161,7 +162,17 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 		return PolicySnapshot{}, core.Explain(err, "read the board")
 	}
 	snapshot.WIP = wipFrom(in.Config, in.Lock, board)
-	if snapshot.StackedOn, err = stackedOn(ctx, in, pr); err != nil {
+	// The open pull requests are listed once, for the two questions that
+	// read them: the review column's arrival order and what this one stands
+	// on.
+	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
+	if err != nil {
+		return PolicySnapshot{}, core.Explain(err, "read the open pull requests")
+	}
+	if err := arrivals(ctx, in, open, &snapshot.WIP); err != nil {
+		return PolicySnapshot{}, err
+	}
+	if snapshot.StackedOn, err = stackedOn(ctx, in, pr, open); err != nil {
 		return PolicySnapshot{}, err
 	}
 
@@ -287,21 +298,58 @@ func wipFrom(cfg *config.Config, lock *config.Lock, board []core.Ticket) WIPCoun
 	return counts
 }
 
+// arrivals gives the review column an arrival order where the board gave
+// none, from the forge: each ticket arrived when the oldest open, ready pull
+// request that closes it was opened (spec 09 §2 Decisions, issue #231).
+//
+// It is worked out only when the column is over its limit, because that is the
+// only time the order decides anything, and it costs a read per open pull
+// request on top of the listing the gate already has.
+// Without it no tracker flow speaks to gives an order, the "entered review
+// before the limit" exemption never applies, and a column over its limit
+// fails every pull request in it — including the ones whose merge would
+// bring it back under. A queue that cannot drain is the WIP rule defeating
+// its own purpose. The opening of a pull request is not something an edit
+// can move, which is what the board's last-edited time would have been.
+func arrivals(ctx context.Context, in GateInput, open []core.PullRequest, counts *WIPCounts) error {
+	column, found := columnFor(in.Config, config.EventPRReadyForReview)
+	if !found || column.WIP == nil || column.WIP.Limit <= 0 || len(counts.Review) <= column.WIP.Limit {
+		return nil
+	}
+	ready := slices.DeleteFunc(slices.Clone(open), func(pr core.PullRequest) bool { return pr.Draft })
+	// A listing carries no closing issues (spec 10 §2), so each one is read.
+	full, err := detailed(ctx, in.Adapters.Forge, ready)
+	if err != nil {
+		return err
+	}
+	opened := map[string]time.Time{}
+	for _, pr := range full {
+		for _, key := range in.Adapters.Tracker.LinkedKeys(pr) {
+			key = normalKey(key)
+			if at, seen := opened[key]; !seen || pr.CreatedAt.Before(at) {
+				opened[key] = pr.CreatedAt
+			}
+		}
+	}
+	for i, item := range counts.Review {
+		if at := opened[normalKey(item.Key)]; item.Since.IsZero() && !at.IsZero() {
+			counts.Review[i].Since = at
+		}
+	}
+	return nil
+}
+
 // stackedOn is every open pull request this one stands on (issue #235): one
 // whose branch it targets instead of the trunk, or an older one whose head it
 // contains. The second is the one that hides — a branch made from another
 // pull request's branch and pointed at the trunk looks like any other — so
 // the forge is asked about ancestry, once per older open pull request.
-func stackedOn(ctx context.Context, in GateInput, pr core.PullRequest) ([]StackedPR, error) {
+func stackedOn(ctx context.Context, in GateInput, pr core.PullRequest, open []core.PullRequest) ([]StackedPR, error) {
 	repo, err := in.Adapters.Forge.Repo(ctx)
 	if err != nil {
 		return nil, core.Explain(err, "read the trunk's name")
 	}
 	trunk := repo.DefaultBranch
-	open, err := in.Adapters.Forge.PullRequests(ctx, core.PRQuery{State: core.PRStateOpen})
-	if err != nil {
-		return nil, core.Explain(err, "read the open pull requests")
-	}
 	var stacks []StackedPR
 	offTrunk := trunk != "" && pr.BaseRef != "" && pr.BaseRef != trunk
 	parented := false

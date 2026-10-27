@@ -670,6 +670,59 @@ func TestGateTextWarnsAboutACardItCannotPlace(t *testing.T) {
 	}
 }
 
+// TestGateDrainsAColumnOverItsLimit is issue #231: a board that records no
+// arrival times left the "entered review before the limit" exemption unable
+// to apply, so with the review column over its limit every pull request in
+// it failed — including the ones whose merge would have brought it back
+// under, and nothing could ever merge. The forge says when each was opened,
+// so the oldest `limit` pass and only the newest wait.
+func TestGateDrainsAColumnOverItsLimit(t *testing.T) {
+	world := gateFixture(t)
+	opened := time.Date(2026, 10, 27, 1, 0, 0, 0, time.UTC)
+	for i, key := range []string{"#30", "#31", "#32", "#33", "#34"} {
+		world.tracker.SetTicket(gateTicket(key, "In review"))
+		world.forge.SetPullRequest(core.PullRequest{
+			Number:        40 + i,
+			Title:         "feat(engine): part " + key,
+			Author:        "nick",
+			State:         core.PRStateOpen,
+			HeadSHA:       "head" + key,
+			BaseRef:       "main",
+			ClosingIssues: []string{key},
+			CreatedAt:     opened.Add(time.Duration(i) * time.Hour),
+		})
+	}
+
+	for number, wantOK := range map[int]bool{40: true, 42: true, 43: false, 44: false} {
+		in := world.input()
+		in.PR = number
+		snapshot, err := engine.GateSnapshot(context.Background(), in)
+		if err != nil {
+			t.Fatalf("snapshot of #%d: %v", number, err)
+		}
+		got := finding(t, engine.CheckPolicy(snapshot), engine.RuleWIPReview)
+		if got.OK != wantOK {
+			t.Errorf("#%d: wip.review ok=%v, want %v (%s)", number, got.OK, wantOK, got.Message)
+		}
+	}
+}
+
+// TestGateReadsNoArrivalsUnderTheLimit: the order only decides anything over
+// the limit, and finding it costs a read per open pull request. The gate
+// lists the open pull requests once whatever happens; it reads each one only
+// when the order is needed.
+func TestGateReadsNoArrivalsUnderTheLimit(t *testing.T) {
+	world := gateFixture(t)
+	world.tracker.SetTicket(gateTicket("#30", "In review"))
+	world.snapshot(t)
+	if calls := world.forge.Calls("PullRequest"); calls != 1 {
+		t.Errorf("the gate read %d pull requests for a column under its limit, want only the one it judges", calls)
+	}
+	if calls := world.forge.Calls("PullRequests"); calls != 1 {
+		t.Errorf("the gate listed the open pull requests %d times, want once", calls)
+	}
+}
+
 // stackWorld is the gate's fixture with a trunk and some other open work.
 func stackWorld(t *testing.T, mine core.PullRequest, comparisons map[string]core.Comparison, others ...core.PullRequest) *gateWorld {
 	t.Helper()

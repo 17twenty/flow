@@ -154,6 +154,16 @@ golden; determinism; fork/read-only path; draft path.
   zero. No tracker flow speaks to records when an item entered a column, and
   filling it with the last-edited time would let an item somebody merely
   touched jump the queue.
+- **§2 the forge gives the order the board does not (issue #231).** With
+  `Since` always zero the "entered review before the limit" exemption never
+  applied, and a column over its limit failed every pull request in it —
+  including the ones whose merge would bring it back under — so it could not
+  drain. Over the limit only, the gate now reads the open, ready pull requests
+  and dates each review ticket from the oldest one that closes it: when a pull
+  request was opened is not something an edit can move. The oldest `limit`
+  pass; an item with nothing under review sorts last rather than cancelling
+  the order, and a pull request whose own ticket has no date is still let off
+  on evidence or not at all.
 - **§3 the pull requests consulted are the open ones, plus this one (item
   4.3).** Spec 04 §5 rule 4 wants all of a ticket's work considered, and open
   work is what a ticket is still waiting on. The gate never runs on a closed
