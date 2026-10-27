@@ -148,7 +148,7 @@ allows.
 
 Phase 9 of `IMPLEMENTATION_PLAN.md` carries this spec, in an order where each
 step stands on its own: `sync` (§2) and its triggers (§3) first, because they
-are what lets auto-merge be switched back on; then flow-owned merge
+repair what a lost event leaves on the board; then flow-owned merge
 transitions (§4) and the suppressed-merge finding (§5, §6); then the runner
 seam and templates (§7) and modes (§8).
 
@@ -160,6 +160,15 @@ seam and templates (§7) and modes (§8).
   answer to what is a general question: what happens when an event is lost.
   Every forge loses events; a system that converges on its next run needs no
   answer per forge.
+- **Converging does not make an Actions-token merge safe (issue #213).**
+  `sync` closes the issues such a merge left open and moves its cards, but
+  what a push to the trunk starts — the build, the release, the deployment —
+  belongs to the forge, and GitHub starts none of it. So flow does not switch
+  auto-merge back on where the gate arms with the Actions token: on its own
+  repository `forge.auto_merge` stays off, a person or the bot merges, and
+  `live.trunk.built` (§6) is the finding if a merge ever starts nothing again.
+  A team that wants auto-merge on GitHub arms with a credential that is not
+  the Actions token, which the `auto_merge` declaration says.
 - **`sync` is a subset of `doctor --fix`, not a sibling.** One catch-up, run
   by two commands, cannot disagree with itself; two would.
 - **Flow owns the merge transitions by default.** Attesting a native

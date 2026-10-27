@@ -482,8 +482,9 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [ ] 9.2 Every template and flow's own workflow run `sync` after the gate, hourly and on push to the trunk — specs: 20 §3, 17 — deps: 9.1 (#212)
   - AC: the gate job runs `flow sync` as a step after `check pr` that cannot fail the job
   - AC: a `sync` job runs on an hourly schedule and on `push` to the default branch
-- [ ] 9.3 Re-enable auto-merge on flow's own repository — specs: 20 §1, 17 — deps: 9.2 (#213)
-  - AC: `forge.auto_merge: true` in `.flow.yaml`; the next auto-merged pull request's issue is closed by `sync` within the hour
+- [ ] 9.3 Auto-merge stays off where the forge's merges start nothing, and the docs say why — specs: 20 Decisions, 17 — deps: 9.5 (#213)
+  - AC: `forge.auto_merge` stays false in flow's own `.flow.yaml`
+  - AC: the cookbook's auto-merge section names the Actions-token hazard and the credential that avoids it, beside `live.trunk.built`
 - [ ] 9.4 Flow owns `pr_merged` and `issue_closed` by default — specs: 20 §4, 04 §5 — deps: 9.1 (#214)
   - AC: the shipped presets give both to flow; spec 04 §5 and the delivery-board document say so
   - AC: `sync` moves a merged pull request's ticket to the done column; a native automation that already moved it leaves nothing to do
