@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -707,12 +708,71 @@ func TestGateDrainsAColumnOverItsLimit(t *testing.T) {
 }
 
 // TestGateReadsNoArrivalsUnderTheLimit: the order only decides anything over
-// the limit, and finding it costs a read per open pull request.
+// the limit, and finding it costs a read per open pull request. The gate
+// lists the open pull requests once whatever happens; it reads each one only
+// when the order is needed.
 func TestGateReadsNoArrivalsUnderTheLimit(t *testing.T) {
 	world := gateFixture(t)
 	world.tracker.SetTicket(gateTicket("#30", "In review"))
 	world.snapshot(t)
-	if calls := world.forge.Calls("PullRequests"); calls != 0 {
-		t.Errorf("the gate listed the open pull requests %d times for a column under its limit", calls)
+	if calls := world.forge.Calls("PullRequest"); calls != 1 {
+		t.Errorf("the gate read %d pull requests for a column under its limit, want only the one it judges", calls)
 	}
+	if calls := world.forge.Calls("PullRequests"); calls != 1 {
+		t.Errorf("the gate listed the open pull requests %d times, want once", calls)
+	}
+}
+
+// stackWorld is the gate's fixture with a trunk and some other open work.
+func stackWorld(t *testing.T, mine core.PullRequest, comparisons map[string]core.Comparison, others ...core.PullRequest) *gateWorld {
+	t.Helper()
+	world := gateFixture(t)
+	world.forge = coretest.NewFakeForge(coretest.ForgeFixture{
+		Repo:         core.RepoInfo{Owner: "acme", Name: "api", DefaultBranch: "main"},
+		PullRequests: append([]core.PullRequest{mine}, others...),
+		Comparisons:  comparisons,
+	})
+	return world
+}
+
+func openPRAt(number int, head, base string, opened time.Time) core.PullRequest {
+	return core.PullRequest{
+		Number: number, Title: fmt.Sprintf("feat(engine): part %d", number), Author: "nick",
+		State: core.PRStateOpen, HeadRef: head, BaseRef: base, HeadSHA: "sha-" + head,
+		ClosingIssues: []string{"#12"}, CreatedAt: opened,
+	}
+}
+
+// TestGateNamesTheWorkAPullRequestStandsOn is issue #235, both ways it
+// happens: a branch pointed at another pull request's branch, and one pointed
+// at the trunk that was made from another pull request's branch — the second
+// being the one that hid on 2026-10-27 until a merge of the trunk silently
+// dropped a line.
+func TestGateNamesTheWorkAPullRequestStandsOn(t *testing.T) {
+	t0 := time.Date(2026, 10, 27, 1, 0, 0, 0, time.UTC)
+	parent := openPRAt(3, "feat/sync", "main", t0)
+
+	t.Run("targets its branch", func(t *testing.T) {
+		mine := openPRAt(4, "feat/triggers", "feat/sync", t0.Add(time.Hour))
+		got := finding(t, engine.CheckPolicy(stackWorld(t, mine, nil, parent).snapshot(t)), engine.RulePRStacked)
+		if got.OK || !strings.Contains(got.Message, "#3") {
+			t.Errorf("%+v, want it to name #3", got)
+		}
+	})
+	t.Run("carries its commits", func(t *testing.T) {
+		mine := openPRAt(4, "feat/triggers", "main", t0.Add(time.Hour))
+		ahead := map[string]core.Comparison{parent.HeadSHA + "..." + mine.HeadSHA: {Status: core.CompareAhead, AheadBy: 2}}
+		got := finding(t, engine.CheckPolicy(stackWorld(t, mine, ahead, parent).snapshot(t)), engine.RulePRStacked)
+		if got.OK || !strings.Contains(got.Message, "#3") {
+			t.Errorf("%+v, want it to name #3", got)
+		}
+	})
+	t.Run("independent work", func(t *testing.T) {
+		mine := openPRAt(4, "fix/other", "main", t0.Add(time.Hour))
+		apart := map[string]core.Comparison{parent.HeadSHA + "..." + mine.HeadSHA: {Status: core.CompareDiverged, AheadBy: 1, BehindBy: 2}}
+		got := finding(t, engine.CheckPolicy(stackWorld(t, mine, apart, parent).snapshot(t)), engine.RulePRStacked)
+		if !got.OK {
+			t.Errorf("%+v, want two pieces of work side by side to stand on nothing", got)
+		}
+	})
 }
