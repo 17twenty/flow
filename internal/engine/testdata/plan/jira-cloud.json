@@ -8,7 +8,7 @@
     "tracker": "jira-cloud"
   },
   "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-  "desired_hash": "sha256:b65860ab180c3ba3180bac5d4c829ba77ec14d37276115546e169ca5e7c09d6e",
+  "desired_hash": "sha256:2873702d0d278c287f1a70685a2e7ba40a07e1546a14704595ecd5f19f8ffc00",
   "items": [
     {
       "id": "tracker.project",
