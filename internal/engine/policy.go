@@ -894,16 +894,20 @@ func joinedWithin(items []WIPItem, limit int, keys []string) bool {
 	}
 	ordered := make([]WIPItem, len(items))
 	copy(ordered, items)
-	for _, item := range ordered {
-		if item.Since.IsZero() {
-			return false
-		}
-	}
+	// An item with no arrival time is placed last rather than cancelling
+	// everybody's order: it has nothing under review to say when it came.
+	// This pull request's own tickets still need a time of their own, below:
+	// it is let off on evidence or not at all.
 	slices.SortStableFunc(ordered, func(a, b WIPItem) int {
-		if a.Since.Equal(b.Since) {
+		switch {
+		case a.Since.IsZero() != b.Since.IsZero():
+			if a.Since.IsZero() {
+				return 1
+			}
+			return -1
+		case a.Since.Equal(b.Since):
 			return strings.Compare(a.Key, b.Key)
-		}
-		if a.Since.Before(b.Since) {
+		case a.Since.Before(b.Since):
 			return -1
 		}
 		return 1
@@ -917,6 +921,9 @@ func joinedWithin(items []WIPItem, limit int, keys []string) bool {
 		place, in := arrived[key]
 		if !in {
 			continue
+		}
+		if ordered[place].Since.IsZero() {
+			return false
 		}
 		seen = true
 		if place >= limit {
