@@ -172,8 +172,16 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 			return requiredStatus(protection), nil
 		}
 		observation := protectionObservation(protection)
-		if protection.Unreadable {
+		switch {
+		case protection.Unreadable:
 			observation = unreadProtection(observation, item)
+		case protection.AdminOnly && len(protection.Immovable) > 0:
+			observation = immovableProtection(observation, item, protection.Immovable)
+		case protection.AdminOnly:
+			observation.Notes = append(observation.Notes, core.Note{
+				Text: "the trunk's protection is kept where only an admin can read it, so a run on any other credential cannot see it",
+				Fix:  "flow apply moves it where anybody who can read the repository can read it",
+			})
 		}
 		return observation, nil
 
@@ -202,6 +210,7 @@ func protectionObservation(p core.Protection) core.Observation {
 				FieldAllowDeletions:       strconv.FormatBool(p.AllowDeletions),
 				FieldRequireLinearHistory: strconv.FormatBool(p.RequireLinearHistory),
 				FieldStrictChecks:         strconv.FormatBool(p.StrictChecks),
+				FieldAdminOnly:            strconv.FormatBool(p.AdminOnly),
 			},
 		}},
 		Notes: dormantNotes(p),
@@ -225,6 +234,25 @@ func unreadProtection(observation core.Observation, item DesiredItem) core.Obser
 	observation.Notes = append(observation.Notes, core.Note{
 		Text:       "this credential may see that the trunk is protected, and not how: what it could not read is taken as asked for",
 		Fix:        "keep the trunk's protection in a ruleset, which anybody who can read the repository can read — flow apply run by an admin writes one",
+		Unverified: true,
+	})
+	return observation
+}
+
+// immovableProtection is protection kept where only an admin can read it that
+// flow cannot move without losing part of it (issue #258). Where it is kept is
+// taken as asked for, because nothing flow does would make it better, and the
+// note says what a person would have to carry across by hand.
+func immovableProtection(observation core.Observation, item DesiredItem, immovable []string) core.Observation {
+	if len(item.Items) == 0 || len(observation.Items) == 0 {
+		return observation
+	}
+	if wanted := item.Items[0].Field(FieldAdminOnly); wanted != "" {
+		observation.Items[0] = observation.Items[0].WithField(FieldAdminOnly, wanted)
+	}
+	observation.Notes = append(observation.Notes, core.Note{
+		Text:       "the trunk's protection is kept where only an admin can read it, and says what flow cannot move: " + strings.Join(immovable, ", "),
+		Fix:        "move the trunk's protection into a ruleset by hand, then flow apply moves nothing and a run on any credential can read it",
 		Unverified: true,
 	})
 	return observation

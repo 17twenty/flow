@@ -450,14 +450,60 @@ type ghProtection struct {
 		} `json:"checks"`
 	} `json:"required_status_checks"`
 	RequiredPullRequestReviews *struct {
-		DismissStaleReviews          bool `json:"dismiss_stale_reviews"`
-		RequiredApprovingReviewCount int  `json:"required_approving_review_count"`
+		DismissStaleReviews          bool         `json:"dismiss_stale_reviews"`
+		RequiredApprovingReviewCount int          `json:"required_approving_review_count"`
+		RequireCodeOwnerReviews      bool         `json:"require_code_owner_reviews"`
+		RequireLastPushApproval      bool         `json:"require_last_push_approval"`
+		DismissalRestrictions        *ghActorList `json:"dismissal_restrictions"`
+		BypassPullRequestAllowances  *ghActorList `json:"bypass_pull_request_allowances"`
 	} `json:"required_pull_request_reviews"`
-	EnforceAdmins                  ghToggle `json:"enforce_admins"`
-	RequiredLinearHistory          ghToggle `json:"required_linear_history"`
-	AllowForcePushes               ghToggle `json:"allow_force_pushes"`
-	AllowDeletions                 ghToggle `json:"allow_deletions"`
-	RequiredConversationResolution ghToggle `json:"required_conversation_resolution"`
+	EnforceAdmins                  ghToggle     `json:"enforce_admins"`
+	RequiredLinearHistory          ghToggle     `json:"required_linear_history"`
+	AllowForcePushes               ghToggle     `json:"allow_force_pushes"`
+	AllowDeletions                 ghToggle     `json:"allow_deletions"`
+	RequiredConversationResolution ghToggle     `json:"required_conversation_resolution"`
+	RequiredSignatures             ghToggle     `json:"required_signatures"`
+	LockBranch                     ghToggle     `json:"lock_branch"`
+	BlockCreations                 ghToggle     `json:"block_creations"`
+	AllowForkSyncing               ghToggle     `json:"allow_fork_syncing"`
+	Restrictions                   *ghActorList `json:"restrictions"`
+}
+
+// ghActorList is who a piece of classic protection names: the people, teams
+// and apps a branch's pushes or a review's dismissal are restricted to.
+type ghActorList struct {
+	Users []json.RawMessage `json:"users"`
+	Teams []json.RawMessage `json:"teams"`
+	Apps  []json.RawMessage `json:"apps"`
+}
+
+// names reports whether the list names anybody at all.
+func (l *ghActorList) names() bool {
+	return l != nil && len(l.Users)+len(l.Teams)+len(l.Apps) > 0
+}
+
+// immovable is what this classic protection says that the ruleset flow writes
+// would not: moving the protection would lose it, so flow leaves it where it
+// is and a person decides (issue #258).
+func (p ghProtection) immovable() []string {
+	var kept []string
+	keep := func(said bool, what string) {
+		if said {
+			kept = append(kept, what)
+		}
+	}
+	keep(p.Restrictions.names(), "who may push")
+	keep(p.RequiredSignatures.Enabled, "signed commits")
+	keep(p.LockBranch.Enabled, "a locked branch")
+	keep(p.BlockCreations.Enabled, "blocked branch creation")
+	keep(p.AllowForkSyncing.Enabled, "fork syncing")
+	if reviews := p.RequiredPullRequestReviews; reviews != nil {
+		keep(reviews.RequireCodeOwnerReviews, "code owner review")
+		keep(reviews.RequireLastPushApproval, "approval of the last push")
+		keep(reviews.DismissalRestrictions.names(), "who may dismiss a review")
+		keep(reviews.BypassPullRequestAllowances.names(), "who may skip review")
+	}
+	return kept
 }
 
 // toProtection converts the payload. A protected branch permits nothing it
@@ -471,6 +517,8 @@ func (p ghProtection) toProtection(branch string) core.Protection {
 		RequireConversationResolution: p.RequiredConversationResolution.Enabled,
 		AllowForcePush:                p.AllowForcePushes.Enabled,
 		AllowDeletions:                p.AllowDeletions.Enabled,
+		AdminOnly:                     true,
+		Immovable:                     p.immovable(),
 	}
 	if checks := p.RequiredStatusChecks; checks != nil {
 		protection.StrictChecks = checks.Strict
@@ -560,8 +608,9 @@ type ghRuleset struct {
 			Exclude []string `json:"exclude"`
 		} `json:"ref_name"`
 	} `json:"conditions"`
-	Rules []ghRule `json:"rules"`
-	Links struct {
+	Rules        []ghRule        `json:"rules"`
+	BypassActors []ghBypassActor `json:"bypass_actors"`
+	Links        struct {
 		HTML struct {
 			Href string `json:"href"`
 		} `json:"html"`
@@ -680,8 +729,21 @@ type ghRulesetRequest struct {
 			Exclude []string `json:"exclude"`
 		} `json:"ref_name"`
 	} `json:"conditions"`
-	Rules []map[string]any `json:"rules"`
+	Rules        []map[string]any `json:"rules"`
+	BypassActors []ghBypassActor  `json:"bypass_actors,omitempty"`
 }
+
+// ghBypassActor is somebody a ruleset does not hold to its rules.
+type ghBypassActor struct {
+	ActorID    int64  `json:"actor_id"`
+	ActorType  string `json:"actor_type"`
+	BypassMode string `json:"bypass_mode"`
+}
+
+// ghAdminsBypass lets the repository's administrators past a ruleset, which
+// is what classic protection means when it does not enforce its rules on
+// admins. GitHub numbers the admin repository role 5.
+var ghAdminsBypass = ghBypassActor{ActorID: 5, ActorType: "RepositoryRole", BypassMode: "always"}
 
 // protectionToRules is the inverse of [rulesToProtection]: the rules that say
 // what a protection says. Approvals and conversation resolution travel in one
