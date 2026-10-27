@@ -131,6 +131,9 @@ func (v *validator) preset() {
 	if p := v.cfg.Preset; p != "" {
 		v.oneOf("preset", p, PresetNames)
 	}
+	if m := v.cfg.Mode; m != "" {
+		v.oneOf("mode", m, modes)
+	}
 }
 
 // forge checks the Git host.

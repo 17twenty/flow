@@ -58,8 +58,10 @@ func (c *SyncCmd) Run(app *Context) error {
 			Clock:     s.Clock,
 			Window:    c.Window.Std(),
 			FailBelow: failBelow(s.Config),
-			Fix:       true,
-			Log:       app.Log,
+			// Below automate, sync says what it would settle and settles
+			// nothing (spec 20 §8).
+			Fix: s.Config.Acts(),
+			Log: app.Log,
 		},
 		Only:        engine.SyncChecks,
 		FlowVersion: version,

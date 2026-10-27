@@ -24,6 +24,7 @@ type InitCmd struct {
 	TrackerURL  string `name:"tracker-url" help:"Tracker base URL for self-hosted installations." placeholder:"URL"`
 	Project     string `help:"Project or board reference." placeholder:"REF"`
 	Owner       string `help:"GitHub Projects owner login." placeholder:"LOGIN"`
+	Mode        string `help:"How much flow may write: observe, gate or automate (spec 20 §8)." placeholder:"MODE"`
 	Force       bool   `help:"Overwrite an existing configuration."`
 	NoHooks     bool   `name:"no-hooks" help:"Do not install the local commit-msg hook."`
 	NoTemplates bool   `name:"no-templates" help:"Do not write CI, PR or issue templates."`
@@ -288,6 +289,7 @@ func (c *InitCmd) values(app *Context, repo *git.Repo) ([]setting, error) {
 		{"tracker.owner", c.Owner},
 		{"tracker.url", c.TrackerURL},
 		{"tracker.project", c.Project},
+		{"mode", c.Mode},
 	} {
 		if s.value != "" {
 			values = append(values, s)
