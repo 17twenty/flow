@@ -117,8 +117,9 @@ flow needs four things from wherever it runs, and nothing else:
 4. the flow binary, at a pinned version.
 
 How a run learns (1) is the only part that differs between CI systems, so it
-sits behind one small seam: `FLOW_PR` and `FLOW_EVENT` in the environment win
-everywhere; failing those, flow reads the CI system it recognises (GitHub
+sits behind one small seam: `FLOW_PR` (and `FLOW_RUN_URL`, for the status's
+link) in the environment win everywhere; failing those, flow reads the CI
+system it recognises (GitHub
 Actions' event payload, GitLab CI's `CI_MERGE_REQUEST_IID`, Forgejo and Gitea
 Actions as GitHub's). Templates ship per CI system under
 `assets/templates/ci/<ci>-flow.yml`, and every template installs a released

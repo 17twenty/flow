@@ -494,7 +494,7 @@ Human-only steps use ids `H.<n>` (never seeded).
 - [ ] 9.6 Credential roles in the documentation and the probe — specs: 20 §5, 15 — deps: — (#216)
   - AC: spec 15 and the cookbook describe reader, gate and actor; doctor's auth checks say which roles a credential can fill
   - AC: the README, spec 15 and the cookbook agree on the agent's identity (machine user, not an App)
-- [ ] 9.7 The runner seam: `FLOW_PR`/`FLOW_EVENT`, then the CI system flow recognises — specs: 20 §7, 02 — deps: — (#217)
+- [ ] 9.7 The runner seam: `FLOW_PR`/`FLOW_RUN_URL`, then the CI system flow recognises — specs: 20 §7, 02 — deps: — (#217)
   - AC: `check pr` takes its pull request from `FLOW_PR` before any CI-specific payload; GitHub Actions and GitLab CI are recognised
 - [ ] 9.8 Templates install a pinned release binary, per CI system — specs: 20 §7, 16, 06 §2 — deps: 9.7 (#218)
   - AC: no template compiles flow from source; each pins the version `init` ran as
