@@ -33,11 +33,11 @@ github.com/17twenty/flow/
 ├── .github/           # flow's own dogfood config (spec 17)
 ├── .flow.yaml         # flow's own workflow (spec 17)
 ├── .flow.lock
-└── .ralph/            # build loop specs and prompts
+└── docs/design/       # these specs: the design record the code answers to
 ```
 
-No other packages. New packages require a proposal in `IMPLEMENTATION_PLAN.md`
-"Proposals" approved by a human.
+No other packages. A new package is proposed in an issue and approved by a
+human before it is written.
 
 ## 2. Dependency direction
 

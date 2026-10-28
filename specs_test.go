@@ -24,12 +24,12 @@ import (
 // read every list in both directions, so that neither half can move alone.
 
 const (
-	cliSpec     = ".ralph/specs/02-cli.md"
-	configSpec  = ".ralph/specs/03-configuration.md"
-	doctorSpec  = ".ralph/specs/07-doctor.md"
-	policySpec  = ".ralph/specs/09-policy-gate.md"
-	testingSpec = ".ralph/specs/14-testing.md"
-	specDir     = ".ralph/specs"
+	cliSpec     = "docs/design/02-cli.md"
+	configSpec  = "docs/design/03-configuration.md"
+	doctorSpec  = "docs/design/07-doctor.md"
+	policySpec  = "docs/design/09-policy-gate.md"
+	testingSpec = "docs/design/14-testing.md"
+	specDir     = "docs/design"
 )
 
 // specName matches a dotted name as a spec writes one: in backticks, lower

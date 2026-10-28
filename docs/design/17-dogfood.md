@@ -33,9 +33,9 @@ approve their own PR, so `agent.human_review` would otherwise be unsatisfiable.
 - `.github/ISSUE_TEMPLATE/story.yml`, `bug.yml`, `config.yml` — issue forms with
   required "Acceptance criteria"; blank issues disabled.
 - `.github/pull_request_template.md` — conventional title reminder, `Closes #`.
-- `bootstrap/seed-issues.sh` — creates phase parent issues and one sub-issue per
-  plan item from `IMPLEMENTATION_PLAN.md`, adds them to the Project in Ready /
-  Backlog, writes the issue numbers back into the plan.
+- A seeding script (retired once it had run) created phase parent issues and
+  one sub-issue per plan item from the implementation plan, added them to the
+  Project in Ready / Backlog, and wrote the issue numbers back into the plan.
 
 ## 3. Project configuration (manual, attested once, then verified live)
 
@@ -87,7 +87,7 @@ commits:
   types: [feat, fix, perf, refactor, test, docs, build, ci, chore, revert, style]
   header_max: 72
   merge_strategy: squash
-  scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, ralph, deps] }
+  scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, design, deps] }
   unlinked_types: [ci, build, docs, chore]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }
@@ -110,7 +110,8 @@ followups:
 5. Store that PAT as repo secret `FLOW_PROJECT_TOKEN`.
 6. Copy `dogfood/*` into the repo (except `flow.yml`, which needs the binary —
    add it in Stage B). Commit to `main` (unprotected at this point).
-7. Run `bootstrap/seed-issues.sh 17twenty/flow <project-number>`.
+7. Seed the backlog: one parent issue per phase and one sub-issue per plan item
+   (the script that did it was retired once it had run).
 
 **Stage A loop mode (Phases 0–3): direct-to-main.** The loop commits to `main`
 with conventional messages and `Closes #N` footers referencing the seeded issue
@@ -415,3 +416,11 @@ Each iteration, as the agent identity:
   file; the acceptance criterion about reproducing it with `flow init --force`
   is about the shape `init` writes, not about a file a live repository has
   since edited.
+- **The build loop is retired, and the specs are the design record (Stage C).**
+  Every phase of the plan landed and its issues are closed, so the loop's
+  scaffolding went: the runner, its prompts, the implementation plan and the
+  seeding script. Their history is the closed issues and git. The specs moved
+  from the loop's working directory to `docs/design/`, where a reader of the
+  repository finds them, and the tests that hold the code to them followed.
+  What an agent working on flow needs is `AGENTS.md`; what a person needs is
+  `CONTRIBUTING.md`.
