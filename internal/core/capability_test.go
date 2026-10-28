@@ -371,9 +371,15 @@ func TestParseCapabilitySetRejects(t *testing.T) {
 			wantIn: "does not say where the thing lives",
 		},
 		{
+			name: "an attestation's recipe that does not say where",
+			src: strings.Replace(strings.Replace(validDeploys, "remediation: follow_up", "remediation: attest", 1),
+				`where: "your deploy job writes it"`, `where: "   "`, 1),
+			wantIn: "does not say where the thing lives",
+		},
+		{
 			name:   "a recipe on a capability that files no ticket",
 			src:    strings.Replace(validDeploys, "remediation: follow_up", "remediation: none", 1),
-			wantIn: "only a capability flow files a ticket about is ever done by hand",
+			wantIn: "is ever done by hand",
 		},
 		{
 			name:   "a placeholder flow cannot fill in",
