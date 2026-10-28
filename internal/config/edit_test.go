@@ -358,3 +358,133 @@ func assertReads(t *testing.T, document []byte, path, value string) {
 		t.Errorf("%s = %q, want %q", path, got, value)
 	}
 }
+
+// TestSetListAddsAListOnALineOfItsOwn is what init needs to give a forge with
+// no deployment records a commit status to read (issue #295): one line at the
+// end of the section, quoted the way the presets quote a list, and nothing
+// else in the file touched — the comment showing the alternative included.
+func TestSetListAddsAListOnALineOfItsOwn(t *testing.T) {
+	const src = `version: 1
+
+deploys:
+  source: commit_status    # forge_deployments | commit_status | none
+  # commit_status only: contexts: ['argocd/app-prod']
+  max_age: 7d              # warn after this long
+
+policy:
+  status_context: flow/policy
+`
+	got, err := SetList([]byte(src), "deploys.contexts", []string{"deploy/production", "7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `version: 1
+
+deploys:
+  source: commit_status    # forge_deployments | commit_status | none
+  # commit_status only: contexts: ['argocd/app-prod']
+  max_age: 7d              # warn after this long
+  contexts: ['deploy/production', '7']
+
+policy:
+  status_context: flow/policy
+`
+	if string(got) != want {
+		t.Errorf("SetList wrote\n%s\nwant\n%s", got, want)
+	}
+	var cfg struct {
+		Deploys struct {
+			Contexts []string `yaml:"contexts"`
+		} `yaml:"deploys"`
+	}
+	if err := yaml.Unmarshal(got, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Deploys.Contexts, ",") != "deploy/production,7" {
+		t.Errorf("the list reads back as %q", cfg.Deploys.Contexts)
+	}
+}
+
+// TestSetListRefusesWhatItCannotDoSafely. It only adds: a list that is there
+// already was written by somebody, and an empty one leaves nothing to prove
+// the edit by.
+func TestSetListRefusesWhatItCannotDoSafely(t *testing.T) {
+	const src = `version: 1
+forge:
+  type: github
+  auth: { token_env: T }
+deploys:
+  contexts: ['argocd/app-prod']
+`
+	for _, tc := range []struct {
+		name, path string
+		values     []string
+		want       error
+	}{
+		{name: "a list that is already there", path: "deploys.contexts", values: []string{"x"}, want: core.ErrConflict},
+		{name: "a scalar that is already there", path: "forge.type", values: []string{"x"}, want: core.ErrConflict},
+		{name: "an empty list", path: "forge.required_checks", values: nil, want: core.ErrValidation},
+		{name: "a section that is not there", path: "policy.labels", values: []string{"x"}, want: core.ErrNotFound},
+		{name: "inserting into a flow mapping", path: "forge.auth.scopes", values: []string{"x"}, want: core.ErrConflict},
+		{name: "an empty path", path: "", values: []string{"x"}, want: core.ErrValidation},
+		{name: "a doubled dot", path: "forge..checks", values: []string{"x"}, want: core.ErrValidation},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := SetList([]byte(src), tc.path, tc.values)
+			if err == nil {
+				t.Fatalf("SetList(%q) wrote %q instead of refusing", tc.path, got)
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("SetList(%q) = %v, want %v", tc.path, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestSetListRefusesADocumentItCannotRead, as Set does: a list spliced into a
+// document that did not parse would be spliced at a guessed line.
+func TestSetListRefusesADocumentItCannotRead(t *testing.T) {
+	if got, err := SetList([]byte("deploys: {\n"), "deploys.contexts", []string{"x"}); err == nil {
+		t.Fatalf("SetList wrote %q", got)
+	} else if !errors.Is(err, core.ErrValidation) {
+		t.Errorf("SetList = %v, want %v", err, core.ErrValidation)
+	}
+}
+
+// TestAnEditIsCheckedForWhatItDidAndNothingElse. The verification is what
+// stands between a wrong splice and a corrupted .flow.yaml, and a correct edit
+// never trips it, so it is asked directly with each wrong edit it is for.
+func TestAnEditIsCheckedForWhatItDidAndNothingElse(t *testing.T) {
+	const before = "a: 1\nb: 2\n"
+	want := map[string]string{"c[0]": "x"}
+	for _, tc := range []struct{ name, after string }{
+		{"the wanted value is missing", "a: 1\nb: 2\n"},
+		{"the wanted value is wrong", "a: 1\nb: 2\nc: ['y']\n"},
+		{"another value changed", "a: 1\nb: 3\nc: ['x']\n"},
+		{"another value went", "a: 1\nc: ['x']\n"},
+		{"another value arrived", "a: 1\nb: 2\nc: ['x', 'y']\n"},
+		{"the result does not parse", "a: [\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := verifyLeaves([]byte(before), []byte(tc.after), want); err == nil {
+				t.Errorf("verifyLeaves accepted %q", tc.after)
+			}
+		})
+	}
+	if err := verifyLeaves([]byte(before), []byte("a: 1\nb: 2\nc: ['x']\n"), want); err != nil {
+		t.Errorf("verifyLeaves refused the edit it asked for: %v", err)
+	}
+}
+
+// TestSetListRefusesAnEditItCannotProve. A section ending in a block scalar
+// ends, as far as the parser says, on the line the scalar starts: the list
+// would land inside the text. The edit is refused because reading it back
+// does not give the document that was asked for.
+func TestSetListRefusesAnEditItCannotProve(t *testing.T) {
+	const src = "deploys:\n  note: |\n    first\n    second\n"
+	if got, err := SetList([]byte(src), "deploys.contexts", []string{"x"}); err == nil {
+		t.Fatalf("SetList wrote %q", got)
+	} else if !errors.Is(err, core.ErrValidation) {
+		t.Errorf("SetList = %v, want %v", err, core.ErrValidation)
+	}
+}

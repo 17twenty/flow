@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/17twenty/flow/internal/config"
 	"github.com/17twenty/flow/internal/core"
 )
 
@@ -595,6 +596,143 @@ func TestInitWritesTheFilesOfTheForgeItIsFor(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(dir, path)); err == nil {
 					t.Errorf("%s was written for a %s repository", path, tc.forge)
 				}
+			}
+		})
+	}
+}
+
+// writtenConfig parses and validates what init wrote, against the
+// declarations this build ships: the test that a file is one flow can read.
+func writtenConfig(t *testing.T, dir string) *config.Config {
+	t.Helper()
+	cfg, err := config.Parse([]byte(readFlowConfig(t, dir)), configFile)
+	if err != nil {
+		t.Fatalf("the written configuration does not parse: %v", err)
+	}
+	registry, err := shippedRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Validate(cfg, configFile, registry); err != nil {
+		t.Fatalf("the written configuration is not valid: %v", err)
+	}
+	return cfg
+}
+
+// TestInitWritesADeploySourceTheForgeCanRead is issue #295. GitLab and Gitea
+// keep no deployment records flow can read, so the presets' forge_deployments
+// would fail every deploy check from the first run; init writes a commit
+// status source instead, with the one context flow will look for, and says
+// so. Every preset is run, because deploy-done is the one `none` could not
+// have served, and the forge is detected from the remote rather than named,
+// because that is how most people meet it.
+func TestInitWritesADeploySourceTheForgeCanRead(t *testing.T) {
+	for _, forge := range []struct{ kind, remote string }{
+		{config.ForgeGitLab, "git@gitlab.com:acme/api.git"},
+		{config.ForgeGitea, "git@codeberg.org:acme/api.git"},
+	} {
+		for _, preset := range []string{"lean-kanban", "deploy-done", "minimal"} {
+			t.Run(forge.kind+"/"+preset, func(t *testing.T) {
+				dir := initRepo(t, forge.remote)
+				code, stdout, stderr := exec(t, "-C", dir, "init", "--preset", preset, "--tracker", "github-projects", "--owner", "acme", "--project", "7", "--yes")
+				if code != core.ExitOK {
+					t.Fatalf("exited %d: %s", code, stderr)
+				}
+				cfg := writtenConfig(t, dir)
+				if cfg.Forge.Type != forge.kind {
+					t.Fatalf("forge.type is %q, want %q", cfg.Forge.Type, forge.kind)
+				}
+				if cfg.Deploys.Source != config.DeploySourceCommitStatus {
+					t.Errorf("deploys.source is %q, want %q", cfg.Deploys.Source, config.DeploySourceCommitStatus)
+				}
+				if got := strings.Join(cfg.Deploys.Contexts, ","); got != "deploy/production" {
+					t.Errorf("deploys.contexts is %q, want the one context named after the environment", got)
+				}
+				for _, want := range []string{"deploys.source is commit_status", forge.kind + " keeps no deployment records", "deploy/production"} {
+					if !strings.Contains(stdout, want) {
+						t.Errorf("stdout does not say %q:\n%s", want, stdout)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestInitLeavesDeploymentsAloneOnAForgeThatKeepsThem: GitHub's deployments
+// are the preset's answer and still are, with nothing said about it.
+func TestInitLeavesDeploymentsAloneOnAForgeThatKeepsThem(t *testing.T) {
+	dir := initRepo(t, "git@github.com:acme/api.git")
+	code, stdout, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--project", "7", "--yes")
+	if code != core.ExitOK {
+		t.Fatalf("exited %d: %s", code, stderr)
+	}
+	cfg := writtenConfig(t, dir)
+	if cfg.Deploys.Source != config.DeploySourceForge || len(cfg.Deploys.Contexts) > 0 {
+		t.Errorf("deploys is %+v, want the preset's forge_deployments untouched", cfg.Deploys)
+	}
+	if strings.Contains(stdout, "deploys.source") {
+		t.Errorf("stdout explains a source nobody changed:\n%s", stdout)
+	}
+}
+
+// TestInitTheForgeFlagDecidesTheDeploySource: the declaration read is the
+// forge's that is written, so --forge over a github.com remote is what
+// decides, not the host.
+func TestInitTheForgeFlagDecidesTheDeploySource(t *testing.T) {
+	dir := initRepo(t, "git@github.com:acme/api.git")
+	code, _, stderr := exec(t, "-C", dir, "init", "--forge", "gitea", "--tracker", "github-projects", "--owner", "acme", "--project", "7", "--yes")
+	if code != core.ExitOK {
+		t.Fatalf("exited %d: %s", code, stderr)
+	}
+	if cfg := writtenConfig(t, dir); cfg.Deploys.Source != config.DeploySourceCommitStatus {
+		t.Errorf("deploys.source is %q on gitea, want %q", cfg.Deploys.Source, config.DeploySourceCommitStatus)
+	}
+}
+
+// TestInitOnlyReplacesTheSourceItCannotRead: the preset's source is changed
+// only when it is forge_deployments. A source somebody — or a future preset —
+// already chose is theirs, on any forge.
+func TestInitOnlyReplacesTheSourceItCannotRead(t *testing.T) {
+	registry, err := shippedRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const source = "version: 1\nforge:\n  type: gitlab\ndeploys:\n  source: none\n"
+	got, swap, err := readableDeploySource([]byte(source), registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != source || swap != (deploySwap{}) {
+		t.Errorf("readableDeploySource changed a source of none:\n%s\nswap: %+v", got, swap)
+	}
+}
+
+// TestInitJSONNamesTheDeploySourceItChose: a script reading --json is told
+// what a person reading the text is told (issue #295), and told nothing when
+// the preset's source stands.
+func TestInitJSONNamesTheDeploySourceItChose(t *testing.T) {
+	for _, tc := range []struct{ remote, want string }{
+		{"git@gitlab.com:acme/api.git", config.DeploySourceCommitStatus},
+		{"git@github.com:acme/api.git", ""},
+	} {
+		t.Run(tc.remote, func(t *testing.T) {
+			dir := initRepo(t, tc.remote)
+			code, stdout, stderr := exec(t, "-C", dir, "--json", "init", "--tracker", "github-projects", "--owner", "acme", "--yes")
+			if code != core.ExitOK {
+				t.Fatalf("exited %d: %s", code, stderr)
+			}
+			var report struct {
+				DeploysSource *string `json:"deploys_source"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+				t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+			}
+			got := ""
+			if report.DeploysSource != nil {
+				got = *report.DeploysSource
+			}
+			if got != tc.want {
+				t.Errorf("deploys_source = %q, want %q", got, tc.want)
 			}
 		})
 	}

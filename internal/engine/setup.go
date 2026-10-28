@@ -678,6 +678,21 @@ func (in SetupInput) deploysSource() Check {
 			if reads, why := ReadsDeployments(env.Config); !reads {
 				return Skip("%s", why)
 			}
+			// A warning, not a failure (issue #295): flow guides by default,
+			// and a deploy setting the forge cannot honour costs the team the
+			// deploy audit, not their gate. The fix is the source init now
+			// writes for such a forge.
+			if why, unreadable := unreadableDeploys(env); unreadable {
+				where := env.Config.Deploys.Environment
+				return Result{State: StateWarn, Message: why}.Fix(Remediation{
+					Kind:    RemedyManual,
+					Summary: "read deployments from commit statuses, or stop reading them",
+					Steps: []string{
+						fmt.Sprintf("set deploys.source: %s and deploys.contexts: ['deploy/%s'], and have the deployer post that status on the commit it ships", config.DeploySourceCommitStatus, where),
+						fmt.Sprintf("or, if nothing records deployments and work is done on merge, set deploys.source: %s and remove deploys.environment, max_lag and max_age", config.DeploySourceNone),
+					},
+				})
+			}
 			return plannedResult(env, core.ItemDeploysRecords, title)
 		},
 	}

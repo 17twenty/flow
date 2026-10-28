@@ -24,6 +24,12 @@ import (
 // the deployment source it chose.
 func deploysFor(t *testing.T, block config.Deploys, forgeURL ...string) (core.DeploySource, error) {
 	t.Helper()
+	return deploysOn(t, "github", block, forgeURL...)
+}
+
+// deploysOn is deploysFor on a forge of the kind named.
+func deploysOn(t *testing.T, kind string, block config.Deploys, forgeURL ...string) (core.DeploySource, error) {
+	t.Helper()
 	t.Setenv("FLOW_TEST_FORGE_TOKEN", "test-token")
 
 	declarations, err := assets.Capabilities()
@@ -40,11 +46,14 @@ func deploysFor(t *testing.T, block config.Deploys, forgeURL ...string) (core.De
 		ConfigPath: ".flow.yaml",
 		Registry:   registry,
 		Config: &config.Config{
-			Forge:   config.Forge{Type: "github", Repo: "acme/widget", URL: url, Auth: auth},
+			Forge:   config.Forge{Type: kind, Repo: "acme/widget", URL: url, Auth: auth},
 			Tracker: config.Tracker{Type: "github-projects", Owner: "acme", OwnerType: config.OwnerOrg, Auth: auth},
 			Deploys: block,
 		},
 		Settings: approving(url),
+	}
+	if host := hostOf(url); host != "" {
+		s.Settings.Auth[kind] = config.AuthSource{Hosts: []string{host}}
 	}
 	adapters, err := liveAdapters(hostContext(t, CLI{}), s)
 	if err != nil {
@@ -280,5 +289,37 @@ func TestAJiraBuildWantsTheEmailTheTokenBelongsTo(t *testing.T) {
 	var user *core.UserError
 	if !errors.As(err, &user) || !strings.Contains(user.Fix, "JIRA_EMAIL") {
 		t.Errorf("the refusal does not name the variable to export: %+v", err)
+	}
+}
+
+// TestNoSourceIsBuiltForRecordsTheForgeDoesNotKeep is issue #295. The only
+// reader of forge deployments is GitHub's, and building it against GitLab or
+// Gitea made every observation of it an error that failed every check doctor
+// planned. No source is built for them; a commit status source still is,
+// because every forge keeps commit statuses.
+func TestNoSourceIsBuiltForRecordsTheForgeDoesNotKeep(t *testing.T) {
+	for _, kind := range []string{"gitlab", "gitea"} {
+		t.Run(kind, func(t *testing.T) {
+			url := "https://" + kind + ".example.test"
+			source, err := deploysOn(t, kind, config.Deploys{Source: config.DeploySourceForge, Environment: "production"}, url)
+			if err != nil {
+				t.Fatalf("liveAdapters: %v", err)
+			}
+			if source != nil {
+				t.Errorf("a %q source was built on %s, which keeps no deployment records", source.Kind(), kind)
+			}
+
+			source, err = deploysOn(t, kind, config.Deploys{
+				Source:      config.DeploySourceCommitStatus,
+				Environment: "production",
+				Contexts:    []string{"deploy/production"},
+			}, url)
+			if err != nil {
+				t.Fatalf("liveAdapters: %v", err)
+			}
+			if source == nil || source.Kind() != core.SourceCommitStatus {
+				t.Errorf("source = %v on %s, want a commit status source", source, kind)
+			}
+		})
 	}
 }

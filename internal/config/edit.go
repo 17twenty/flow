@@ -327,8 +327,23 @@ func parsesAs(document string, line int, value string) bool {
 // own to grow into, and rewriting it would undo the formatting this whole file
 // exists to preserve.
 func insertKey(src []byte, parent *yaml.Node, name, value string) ([]byte, error) {
+	for _, rendered := range renderings(value) {
+		edited, at, err := insertLine(src, parent, name, rendered)
+		if err != nil {
+			return nil, err
+		}
+		if parsesAs(string(edited), at, value) {
+			return edited, nil
+		}
+	}
+	return nil, internalEditError("no rendering of the new value parses back as itself")
+}
+
+// insertLine puts `name: rendered` on a line of its own after the last line
+// of a block mapping, and says which line that is.
+func insertLine(src []byte, parent *yaml.Node, name, rendered string) ([]byte, int, error) {
 	if parent.Kind != yaml.MappingNode || isFlow(parent) || len(parent.Content) == 0 {
-		return nil, core.Errorf(core.ErrConflict, "add %s", name).
+		return nil, 0, core.Errorf(core.ErrConflict, "add %s", name).
 			WithWhy("its section is not a block mapping flow can grow").
 			WithFix("add the key by hand")
 	}
@@ -337,17 +352,73 @@ func insertKey(src []byte, parent *yaml.Node, name, value string) ([]byte, error
 
 	lines := splitLines(src)
 	if at < 1 || at > len(lines) {
-		return nil, internalEditError("the section does not end on a line of the file")
+		return nil, 0, internalEditError("the section does not end on a line of the file")
 	}
-	for _, rendered := range renderings(value) {
-		edited := append([]string{}, lines[:at]...)
-		edited = append(edited, indent+name+": "+rendered)
-		edited = append(edited, lines[at:]...)
-		if parsesAs(strings.Join(edited, "\n"), at+1, value) {
-			return []byte(strings.Join(edited, "\n")), nil
-		}
+	edited := append([]string{}, lines[:at]...)
+	edited = append(edited, indent+name+": "+rendered)
+	edited = append(edited, lines[at:]...)
+	return []byte(strings.Join(edited, "\n")), at + 1, nil
+}
+
+// SetList returns src with a list of strings added at the dotted key path,
+// written on one line in flow style — `contexts: ['deploy/production']` —
+// which is how the presets write a short list beside its comment.
+//
+// It only adds. A list the document already holds has items somebody chose
+// and maybe comments between them, and replacing it in place is the
+// restructuring [Set] exists to avoid; flow refuses rather than guess. The
+// edit is verified as [Set]'s is: every item reads back as written, and no
+// other value in the document has moved.
+func SetList(src []byte, keyPath string, values []string) ([]byte, error) {
+	path := strings.Split(keyPath, ".")
+	if keyPath == "" || slicesHasEmpty(path) {
+		return nil, core.Errorf(core.ErrValidation, "set %q", keyPath).
+			WithWhy("a key path is one or more dotted names").
+			WithFix("use a path such as deploys.contexts")
 	}
-	return nil, internalEditError("no rendering of the new value parses back as itself")
+	if len(values) == 0 {
+		// An empty list leaves no item to read back, so the verification
+		// below could not tell it from an edit that wrote nothing.
+		return nil, core.Errorf(core.ErrValidation, "set %s", keyPath).
+			WithWhy("the list is empty").
+			WithFix("leave the key out instead")
+	}
+	root, err := documentRoot(src)
+	if err != nil {
+		return nil, err
+	}
+	parent, _, err := walkTo(root, path[:len(path)-1], false)
+	if err != nil {
+		return nil, err
+	}
+	name := path[len(path)-1]
+	if _, existing := mappingEntry(parent, name); existing != nil {
+		return nil, core.Errorf(core.ErrConflict, "set %s", keyPath).
+			WithWhy("the document already has one, and flow only adds a list").
+			WithFix("edit the file by hand")
+	}
+
+	// The list is built as a node and encoded, so the quoting is yaml's and
+	// not a rule written here; single quotes are what the presets use, and
+	// they keep a value such as 7 a string.
+	list := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
+	want := make(map[string]string, len(values))
+	for i, value := range values {
+		list.Content = append(list.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Style: yaml.SingleQuotedStyle, Value: value})
+		want[fmt.Sprintf("%s[%d]", keyPath, i)] = value
+	}
+	rendered, err := yaml.Marshal(list)
+	if err != nil {
+		return nil, internalEditError("the list does not encode: %s", err)
+	}
+	edited, _, err := insertLine(src, parent, name, strings.TrimRight(string(rendered), "\n"))
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyLeaves(src, edited, want); err != nil {
+		return nil, err
+	}
+	return edited, nil
 }
 
 // lastLine is the last line any part of a node occupies. A node reports where
@@ -371,6 +442,12 @@ func splitLines(src []byte) []string { return strings.Split(string(src), "\n") }
 // verifySet checks that the edit did what it said and nothing else: the path
 // holds the new value, and every other leaf in the document is untouched.
 func verifySet(before, after []byte, keyPath, value string) error {
+	return verifyLeaves(before, after, map[string]string{keyPath: value})
+}
+
+// verifyLeaves checks that every path in want holds its value after the edit,
+// and that no other leaf in the document was changed, removed or added.
+func verifyLeaves(before, after []byte, want map[string]string) error {
 	original, err := leaves(before)
 	if err != nil {
 		return err
@@ -379,11 +456,13 @@ func verifySet(before, after []byte, keyPath, value string) error {
 	if err != nil {
 		return internalEditError("the edited document no longer parses: %s", err)
 	}
-	if got, ok := edited[keyPath]; !ok || got != value {
-		return internalEditError("%s reads %q after the edit, not %q", keyPath, got, value)
+	for keyPath, value := range want {
+		if got, ok := edited[keyPath]; !ok || got != value {
+			return internalEditError("%s reads %q after the edit, not %q", keyPath, got, value)
+		}
 	}
 	for path, was := range original {
-		if path == keyPath {
+		if _, wanted := want[path]; wanted {
 			continue
 		}
 		if now, ok := edited[path]; !ok || now != was {
@@ -391,8 +470,10 @@ func verifySet(before, after []byte, keyPath, value string) error {
 		}
 	}
 	for path := range edited {
-		if _, ok := original[path]; !ok && path != keyPath {
-			return internalEditError("the edit also added %s", path)
+		if _, ok := original[path]; !ok {
+			if _, wanted := want[path]; !wanted {
+				return internalEditError("the edit also added %s", path)
+			}
 		}
 	}
 	return nil

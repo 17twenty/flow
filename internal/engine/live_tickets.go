@@ -268,6 +268,9 @@ func (a *audit) ticketsDoneDeployed() Check {
 			if watched, why := WatchesDeployments(env.Config); !watched {
 				return Skip("%s", why)
 			}
+			if why, unreadable := unreadableDeploys(env); unreadable {
+				return Skip("%s; deploys.source says what to use instead", why)
+			}
 			if env.Adapters.Deploys == nil {
 				return Failed(errNoDeploys)
 			}
