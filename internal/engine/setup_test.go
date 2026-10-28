@@ -692,6 +692,7 @@ func TestASettledFollowUpIsNotOutstanding(t *testing.T) {
 	env.Lock.FollowUps = []config.FollowUp{
 		{Check: "a", Ticket: "acme/api#1", State: config.FollowUpClosed, OpenedAt: now.Add(-365 * 24 * time.Hour)},
 		{Check: "b", Ticket: "acme/api#2", State: config.FollowUpClosed, OpenedAt: now.Add(-365 * 24 * time.Hour)},
+		{Check: "d", Ticket: "acme/api#4", State: config.FollowUpDeclined, OpenedAt: now.Add(-365 * 24 * time.Hour)},
 		{Check: "c", Ticket: "acme/api#3", State: config.FollowUpOpen, OpenedAt: now.Add(-24 * time.Hour)},
 	}
 
