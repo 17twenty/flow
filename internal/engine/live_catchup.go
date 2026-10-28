@@ -51,6 +51,13 @@ func (a *audit) transitionsFlow() Check {
 			if len(flowEvents(env.Config)) == 0 {
 				return Skip("no transition in this workflow is flow's to perform")
 			}
+			// A ticket's column is decided from all of its work at once, so
+			// with a deployed move to make and no records to make it from,
+			// none of the board can be judged (issue #295). Erring here
+			// would make a deploy setting the run's hard failure.
+			if why, unreadable := unreadableDeploys(env); unreadable && ownsDeployed(env.Config) {
+				return Skip("%s, and the deployed move cannot be judged without them; deploys.source says what to use instead", why)
+			}
 			board, err := a.board(ctx, env)
 			if err != nil {
 				return Failed(err)
@@ -246,14 +253,19 @@ func closedInWindow(env *Env, ticket core.Ticket) bool {
 // see is a move flow would never make, and a check that quietly skipped it
 // would report a board that is permanently one column short as correct.
 func (a *audit) deploymentsFor(ctx context.Context, env *Env) ([]core.Deployment, error) {
-	transition, configured := env.Config.Workflow.Transitions[config.EventDeployed]
-	if !configured || transition.Owner != config.OwnerFlow || transition.To == "" {
+	if !ownsDeployed(env.Config) {
 		return nil, nil
 	}
 	if env.Adapters.Deploys == nil {
 		return nil, errNoDeploys
 	}
 	return a.shipped(ctx, env)
+}
+
+// ownsDeployed reports whether a deployment is one of the moves flow makes.
+func ownsDeployed(cfg *config.Config) bool {
+	transition, configured := cfg.Workflow.Transitions[config.EventDeployed]
+	return configured && transition.Owner == config.OwnerFlow && transition.To != ""
 }
 
 // linkedPRs is a ticket's work in the form [Transition] reads it.

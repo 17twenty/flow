@@ -531,3 +531,21 @@ func TestGateTextNamesTheRulesThatFailed(t *testing.T) {
 		t.Errorf("the text rendering does not name %s:\n%s", engine.RulePRTitleConventional, stdout)
 	}
 }
+
+// TestTheGateIgnoresADeploySourceTheForgeCannotProvide: a GitLab repository
+// still naming forge_deployments (issue #295) gates its merge requests as any
+// other. The deploy setting is doctor's to warn about, never a reason to
+// block somebody's work.
+func TestTheGateIgnoresADeploySourceTheForgeCannotProvide(t *testing.T) {
+	dir := oldGitLabRepo(t, "lean-kanban", func(w *fakeWorld) {
+		w.forge.SetPullRequest(gatePR(9, "ci: cache modules"))
+	})
+
+	doc, code := gateJSON(t, dir, "--pr", "9")
+	if code != core.ExitOK {
+		t.Fatalf("check pr exited %d, want %d", code, core.ExitOK)
+	}
+	if doc.State != core.StatusSuccess {
+		t.Errorf("the gate published %q/%q, want %q: %v", doc.State, doc.Description, core.StatusSuccess, doc.failures())
+	}
+}
