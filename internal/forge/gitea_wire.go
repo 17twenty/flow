@@ -475,6 +475,10 @@ func (b gtBranch) toProtection(branch string) core.Protection {
 		Branch:            branch,
 		Enabled:           b.Protected,
 		RequiredApprovals: b.RequiredApprovals,
+		// Gitea matches each required context as a glob, so `flow/*` already
+		// requires `flow/policy` and asking for it again would be asking for
+		// nothing (issue #293).
+		CheckPatterns: true,
 	}
 	if !b.Protected {
 		return p

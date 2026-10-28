@@ -483,9 +483,17 @@ func (g *Gitea) SetProtection(ctx context.Context, branch string, want core.Prot
 	merged := effective.Merge(want)
 	body := protectionRequestGitea(merged)
 
+	// The edit goes to the rule that governs the branch, which is not
+	// always one of the branch's name: a glob rule such as `main*` covers
+	// it, and a rule written under `main` beside it would win, carrying
+	// none of the glob's push and merge whitelists (issue #293).
+	governing, err := g.governingRule(ctx, branch)
+	if err != nil {
+		return err
+	}
 	req := core.Request{
 		Method: http.MethodPatch,
-		Path:   g.path("branch_protections", branch),
+		Path:   g.path("branch_protections", governing),
 		Body:   body,
 		// Writing the same whole state twice leaves the same state, so a
 		// retry cannot do anything the first attempt did not.
@@ -494,7 +502,8 @@ func (g *Gitea) SetProtection(ctx context.Context, branch string, want core.Prot
 	// A rule may not exist yet, and Gitea creates one at a different
 	// address from the one that edits it. The edit is tried first because
 	// it is the ordinary case; a repository with no rule answers 404 and
-	// gets the create.
+	// gets the create, named after the branch because nothing else
+	// governs it.
 	if _, err := g.do(ctx, req); err == nil {
 		return nil
 	} else if !errors.Is(err, core.ErrNotFound) {
@@ -512,6 +521,25 @@ func (g *Gitea) SetProtection(ctx context.Context, branch string, want core.Prot
 		return core.Explain(err, "protect %s of %s", branch, g.Slug())
 	}
 	return nil
+}
+
+// governingRule names the rule a write to a branch's protection has to edit:
+// the one Gitea says governs the branch, or one of the branch's own name when
+// no rule does yet or the instance predates saying so.
+//
+// It asks the branch again rather than taking the name from [Gitea.Protection],
+// because the protection is the forge-neutral answer and the rule's name is
+// Gitea's own bookkeeping; one more read on a write that happens once is the
+// price of keeping it out of the type every forge shares.
+func (g *Gitea) governingRule(ctx context.Context, branch string) (string, error) {
+	payload, err := g.branch(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	if payload == nil {
+		return branch, nil
+	}
+	return payload.ruleName(branch), nil
 }
 
 // SetMergeSettings sets the repository's merge strategies. They are one setting

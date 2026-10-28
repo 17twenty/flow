@@ -85,6 +85,11 @@ type giteaFake struct {
 	// effective names the rule that governs a branch, where that is not a
 	// rule of the branch's own name. A glob rule is the usual reason.
 	effective map[string]string
+	// whitelists are who may push to the branches each rule covers. flow
+	// never writes them and Gitea's edit leaves alone what it is not sent,
+	// so a rule keeps them across every edit and a rule created beside it
+	// has none — which is what shadowing a glob rule loses (issue #293).
+	whitelists map[string][]string
 	// blobs is the identity Gitea gave each file it holds, so that an
 	// update quotes the blob it replaces.
 	blobs map[string]string
@@ -113,6 +118,7 @@ func newGiteaServer(t *testing.T, fx coretest.ForgeFixture) (*giteaFake, *httpte
 		branches:   map[string]map[string][]byte{},
 		refs:       map[string]string{},
 		effective:  map[string]string{},
+		whitelists: map[string][]string{},
 		blobs:      map[string]string{},
 		userAgents: map[string]int{},
 	}
@@ -697,7 +703,11 @@ func (f *giteaFake) rule(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	if r.Method != http.MethodPatch {
-		f.writeJSON(w, r, gtProtectionJSON(name, held))
+		doc := gtProtectionJSON(name, held)
+		f.mu.Lock()
+		doc["push_whitelist_usernames"] = f.whitelists[name]
+		f.mu.Unlock()
+		f.writeJSON(w, r, doc)
 		return
 	}
 

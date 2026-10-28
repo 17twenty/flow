@@ -763,6 +763,7 @@ func sameProtection(a, b core.Protection) bool {
 	return a.Branch == b.Branch &&
 		a.Enabled == b.Enabled &&
 		slices.Equal(a.RequiredChecks, b.RequiredChecks) &&
+		a.CheckPatterns == b.CheckPatterns &&
 		a.StrictChecks == b.StrictChecks &&
 		a.RequiredApprovals == b.RequiredApprovals &&
 		a.DismissStaleReviews == b.DismissStaleReviews &&

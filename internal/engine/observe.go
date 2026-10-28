@@ -169,7 +169,7 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 			return core.Observation{}, err
 		}
 		if item.ID == core.ItemForgeRequiredStatus {
-			return requiredStatus(protection), nil
+			return requiredStatus(protection, item), nil
 		}
 		observation := protectionObservation(protection)
 		switch {
@@ -259,10 +259,23 @@ func immovableProtection(observation core.Observation, item DesiredItem, immovab
 }
 
 // requiredStatus is one item per check the trunk already requires.
-func requiredStatus(p core.Protection) core.Observation {
+//
+// A forge that requires contexts by pattern names the pattern and never the
+// check, so each check the configuration wants that a pattern covers is
+// observed under its own name as well — once, so that a forge reading a name
+// as the pattern that matches only itself observes the trunk every other
+// forge does. Without it a trunk requiring `flow/*`
+// reads as not requiring `flow/policy`, and the plan asks to add what the
+// forge already demands (issue #293).
+func requiredStatus(p core.Protection, wanted DesiredItem) core.Observation {
 	items := make([]core.Item, 0, len(p.RequiredChecks))
 	for _, context := range p.RequiredChecks {
 		items = append(items, core.Item{Name: context})
+	}
+	for _, want := range wanted.Items {
+		if !slices.Contains(p.RequiredChecks, want.Name) && p.RequiresCheck(want.Name) {
+			items = append(items, core.Item{Name: want.Name})
+		}
 	}
 	return core.Observation{Exists: p.Enabled, Items: items, Notes: dormantNotes(p)}
 }
