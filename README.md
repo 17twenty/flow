@@ -6,6 +6,8 @@ Gitea/Forgejo) and a tracker (GitHub Projects, Jira, Linear).
 
 It does three things, and after setup nobody runs it by hand:
 
+![flow's loop: set up once by a person, then gated, synced and audited in CI](docs/img/flow-loop.svg)
+
 - **Sets up** — `flow init`, `flow plan`, `flow apply`: branch protection,
   required checks, merge settings, board columns and labels, the CI that runs
   flow. Whatever the provider will not let flow do becomes a ticket for the
@@ -14,6 +16,7 @@ It does three things, and after setup nobody runs it by hand:
   linked to a ready ticket, conventional title, human review of agent work,
   WIP limits. Each rule warns or blocks as the team chooses, and says
   [why you are seeing it](docs/rules.md).
+  <br/><img src="docs/img/check-pr.svg" alt="flow check pr: every rule passes" width="480">
 - **Verifies** — `flow doctor` (daily, in CI) checks that the setup still
   holds and audits what actually happened: was every merge gated, linked,
   built, deployed in time; is the board telling the truth. `flow sync` keeps
@@ -35,6 +38,7 @@ up exactly that way, from empty.
 
 | | |
 |---|---|
+| [`docs/how-it-works.md`](docs/how-it-works.md) | The loop, a ticket's way across the board, who does what — and real output |
 | [`docs/rules.md`](docs/rules.md) | Why am I seeing this? Every gate rule, why, and how to resolve it |
 | [`docs/cookbook.md`](docs/cookbook.md) | The steps a person does by hand, per forge and tracker — and answering a follow-up flow filed |
 | [`docs/delivery-board.md`](docs/delivery-board.md) | The delivery-board proposal flow was built from, verified line by line against what it does |

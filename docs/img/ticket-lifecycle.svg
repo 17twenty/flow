@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="300" viewBox="0 0 1080 300" role="img" aria-label="A ticket&#x27;s way across the board, and who moves it"><title>A ticket&#x27;s way across the board, and who moves it</title>
+<style>
+  .bg { fill: #ffffff; }
+  .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+  .flow { fill: #ddf4ff; stroke: #54aeff; }
+  .person { fill: #fff8c5; stroke: #d4a72c; }
+  .done { fill: #dafbe1; stroke: #4ac26b; }
+  .t { font: 600 14px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #1f2328; }
+  .s { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; }
+  .code { font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+  .h { font: 700 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; letter-spacing: .08em; }
+  .a { stroke: #59636e; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+  .an { stroke: #bf8700; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrow-native); }
+  .ah { fill: #59636e; } .ahn { fill: #bf8700; }
+  .badge { font: 600 11px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  .bf { fill: #0969da; } .bn { fill: #9a6700; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .flow { fill: #0c2d6b; stroke: #1f6feb; }
+    .person { fill: #3b2e0a; stroke: #9e6a03; }
+    .done { fill: #04260f; stroke: #238636; }
+    .t, .code { fill: #f0f6fc; } .s, .h { fill: #9198a1; }
+    .a { stroke: #9198a1; } .ah { fill: #9198a1; }
+    .an { stroke: #d29922; } .ahn { fill: #d29922; }
+    .bf { fill: #4493f8; } .bn { fill: #d29922; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="arrow-native" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahn" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<rect class="bg" width="1080" height="300" rx="12"/><rect class="box" x="30" y="130" width="180" height="64" rx="9"/><text class="t" x="120.0" y="167.0" text-anchor="middle">Backlog</text><rect class="box" x="240" y="130" width="180" height="64" rx="9"/><text class="t" x="330.0" y="158.0" text-anchor="middle">Ready</text><text class="s" x="330.0" y="176.0" text-anchor="middle">meets the Definition of Ready</text><rect class="box" x="450" y="130" width="180" height="64" rx="9"/><text class="t" x="540.0" y="158.0" text-anchor="middle">In progress</text><text class="s" x="540.0" y="176.0" text-anchor="middle">WIP: 2 each</text><rect class="box" x="660" y="130" width="180" height="64" rx="9"/><text class="t" x="750.0" y="158.0" text-anchor="middle">In review</text><text class="s" x="750.0" y="176.0" text-anchor="middle">WIP: 3</text><rect class="box done" x="870" y="130" width="180" height="64" rx="9"/><text class="t" x="960.0" y="167.0" text-anchor="middle">Done</text><path class="a" d="M422,150 L448,150"/><text class="s" x="420.0" y="112" text-anchor="middle">draft pull request</text><text class="badge bf" x="420.0" y="96" text-anchor="middle">flow</text><path class="a" d="M632,150 L658,150"/><text class="s" x="630.0" y="112" text-anchor="middle">ready for review</text><text class="badge bf" x="630.0" y="96" text-anchor="middle">flow</text><path class="a" d="M842,150 L868,150"/><text class="s" x="840.0" y="112" text-anchor="middle">merged · issue closed</text><text class="badge bf" x="840.0" y="96" text-anchor="middle">flow</text><path class="an" d="M750,196 L750,238 L540,238 L540,198"/><text class="s" x="645.0" y="258" text-anchor="middle">changes requested</text><text class="badge bn" x="645.0" y="274" text-anchor="middle">the tracker's own automation</text><path class="a" d="M120,196 L120,238 L328,238 L330,198"/><text class="s" x="240" y="258" text-anchor="middle">a person pulls work</text><text class="s" x="540" y="40" text-anchor="middle">flow moves the cards it owns from what happens to pull requests; the tracker moves the rest,</text><text class="s" x="540" y="58" text-anchor="middle">and doctor checks both did</text></svg>

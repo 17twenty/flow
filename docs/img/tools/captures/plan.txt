@@ -1,0 +1,50 @@
+flow.plan/v1
+forge    github
+tracker  github-projects
+deploys  forge_deployments
+
+· up to date  tracker.project (project)
+    the provider already matches what was asked for
+
+· up to date  tracker.status_options (status_options)
+    the provider already matches what was asked for
+    hazard: updateProjectV2Field replaces options and can clear item values: snapshot/restore by name; >500 items → follow_up.
+
+· up to date  tracker.labels (labels)
+    the provider already matches what was asked for
+
+· up to date  tracker.native.changes_requested (native_transition_changes_requested)
+    flow cannot verify this, and a human has attested that it is true
+    create "changes_requested" to="In progress"
+
+↻ compensated → policy.wip  tracker.wip (wip_limits)
+    the provider cannot be made to do this, so flow enforces the same intent through policy.wip
+    create "In progress" per_person="2"
+    create "In review" limit="3"
+
+· up to date  tracker.expedite (expedite_view)
+    flow cannot verify this, and a human has attested that it is true
+    create "Expedite" labels="incident"
+
+· up to date  forge.default_branch
+    the provider already matches what was asked for
+
+· up to date  forge.protection (branch_protection)
+    the provider already matches what was asked for
+
+· up to date  forge.required_status (required_status_checks)
+    the provider already matches what was asked for
+
+· up to date  forge.merge_settings (merge_settings)
+    the provider already matches what was asked for
+
+· up to date  forge.squash_text (squash_text)
+    the provider already matches what was asked for
+
+· up to date  forge.files (file_proposal)
+    the provider already matches what was asked for
+
+· up to date  deploys.records (deploy_records)
+    the provider already matches what was asked for
+
+13 items · 12 up to date · 1 compensated

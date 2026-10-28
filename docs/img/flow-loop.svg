@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="510" viewBox="0 0 1000 510" role="img" aria-label="How flow runs: set up once, then gated, synced and audited in CI"><title>How flow runs: set up once, then gated, synced and audited in CI</title>
+<style>
+  .bg { fill: #ffffff; }
+  .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+  .flow { fill: #ddf4ff; stroke: #54aeff; }
+  .person { fill: #fff8c5; stroke: #d4a72c; }
+  .done { fill: #dafbe1; stroke: #4ac26b; }
+  .t { font: 600 14px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #1f2328; }
+  .s { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; }
+  .code { font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+  .h { font: 700 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; letter-spacing: .08em; }
+  .a { stroke: #59636e; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+  .an { stroke: #bf8700; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrow-native); }
+  .ah { fill: #59636e; } .ahn { fill: #bf8700; }
+  .badge { font: 600 11px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  .bf { fill: #0969da; } .bn { fill: #9a6700; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .flow { fill: #0c2d6b; stroke: #1f6feb; }
+    .person { fill: #3b2e0a; stroke: #9e6a03; }
+    .done { fill: #04260f; stroke: #238636; }
+    .t, .code { fill: #f0f6fc; } .s, .h { fill: #9198a1; }
+    .a { stroke: #9198a1; } .ah { fill: #9198a1; }
+    .an { stroke: #d29922; } .ahn { fill: #d29922; }
+    .bf { fill: #4493f8; } .bn { fill: #d29922; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="arrow-native" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahn" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<rect class="bg" width="1000" height="510" rx="12"/><text class="h" x="40" y="40" text-anchor="start">ONCE, BY A PERSON</text><rect class="box flow" x="40" y="56" width="190" height="58" rx="9"/><text class="code" x="135.0" y="81.0" text-anchor="middle">flow init</text><text class="s" x="135.0" y="99.0" text-anchor="middle">writes config + CI</text><rect class="box flow" x="280" y="56" width="190" height="58" rx="9"/><text class="code" x="375.0" y="81.0" text-anchor="middle">flow doctor --fix</text><text class="s" x="375.0" y="99.0" text-anchor="middle">finds the board, owners</text><path class="a" d="M230,85 L278,85"/><rect class="box flow" x="520" y="56" width="190" height="58" rx="9"/><text class="code" x="615.0" y="81.0" text-anchor="middle">flow plan</text><text class="s" x="615.0" y="99.0" text-anchor="middle">what would change</text><path class="a" d="M470,85 L518,85"/><rect class="box flow" x="760" y="56" width="190" height="58" rx="9"/><text class="code" x="855.0" y="81.0" text-anchor="middle">flow apply</text><text class="s" x="855.0" y="99.0" text-anchor="middle">protection, columns, files</text><path class="a" d="M710,85 L758,85"/><text class="h" x="960" y="182" text-anchor="end">FROM THEN ON, IN CI — NOBODY RUNS IT BY HAND</text><rect class="box" x="120" y="196" width="210" height="58" rx="9"/><text class="t" x="225.0" y="221.0" text-anchor="middle">pull request</text><text class="s" x="225.0" y="239.0" text-anchor="middle">a person or an agent</text><rect class="box flow" x="420" y="196" width="210" height="58" rx="9"/><text class="code" x="525.0" y="221.0" text-anchor="middle">flow check pr</text><text class="s" x="525.0" y="239.0" text-anchor="middle">posts flow/policy</text><path class="a" d="M332,225 L418,225"/><rect class="box" x="720" y="196" width="210" height="58" rx="9"/><text class="t" x="825.0" y="221.0" text-anchor="middle">merge</text><text class="s" x="825.0" y="239.0" text-anchor="middle">squash, up to date</text><path class="a" d="M632,225 L718,225"/><rect class="box flow" x="120" y="330" width="210" height="58" rx="9"/><text class="code" x="225.0" y="355.0" text-anchor="middle">flow doctor</text><text class="s" x="225.0" y="373.0" text-anchor="middle">daily: setup + audit</text><rect class="box" x="420" y="330" width="210" height="58" rx="9"/><text class="t" x="525.0" y="355.0" text-anchor="middle">deploy</text><text class="s" x="525.0" y="373.0" text-anchor="middle">your pipeline</text><path class="a" d="M418,359 L332,359"/><rect class="box flow" x="720" y="330" width="210" height="58" rx="9"/><text class="code" x="825.0" y="355.0" text-anchor="middle">flow sync</text><text class="s" x="825.0" y="373.0" text-anchor="middle">hourly: cards move</text><path class="a" d="M718,359 L632,359"/><path class="a" d="M825,254 L825,328"/><path class="a" d="M120,359 L70,359 L70,225 L118,225"/><path class="a" d="M805,114 L805,150 L225,150 L225,194"/><text class="s" x="515" y="144" text-anchor="middle">commit what init wrote through a pull request</text><rect class="box person" x="400" y="430" width="230" height="58" rx="9"/><text class="t" x="515.0" y="455.0" text-anchor="middle">a person</text><text class="s" x="515.0" y="473.0" text-anchor="middle">follow-ups and attestations</text><path class="a" d="M225,388 L225,459 L398,459"/><text class="s" x="300" y="450" text-anchor="middle">what flow cannot do</text></svg>
