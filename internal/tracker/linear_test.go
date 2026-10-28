@@ -744,3 +744,29 @@ func TestLinearStopsReadingWhenItHasWhatItWasAskedFor(t *testing.T) {
 		t.Errorf("got %d tickets, want the three that were asked for", len(tickets))
 	}
 }
+
+// A team the credential cannot see is named, so that auth.tracker can say
+// which board it is blind to; one it can see, or none at all, is not
+// (issue #292).
+func TestLinearProbeNamesATeamItCannotSee(t *testing.T) {
+	fx := coretest.ContractTracker()
+	_, srv := newLinearServer(t, &fx)
+	for _, tc := range []struct {
+		name, team, want string
+	}{
+		{"reachable", lnFakeTeam, ""},
+		{"unreachable", "NOPE", "the team NOPE"},
+		{"not configured", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			linear := newLinearAdapter(t, srv, func(opts *LinearOptions) { opts.Team = tc.team })
+			permissions, err := linear.Probe(t.Context())
+			if err != nil {
+				t.Fatalf("Probe: %v", err)
+			}
+			if permissions.Unreachable != tc.want {
+				t.Errorf("Unreachable = %q, want %q", permissions.Unreachable, tc.want)
+			}
+		})
+	}
+}
