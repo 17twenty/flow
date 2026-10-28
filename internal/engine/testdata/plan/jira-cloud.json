@@ -28,8 +28,7 @@
         "tracker.project"
       ],
       "outcome": "follow_up",
-      "owner": "${pending:owners.tracker_admin}",
-      "why": "the provider has no API for this, so a person has to do it",
+      "why": "flow has no way to do this itself, so a person has to",
       "exists": true,
       "desired_hash": "sha256:…",
       "observed_hash": "sha256:…",

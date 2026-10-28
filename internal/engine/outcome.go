@@ -158,7 +158,7 @@ func alreadyTrue(difference Difference) string {
 func followUpWhy(declared core.Capability, missing []string) string {
 	switch {
 	case !declared.Set:
-		return "the provider has no API for this, so a person has to do it"
+		return "flow has no way to do this itself, so a person has to"
 	case len(missing) > 0:
 		return fmt.Sprintf("the credential is missing %s, so a person with those permissions has to do it", strings.Join(missing, ", "))
 	default:
