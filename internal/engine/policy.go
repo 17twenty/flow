@@ -195,6 +195,10 @@ type PolicySnapshot struct {
 	Now time.Time
 	// StackedOn are the open pull requests this one stands on.
 	StackedOn []StackedPR
+	// BoardErr is why the board could not be read, nil when it was. A board
+	// this credential is not shown is not a verdict about the pull request,
+	// so the rules that need it say they could not look (issue #268).
+	BoardErr error
 }
 
 // StackedPR is an open pull request another one stands on, and how.
@@ -220,6 +224,12 @@ type Finding struct {
 	// satisfied — the gate does not hold a pull request up for a question
 	// nobody asked.
 	Skipped bool `json:"skipped,omitempty"`
+	// Unjudged reports a rule flow could not look at the pull request for,
+	// because a provider would not show it what the rule reads. It is a
+	// warning whatever the rule's severity: a run that could not look is not
+	// evidence against the pull request, and holding it up would make the
+	// credential's reach a rule nobody wrote (issue #268).
+	Unjudged bool `json:"unjudged,omitempty"`
 	// Message is what is wrong, in one line, written for whoever has to fix
 	// it.
 	Message string `json:"message,omitempty"`
@@ -310,9 +320,26 @@ func CheckPolicy(snapshot PolicySnapshot) PolicyResult {
 		finding := policyRules[rule](snapshot)
 		finding.Rule = rule
 		finding.Severity = severity
+		if finding.Unjudged {
+			finding.Severity = config.SeverityWarn
+		}
 		result.Findings = append(result.Findings, finding)
 	}
 	return result
+}
+
+// unreadBoard is the finding of a rule that needs the board when the board
+// could not be read, and whether it could not.
+func unreadBoard(s PolicySnapshot) (Finding, bool) {
+	if s.BoardErr == nil {
+		return Finding{}, false
+	}
+	return Finding{
+		Unjudged: true,
+		Message:  "not judged: the board could not be read with the credential this gate runs on",
+		Fix:      "share the board with the account the gate runs as — a board can have its own list of who may see it — and run the gate again",
+		Evidence: []Evidence{{Text: s.BoardErr.Error()}},
+	}, true
 }
 
 // policyRule is one rule's implementation. It fills in everything but the id
@@ -411,6 +438,9 @@ func prTicketInProject(s PolicySnapshot) Finding {
 		finding.Message = "there is no linked ticket to look for"
 		return finding
 	}
+	if unread, ok := unreadBoard(s); ok {
+		return unread
+	}
 	archived := 0
 	for _, ticket := range s.Tickets {
 		if ticket.InProject {
@@ -463,6 +493,9 @@ func ticketReady(s PolicySnapshot) Finding {
 		finding.Skipped = true
 		finding.Message = "there is no linked ticket to judge"
 		return finding
+	}
+	if unread, ok := unreadBoard(s); ok {
+		return unread
 	}
 	judged := 0
 	for _, ticket := range s.Tickets {
@@ -625,6 +658,9 @@ func wipReview(s PolicySnapshot) Finding {
 		finding.Message = "this is expedited, and expedited work is the agreed exception"
 		return finding
 	}
+	if unread, ok := unreadBoard(s); ok {
+		return unread
+	}
 	limit := column.WIP.Limit
 	items := countable(s.Config, s.WIP.Review)
 	switch {
@@ -659,6 +695,9 @@ func wipInProgress(s PolicySnapshot) Finding {
 		finding.Skipped = true
 		finding.Message = "this is expedited, and expedited work is the agreed exception"
 		return finding
+	}
+	if unread, ok := unreadBoard(s); ok {
+		return unread
 	}
 	author := s.PR.Author
 	if author == "" {

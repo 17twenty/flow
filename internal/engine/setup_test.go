@@ -445,6 +445,28 @@ func TestAuthPassesEvenWhenTheTokenAllowsNothing(t *testing.T) {
 	}
 }
 
+// A credential the provider accepted that cannot see the board it is for is
+// not a pass (issue #264): nearly everything flow does with the tracker reads
+// the board. It is a warning that names what it could not see and how to
+// share it, not a failure — the credential works, and the run could not look.
+func TestAuthWarnsOfACredentialThatCannotSeeItsBoard(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Adapters.Tracker = coretest.NewFakeTracker(coretest.TrackerFixture{
+		Kind:        "github-projects",
+		Permissions: core.Permissions{Unreachable: "the project acme/projects/6"},
+	})
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, engine.CheckAuthTracker)
+
+	wantState(t, result, engine.StateWarn)
+	if !strings.Contains(result.Message, "cannot see the project acme/projects/6") {
+		t.Errorf("the line does not say what it could not see: %s", result.Message)
+	}
+	if !strings.Contains(strings.Join(result.Remediation.Steps, " "), "add the account") {
+		t.Errorf("the remedy does not say how to share it: %+v", result.Remediation.Steps)
+	}
+}
+
 // A credential the provider refused is the credential's problem, and the
 // remedy is a human's: flow cannot mint a token.
 func TestAuthReportsARefusedCredential(t *testing.T) {

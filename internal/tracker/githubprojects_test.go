@@ -557,16 +557,17 @@ func TestGitHubProjectsProbeSpeaksTheVocabularyTheDeclarationRequires(t *testing
 // evidence is a permission nobody can argue with (spec 05 §3).
 func TestGitHubProjectsProbeSaysWhatItRead(t *testing.T) {
 	cases := []struct {
-		name   string
-		scopes *string
-		number int
-		want   string
+		name        string
+		scopes      *string
+		number      int
+		want        string
+		unreachable string
 	}{
 		{name: "the scopes themselves", scopes: ptr("repo, project"), number: 1, want: ghScopeHeader + ": repo, project"},
 		{name: "no scopes at all", scopes: nil, number: 1, want: "announced no scopes"},
 		{name: "the board it read", scopes: nil, number: 1, want: "read the project acme/projects/1"},
 		{name: "a board that is not set", scopes: nil, number: 0, want: "no project number is set yet"},
-		{name: "a board it could not read", scopes: nil, number: 404, want: "is not there"},
+		{name: "a board it could not read", scopes: nil, number: 404, want: "is not there", unreachable: "the project acme/projects/404"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -579,6 +580,9 @@ func TestGitHubProjectsProbeSaysWhatItRead(t *testing.T) {
 			}
 			if !slices.ContainsFunc(permissions.Evidence, func(line string) bool { return strings.Contains(line, tc.want) }) {
 				t.Errorf("the evidence does not say %q: %v", tc.want, permissions.Evidence)
+			}
+			if permissions.Unreachable != tc.unreachable {
+				t.Errorf("Unreachable = %q, want %q", permissions.Unreachable, tc.unreachable)
 			}
 		})
 	}
