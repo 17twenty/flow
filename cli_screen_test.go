@@ -7,6 +7,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/17twenty/flow/internal/core"
 	"github.com/17twenty/flow/internal/engine"
@@ -229,5 +232,76 @@ func TestWithNoTerminalThereIsNobodyToAsk(t *testing.T) {
 
 	if app.chooser(&session{}) != nil {
 		t.Error("flow offered to draw a picker on something that is not a terminal")
+	}
+}
+
+// quitsWhenTold is a screen that leaves only when it is told the work is over,
+// which is what the progress screen does.
+type quitsWhenTold struct{}
+
+func (quitsWhenTold) Init() tea.Cmd { return nil }
+
+func (q quitsWhenTold) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, over := msg.(ui.Finished); over {
+		return q, tea.Quit
+	}
+	return q, nil
+}
+
+func (quitsWhenTold) View() tea.View { return tea.NewView("") }
+
+// TestAScreenIsToldTheWorkIsOver is issue #289. `flow doctor` on a terminal
+// answered every check and then spun on the last one for ever: whileWorking
+// waited for the screen to leave, and nothing told it to. The screen's own
+// test sent Finished by hand, so it proved the screen leaves when told and
+// nothing proved anybody told it.
+func TestAScreenIsToldTheWorkIsOver(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	app := &Context{CLI: &CLI{}, Ctx: ctx, Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}}
+
+	left := make(chan error, 1)
+	go func() { left <- app.whileWorking(quitsWhenTold{}, func(context.Context, func(tea.Msg)) {}) }()
+
+	select {
+	case err := <-left:
+		if err != nil {
+			t.Fatalf("the screen left with an error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the work was over and the screen was never told, so it never let go of the terminal")
+	}
+}
+
+// interrupts is a screen somebody pressed ctrl-c on as soon as it appeared.
+type interrupts struct{}
+
+func (interrupts) Init() tea.Cmd                         { return tea.Interrupt }
+func (i interrupts) Update(tea.Msg) (tea.Model, tea.Cmd) { return i, nil }
+func (interrupts) View() tea.View                        { return tea.NewView("") }
+
+// TestCtrlCOnAScreenStopsTheWork is the other half of issue #289. A screen
+// holds the terminal in raw mode, where ctrl-c is a key and not a signal, so
+// the run kept going and the screen could not be left at all. Pressing it now
+// cancels the work and is reported as an interrupt, as the signal would be.
+func TestCtrlCOnAScreenStopsTheWork(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	app := &Context{CLI: &CLI{}, Ctx: ctx, Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}}
+
+	stopped := make(chan error, 1)
+	go func() {
+		stopped <- app.whileWorking(interrupts{}, func(work context.Context, _ func(tea.Msg)) {
+			<-work.Done() // a run that only ends when it is told to
+		})
+	}()
+
+	select {
+	case err := <-stopped:
+		if !errors.Is(err, errInterrupted) {
+			t.Fatalf("whileWorking = %v, want it to say the run was interrupted", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ctrl-c on the screen did not stop the work")
 	}
 }

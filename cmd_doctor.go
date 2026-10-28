@@ -123,10 +123,13 @@ func (c *DoctorCmd) ask(app *Context, s *session, in engine.DoctorInput) (engine
 	}
 	var report engine.Report
 	var err error
-	drawn := app.whileWorking(app.renderer(s.Settings).Progress(), func(say func(tea.Msg)) {
+	drawn := app.whileWorking(app.renderer(s.Settings).Progress(), func(ctx context.Context, say func(tea.Msg)) {
 		in.Progress = func(step engine.DoctorStep) { say(step) }
-		report, err = engine.RunDoctor(app.Ctx, in)
+		report, err = engine.RunDoctor(ctx, in)
 	})
+	if errors.Is(drawn, errInterrupted) {
+		return report, errInterrupted
+	}
 	if drawn != nil {
 		// The run is what the command came for and it has already finished.
 		// A terminal that could not be drawn on is not a finding about the

@@ -249,3 +249,33 @@ func TestColourOnlyAddsColourToTheProgress(t *testing.T) {
 		t.Errorf("the coloured display is laid out differently:\n--- stripped\n%s\n--- plain\n%s", out.String(), plain)
 	}
 }
+
+// Ctrl-c on the progress screen is passed on as an interrupt (issue #289).
+// The screen holds the terminal in raw mode, where ctrl-c is a key and not a
+// signal; a screen that ignored it was a run nobody could stop. Other keys are
+// still ignored: the run is already happening.
+func TestCtrlCOnTheProgressScreenInterrupts(t *testing.T) {
+	screen := progressOf(t, ui.Options{})
+	_, cmd := screen.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("ctrl-c did nothing")
+	}
+	if _, ok := cmd().(tea.InterruptMsg); !ok {
+		t.Errorf("ctrl-c produced %T, want an interrupt", cmd())
+	}
+	if _, cmd := screen.Update(tea.KeyPressMsg{Code: 'q', Text: "q"}); cmd != nil {
+		t.Errorf("q produced %T, want nothing", cmd())
+	}
+}
+
+// Once the last check has answered there is no next one to count (issue
+// #289): the screen said "44 of 43" while it waited to be told to leave.
+func TestTheCountNeverPassesItsTotal(t *testing.T) {
+	screen, _ := advance(t, progressOf(t, ui.Options{}),
+		reaching("live.agents.rework", 42, 43),
+		answering(engine.Checked{ID: "live.agents.rework", Title: "live.agents.rework"}, 43, 43))
+	view := screen.View().Content
+	if strings.Contains(view, "44 of 43") || !strings.Contains(view, "43 of 43") {
+		t.Errorf("the count after the last answer reads:\n%s", view)
+	}
+}
