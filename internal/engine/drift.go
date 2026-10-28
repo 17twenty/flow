@@ -192,6 +192,12 @@ type AttestInput struct {
 	// TTL is how long a fresh attestation would stand, for the line that asks
 	// for one.
 	TTL time.Duration
+	// Recipe is what the thing is, where it lives and how a person makes it
+	// true, from the provider's declaration; empty where it declares none.
+	Recipe core.Recipe
+	// Asked is what flow wants, in flow's words, for when there is no recipe
+	// to say it in the provider's (issue #281).
+	Asked []string
 }
 
 // Attestation is what the lock holds about one check, judged against now.
@@ -325,7 +331,24 @@ func (in AttestInput) steps() []string {
 	if in.TTL > 0 {
 		stands = config.Duration(in.TTL).String()
 	}
-	steps := []string{"look at it yourself: " + in.Check.Title}
+	// What to look at comes first (issue #281): "look at it yourself" said
+	// nothing about what, and a person who does not know what flow wanted
+	// can only vouch for what they assume.
+	var steps []string
+	switch {
+	case in.Recipe.What != "":
+		steps = append(steps, "what it is: "+in.Recipe.What)
+		if in.Recipe.Where != "" {
+			steps = append(steps, "where it lives: "+in.Recipe.Where)
+		}
+		steps = append(steps, in.Recipe.Steps...)
+	case len(in.Asked) > 0:
+		for _, asked := range in.Asked {
+			steps = append(steps, "flow is asking for: "+asked)
+		}
+	default:
+		steps = append(steps, "look at it yourself: "+in.Check.Title)
+	}
 	if watcher, ok := in.watched(); ok {
 		steps = append(steps, "read "+watcher+" in this report first: it watches the same automation on real tickets, "+
 			"so the promise is about the switch and the audit is about the outcome")

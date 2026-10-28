@@ -402,21 +402,28 @@ func (c Capability) validate() []string {
 
 // recipe returns everything wrong with the by-hand recipe.
 //
-// It is required of a follow-up and refused of anything else. A follow-up is
-// flow saying "somebody has to do this", and the ticket it files is the only
-// place that somebody will be told what; a declaration that cannot say is a
-// provider that files work nobody can act on, which is worse than one flow
-// declines to support. Every other remediation raises no ticket, so a recipe
-// there is prose with no reader, and prose with no reader rots.
+// It is required of a follow-up, welcome on an attestation, and refused of
+// anything else. A follow-up is flow saying "somebody has to do this", and the
+// ticket it files is the only place that somebody will be told what; a
+// declaration that cannot say is a provider that files work nobody can act
+// on, which is worse than one flow declines to support. An attestation asks a
+// person to make something true and vouch for it, and doctor's remedy is
+// where they read what that something is (issue #281); without a recipe it
+// says what flow wanted in flow's words. Every other remediation is flow's
+// own work, so a recipe there is prose with no reader, and prose with no
+// reader rots.
 func (c Capability) recipe() []string {
 	var problems []string
 	add := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 
-	if c.Remediation != RemediationFollowUp {
+	switch {
+	case c.Remediation == RemediationAttest && !c.ByHand.Written():
+		return problems
+	case c.Remediation != RemediationFollowUp && c.Remediation != RemediationAttest:
 		if c.ByHand.Written() {
-			add("carries a by_hand recipe but its remediation is %q; only a capability flow files a ticket about is ever done by hand", c.Remediation)
+			add("carries a by_hand recipe but its remediation is %q; only what a person makes true — a follow-up or an attestation — is ever done by hand", c.Remediation)
 		}
 		return problems
 	}

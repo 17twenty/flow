@@ -70,7 +70,27 @@ capabilities:
           team does not want it, and flow will stop asking.
   status_categories:  { set: false, verify: false, remediation: none }
   wip_limits:         { set: false, verify: false, remediation: compensate, compensated_by: policy.wip, notes: "Column limits are per-view, advisory, UI-only." }
-  expedite_view:      { set: false, verify: false, remediation: attest, notes: "Saved view filtered by label." }
+  expedite_view:
+    set: false
+    verify: false
+    remediation: attest
+    notes: "Saved view filtered by label."
+    by_hand:
+      what: >-
+        A saved view on the board named {{name}} that shows only expedited
+        work: the tickets carrying a label `.flow.yaml` lists under
+        `workflow.expedite.labels`. Expedited work is exempt from the WIP
+        limits, and this view is where the team sees it.
+      where: >-
+        On the board itself: the row of view tabs along its top. GitHub's API
+        cannot read a board's views, which is why flow asks a person.
+      steps:
+        - >-
+          Open the board, press "+ New view" beside the view tabs, and name
+          the view {{name}}.
+        - >-
+          Set its filter to the expedite labels — `label:incident` for the
+          shipped presets — and save the view.
   labels:
     set: true
     verify: true
@@ -118,7 +138,55 @@ capabilities:
                         notes: "Issue.linkedBranches: the branches GitHub itself links to the issue, created from the issue or by `gh issue develop`." }
   native_transition_pr_opened_draft:     { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
   native_transition_pr_ready_for_review: { set: false, verify: false, remediation: none, notes: "No built-in workflow; use owner: flow." }
-  native_transition_changes_requested:   { set: false, verify: false, remediation: attest, notes: "Built-in 'Code changes requested'; not listable at setup, watched by the live audit." }
-  native_transition_pr_merged:           { set: false, verify: false, remediation: attest, notes: "Built-in 'Pull request merged' (on by default); not listable at setup, watched by the live audit." }
-  native_transition_issue_closed:        { set: false, verify: false, remediation: attest, notes: "Built-in 'Item closed' (on by default); not listable at setup, watched by the live audit." }
+  native_transition_changes_requested:
+    set: false
+    verify: false
+    remediation: attest
+    notes: "Built-in 'Code changes requested'; not listable at setup, watched by the live audit."
+    by_hand:
+      what: >-
+        The board's built-in "Code changes requested" workflow, which moves a ticket on
+        the board when it happens. GitHub's API cannot say whether a board's
+        workflow is switched on, which is why flow asks a person.
+      where: >-
+        On the board: the ⋯ menu at its top right → Workflows.
+      steps:
+        - >-
+          Open the board's Workflows and choose "Code changes requested". Choose the column `.flow.yaml` names for `changes_requested` (In progress in the shipped presets) as the status it sets.
+        - >-
+          Switch it on, and save.
+  native_transition_pr_merged:
+    set: false
+    verify: false
+    remediation: attest
+    notes: "Built-in 'Pull request merged' (on by default); not listable at setup, watched by the live audit."
+    by_hand:
+      what: >-
+        The board's built-in "Pull request merged" workflow, which moves a ticket on
+        the board when it happens. GitHub's API cannot say whether a board's
+        workflow is switched on, which is why flow asks a person.
+      where: >-
+        On the board: the ⋯ menu at its top right → Workflows.
+      steps:
+        - >-
+          Open the board's Workflows and choose "Pull request merged". It is on by default on a new board; check it is still on and sets the done column.
+        - >-
+          Switch it on, and save.
+  native_transition_issue_closed:
+    set: false
+    verify: false
+    remediation: attest
+    notes: "Built-in 'Item closed' (on by default); not listable at setup, watched by the live audit."
+    by_hand:
+      what: >-
+        The board's built-in "Item closed" workflow, which moves a ticket on
+        the board when it happens. GitHub's API cannot say whether a board's
+        workflow is switched on, which is why flow asks a person.
+      where: >-
+        On the board: the ⋯ menu at its top right → Workflows.
+      steps:
+        - >-
+          Open the board's Workflows and choose "Item closed". It is on by default on a new board; check it is still on and sets the done column.
+        - >-
+          Switch it on, and save.
   native_transition_deployed:            { set: false, verify: false, remediation: none, notes: "No built-in; use owner: flow." }

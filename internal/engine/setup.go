@@ -811,6 +811,10 @@ func plannedResult(env *Env, id, title string) Result {
 	// A refuted item needs no guard here: [AttestInput.Wants] already holds
 	// that a word settles only what flow cannot verify, and the refusal
 	// above has made this one a thing flow verified (spec 07 §8).
+	asked := make([]string, 0, len(item.Changes))
+	for _, change := range item.Changes {
+		asked = append(asked, changeInstruction(change))
+	}
 	result = Attest(AttestInput{
 		Check:      Check{ID: id, Title: strings.TrimSpace(result.Message)},
 		Result:     result,
@@ -819,6 +823,8 @@ func plannedResult(env *Env, id, title string) Result {
 		ConfigHash: env.Plan.ConfigHash,
 		Now:        env.Now(),
 		TTL:        AttestationTTL(env.Config),
+		Recipe:     item.Recipe,
+		Asked:      asked,
 	})
 	return Drift(DriftInput{
 		Check:  id,

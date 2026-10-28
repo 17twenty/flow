@@ -1286,3 +1286,15 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   when it is linked to no repository at all. A lone board linked elsewhere
   is offered beside "or create a board for this repository", and nothing is
   written. A tracker with no notion of links leaves the old rule unchanged.
+- **An attestation's remedy says what to check (#281).** The remedy for
+  an unvouched check was "look at it yourself", so on flow-demo-web a
+  person asked to vouch for `tracker.expedite` was told nothing about a
+  saved view named Expedite filtered on `incident`. The plan now works out
+  the provider's `by_hand` recipe for attestations as it does for
+  follow-ups, and the remedy opens with what the thing is, where it lives
+  and how to make it true, before the attest command. A declaration may
+  carry a recipe for an attestation, and must make it complete if it does;
+  where none is declared the remedy says what flow is asking for in its own
+  words. GitHub Projects declares recipes for the Expedite view and the
+  board's three built-in workflows; Jira and Linear say it in flow's words
+  until their recipes are written.

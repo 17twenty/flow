@@ -891,6 +891,12 @@ func TestAPlanCarriesByHandInstructionsOnlyWhereSomebodyHasToAct(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, item := range planFor(t, tc.world(t)).Items {
+				// An attestation is somebody acting too: they make it true
+				// and vouch for it, and are told how where the provider
+				// says (issue #281).
+				if item.Outcome == engine.OutcomeAttest {
+					continue
+				}
 				if item.Outcome != engine.OutcomeFollowUp {
 					if item.Recipe.Written() {
 						t.Errorf("%s is %s and still carries instructions for doing it by hand: %+v",

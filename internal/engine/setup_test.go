@@ -1245,3 +1245,40 @@ func TestRolesAreReadFromTheDeclaration(t *testing.T) {
 		})
 	}
 }
+
+// Doctor hands an attestation what the plan knows about the item: the
+// provider's recipe where it declared one, and the change flow wanted where it
+// did not (issue #281). Without them the remedy can only say "look at it
+// yourself", which is what made somebody guess at an Expedite view.
+func TestAnAttestationIsToldWhatThePlanKnows(t *testing.T) {
+	item := engine.PlanItem{
+		ID:      core.ItemTrackerExpedite,
+		Target:  engine.TargetTracker,
+		Outcome: engine.OutcomeAttest,
+		Why:     "flow cannot see this through the API, so a person has to confirm it",
+		Changes: []core.Change{{Op: core.ChangeCreate, What: core.ItemTrackerExpedite,
+			Item: core.Item{Name: "Expedite", Fields: map[string]string{"labels": "incident"}}}},
+	}
+	for name, tc := range map[string]struct {
+		recipe core.Recipe
+		want   string
+	}{
+		"with the provider's recipe": {recipe: core.Recipe{What: "A saved view named Expedite.", Where: "The board's tabs.", Steps: []string{"press + New view"}},
+			want: "what it is: A saved view named Expedite."},
+		"in flow's words": {want: `flow is asking for: create tracker.expedite "Expedite", with labels=incident`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := setupEnv(t, setupConfig())
+			withRecipe := item
+			withRecipe.Recipe = tc.recipe
+			env.Plan = engine.Plan{Items: []engine.PlanItem{withRecipe}}
+
+			result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemTrackerExpedite)
+
+			wantState(t, result, engine.StateAttest)
+			if !slices.Contains(result.Remediation.Steps, tc.want) {
+				t.Errorf("steps = %q, want %q", result.Remediation.Steps, tc.want)
+			}
+		})
+	}
+}
