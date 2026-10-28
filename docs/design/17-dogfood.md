@@ -424,3 +424,14 @@ Each iteration, as the agent identity:
   repository finds them, and the tests that hold the code to them followed.
   What an agent working on flow needs is `AGENTS.md`; what a person needs is
   `CONTRIBUTING.md`.
+- **The README links the streak rather than stating it (§7, item 8.2,
+  revisited).** The demo section stated `Streak: N of 14 (as of DATE)`, and a
+  test required the line to exist and be dated. Nothing but a person ever
+  changed it, so the README of a tool whose point is not needing to be
+  remembered led with a number that was stale by the next morning — and the
+  test could only ever prove the line was there, never that it was true. The
+  demo now says what v1.0.0 waits for and links the health issue, which the
+  daily run rewrites, as where the count is kept; the test requires that link
+  and refuses a hand-kept count. The check that every forge link in the
+  section points at the repository and board flow is configured for stays:
+  that one can be held mechanically.
