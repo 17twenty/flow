@@ -83,6 +83,10 @@ type JiraCloudOptions struct {
 	// Capabilities is the declaration loaded from
 	// assets/capabilities/jira-cloud.yaml.
 	Capabilities core.CapabilitySet
+	// FollowUpLabels is followups.labels: what every follow-up and the
+	// health issue are filed with, and so what the search for one is
+	// narrowed by (issue #296). Empty means the whole project is read.
+	FollowUpLabels []string
 }
 
 // JiraCloud is the Jira Cloud tracker adapter.
@@ -96,6 +100,9 @@ type JiraCloud struct {
 	site   string
 	key    string
 	caps   core.CapabilitySet
+	// followUpLabel is the label the follow-up search is narrowed by, or
+	// empty when none is configured that Jira would accept.
+	followUpLabel string
 
 	// writing serialises the calls that change an issue: Jira applies a
 	// transition and an edit through the same workflow, and two at once
@@ -145,7 +152,27 @@ func NewJiraCloud(o JiraCloudOptions) (*JiraCloud, error) {
 		site:   strings.TrimSuffix(o.Site, "/"),
 		key:    strings.ToUpper(strings.TrimSpace(o.Project)),
 		caps:   o.Capabilities,
+		// Any one label will do: CreateFollowUp applies every usable
+		// label to every follow-up, so each of them names the same set.
+		followUpLabel: jiraFollowUpLabel(o.FollowUpLabels),
 	}, nil
+}
+
+// jiraFollowUpLabel is the first label CreateFollowUp would apply, or empty.
+// A label with a space is left off the filing, so narrowing by it would
+// find nothing at all.
+func jiraFollowUpLabel(labels []string) string {
+	for _, label := range labels {
+		if jiraLabelUsable(label) {
+			return label
+		}
+	}
+	return ""
+}
+
+// jiraLabelUsable is whether Jira takes a label: it holds no spaces.
+func jiraLabelUsable(label string) bool {
+	return label != "" && !strings.ContainsAny(label, " \t")
 }
 
 // Kind is the adapter's name.
@@ -753,7 +780,7 @@ func (j *JiraCloud) CreateFollowUp(ctx context.Context, f core.FollowUp) (core.T
 		// people find flow's follow-ups, not what makes one true.
 		labels := make([]string, 0, len(f.Labels))
 		for _, label := range f.Labels {
-			if label != "" && !strings.ContainsAny(label, " \t") {
+			if jiraLabelUsable(label) {
 				labels = append(labels, label)
 			}
 		}
@@ -852,6 +879,14 @@ func (j *JiraCloud) accountOf(ctx context.Context, owner string) (string, error)
 // somebody's bug report and miss flow's own ticket. So the issues are walked
 // newest first — flow's are the recent ones — and the marker is matched
 // against the body, which is the only thing that decides (spec 11 §3).
+//
+// Read whole, that is every issue in the project on every run, and a large
+// project spends its burst limit on it (issue #296). So when followups.labels
+// names a label, only the issues carrying it are read: flow puts it on every
+// follow-up it files, and labels is an exact match, not a text search. The
+// marker still decides. A follow-up whose label somebody removed is not
+// found, and a fresh, labelled one is filed in its place; reading the whole
+// project again on every miss would cost exactly what the label saves.
 func (j *JiraCloud) FindFollowUp(ctx context.Context, m core.Marker) (*core.Ticket, error) {
 	if m.IsZero() {
 		return nil, core.Errorf(core.ErrValidation, "find a follow-up").
@@ -864,7 +899,11 @@ func (j *JiraCloud) FindFollowUp(ctx context.Context, m core.Marker) (*core.Tick
 	if found, ok := j.recall(m); ok {
 		return &found, nil
 	}
-	issues, err := j.search(ctx, "project = "+jiraQuote(j.key)+" ORDER BY created DESC",
+	jql := "project = " + jiraQuote(j.key)
+	if j.followUpLabel != "" {
+		jql += " AND labels = " + jiraQuote(j.followUpLabel)
+	}
+	issues, err := j.search(ctx, jql+" ORDER BY created DESC",
 		[]string{"summary", "description", "status", "labels", "updated", "created", "resolution", "resolutiondate", "parent", "assignee"})
 	if err != nil {
 		return nil, core.Explain(err, "find the follow-up marked %s", m)
