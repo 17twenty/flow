@@ -417,6 +417,84 @@ func TestRunGateReportsATrackerThatBroke(t *testing.T) {
 	}
 }
 
+// TestRunGateStillSpeaksWhenItCannotReadTheBoard is issue #268. The gate's
+// tracker credential was not shown the board, and the gate exited without
+// posting flow/policy at all: the required check could never pass and the
+// pull request said nothing about why. A board this credential is not shown
+// is not a verdict on the pull request. The rules that need it say they could
+// not look, as warnings whatever their severity; the rest are judged; the
+// status goes out; and nothing is moved on a board flow could not read.
+func TestRunGateStillSpeaksWhenItCannotReadTheBoard(t *testing.T) {
+	needBoard := []string{engine.RulePRTicketInProject, engine.RuleTicketReady, engine.RuleWIPReview, engine.RuleWIPInProgress}
+	for name, refusal := range map[string]error{
+		"not shown":   core.Errorf(core.ErrNotFound, "read project 6").WithWhy("Could not resolve to a ProjectV2 with the number 6."),
+		"not allowed": core.Errorf(core.ErrPermission, "read project 6"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			world := gateFixture(t)
+			world.tracker.Fail("Tickets", refusal)
+
+			gate := world.run(t)
+
+			if gate.StatusOutcome != engine.GatePosted {
+				t.Fatalf("the status outcome is %q, want it posted", gate.StatusOutcome)
+			}
+			if !gate.Pass() {
+				t.Errorf("a board flow could not read failed the pull request: %+v", gate.Result.Failures())
+			}
+			for _, rule := range needBoard {
+				got := finding(t, gate.Result, rule)
+				if !got.Unjudged || got.Severity != config.SeverityWarn || got.Symbol() != "⚠" {
+					t.Errorf("%s = %+v, want a warning that it was not judged", rule, got)
+				}
+				if !strings.Contains(got.Fix, "share the board") {
+					t.Errorf("%s does not say how to let the gate look: %q", rule, got.Fix)
+				}
+			}
+			if got := finding(t, gate.Result, engine.RulePRTitleConventional); got.Unjudged || !got.OK {
+				t.Errorf("a rule that does not need the board was not judged: %+v", got)
+			}
+			if !strings.Contains(gate.Status.Description, "⚠") {
+				t.Errorf("the status %q does not say anything went unjudged", gate.Status.Description)
+			}
+			if len(gate.Moves) != 0 {
+				t.Errorf("cards were moved on a board flow could not read: %+v", gate.Moves)
+			}
+		})
+	}
+}
+
+// A board that would not answer for any other reason is still a failed run:
+// only "not shown to you" is a fact about the credential rather than an outage.
+func TestRunGateStopsWhenTheBoardIsDown(t *testing.T) {
+	world := gateFixture(t)
+	world.tracker.Fail("Tickets", errors.New("the tracker is down"))
+
+	if _, err := engine.RunGate(context.Background(), world.input()); err == nil {
+		t.Fatal("RunGate succeeded with a board that would not answer")
+	}
+}
+
+// A rule that does not apply still says so when the board could not be read:
+// with no linked ticket there was nothing to look for, which is a skip, not a
+// question about the board.
+func TestAnUnreadBoardDoesNotTurnASkipIntoAWarning(t *testing.T) {
+	world := gateFixture(t)
+	pr := world.pullRequest(t, 4)
+	pr.ClosingIssues = nil
+	pr.Title = "chore: tidy"
+	world.forge = coretest.NewFakeForge(coretest.ForgeFixture{PullRequests: []core.PullRequest{pr}})
+	world.tracker.Fail("Tickets", core.Errorf(core.ErrNotFound, "read project 6"))
+
+	result := engine.CheckPolicy(world.snapshot(t))
+
+	for _, rule := range []string{engine.RulePRTicketInProject, engine.RuleTicketReady} {
+		if got := finding(t, result, rule); !got.Skipped || got.Unjudged {
+			t.Errorf("%s = %+v, want it skipped: there is no ticket to look for", rule, got)
+		}
+	}
+}
+
 // deletelessForge is a forge that reports there was no comment to delete,
 // which is what a forge with no comment on the pull request may answer.
 type deletelessForge struct {

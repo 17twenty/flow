@@ -193,6 +193,9 @@ func (g *GitHubProjects) Probe(ctx context.Context) (core.Permissions, error) {
 		return core.Permissions{}, err
 	}
 	permissions.Evidence = append(permissions.Evidence, why)
+	if !reachable && g.number != 0 {
+		permissions.Unreachable = "the project " + g.Slug()
+	}
 	if reachable {
 		permissions.Tokens = append(permissions.Tokens, ghTokenProjectRead)
 		if !classic || ghWrites(scopes, ghScopeProject) {

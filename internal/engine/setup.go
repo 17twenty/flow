@@ -480,6 +480,22 @@ func (in SetupInput) probe(ctx context.Context, target string, adapter prober, k
 			})
 	}
 	result := Pass("the %s credential is accepted by %s and holds %s", target, kind, permissions)
+	if permissions.Unreachable != "" {
+		// Accepted and still unable to see the thing it is for: a warning,
+		// because a run that cannot look is not a broken credential, and
+		// not a pass, because everything downstream depends on it (#264).
+		result = Result{
+			State:   StateWarn,
+			Message: fmt.Sprintf("the %s credential is accepted by %s, and cannot see %s", target, kind, permissions.Unreachable),
+		}.Fix(Remediation{
+			Kind:    RemedyInput,
+			Summary: "share it with the account this credential belongs to, or point flow at one it can see",
+			Steps: []string{
+				"open " + permissions.Unreachable + " as somebody who can see it",
+				"add the account this credential belongs to — a board can have its own list of who may see it, separate from the repository's",
+			},
+		})
+	}
 	for _, evidence := range permissions.Evidence {
 		result = result.Saw(core.Redact(evidence), "")
 	}

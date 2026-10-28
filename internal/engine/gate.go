@@ -158,7 +158,14 @@ func GateSnapshot(ctx context.Context, in GateInput) (PolicySnapshot, error) {
 	snapshot := PolicySnapshot{PR: pr, Config: in.Config, Now: in.Now}
 
 	board, err := in.Adapters.Tracker.Tickets(ctx, core.TicketQuery{})
-	if err != nil {
+	switch {
+	case errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission):
+		// Not shown, which is not the same as not there (issue #268). The
+		// rules that need the board say so, and the status still goes out:
+		// a gate that posts nothing holds the pull request up with no
+		// reason anybody can read on it.
+		snapshot.BoardErr = core.Explain(err, "read the board")
+	case err != nil:
 		return PolicySnapshot{}, core.Explain(err, "read the board")
 	}
 	snapshot.WIP = wipFrom(in.Config, in.Lock, board)
@@ -534,7 +541,9 @@ func statusAlreadySaid(latest []core.CommitStatus, want core.CommitStatus) bool 
 // status: it would be refused. A dry run decides them and reports them without
 // acting, which is what makes --dry-run worth running.
 func (g *Gate) move(ctx context.Context, in GateInput, snapshot PolicySnapshot) error {
-	if in.NoTransitions || len(snapshot.Tickets) == 0 {
+	// Nothing is moved on a board flow could not read: where a ticket is on
+	// it is what every transition is decided from.
+	if in.NoTransitions || len(snapshot.Tickets) == 0 || snapshot.BoardErr != nil {
 		return nil
 	}
 	linked, err := g.linkedPRs(ctx, in, snapshot)
