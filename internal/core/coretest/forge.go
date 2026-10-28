@@ -274,6 +274,13 @@ func (f *FakeForge) Compare(ctx context.Context, base, head string) (core.Compar
 		override.Base, override.Head = base, head
 		return override, nil
 	}
+	// A forge compares a branch by its head, as GitHub's compare does, and the
+	// fixture's history is the default branch's.
+	base, head = f.resolveRef(base), f.resolveRef(head)
+	if override, ok := f.comparisons[base+"..."+head]; ok {
+		override.Base, override.Head = base, head
+		return override, nil
+	}
 	if base == head {
 		comparison.Status = core.CompareIdentical
 		return comparison, nil
@@ -292,6 +299,15 @@ func (f *FakeForge) Compare(ctx context.Context, base, head string) (core.Compar
 		comparison.Status, comparison.BehindBy = core.CompareBehind, headAt-baseAt
 	}
 	return comparison, nil
+}
+
+// resolveRef is the commit a name stands for: the default branch's newest
+// commit for its name, and anything else as given.
+func (f *FakeForge) resolveRef(ref string) string {
+	if ref != "" && ref == f.repo.DefaultBranch && len(f.commits) > 0 {
+		return f.commits[0].SHA
+	}
+	return ref
 }
 
 // indexOf returns a commit's position in the fixture's history, newest first.

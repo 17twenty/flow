@@ -41,6 +41,16 @@ func shipment(sha string, at time.Time) core.Deployment {
 	}
 }
 
+// trunkOf is the default branch's history holding these merges, newest first,
+// which is what tells the lag check they are still on the trunk.
+func trunkOf(prs ...core.PullRequest) []core.Commit {
+	commits := make([]core.Commit, 0, len(prs))
+	for i := len(prs) - 1; i >= 0; i-- {
+		commits = append(commits, core.Commit{SHA: prs[i].MergeSHA})
+	}
+	return commits
+}
+
 // shippingEnv is the world the deployment checks are asked about: the forge
 // holding the merges and the comparisons, and a source holding the records.
 func shippingEnv(t *testing.T, cfg *config.Config, fx coretest.ForgeFixture, records ...core.Deployment) (*engine.Env, *coretest.FakeDeploys) {
@@ -62,6 +72,7 @@ func TestScenario_V01_AMergeThatNeverReachedTheEnvironmentIsNamed(t *testing.T) 
 	missing := landedPR(3, "feat(api): the one still waiting", daysAgo(1))
 	env, _ := shippingEnv(t, shippingConfig(), coretest.ForgeFixture{
 		PullRequests: []core.PullRequest{first, second, missing},
+		Commits:      trunkOf(first, second, missing),
 		Comparisons: map[string]core.Comparison{
 			first.MergeSHA + "...ship001":  {Status: core.CompareAhead},
 			second.MergeSHA + "...ship002": {Status: core.CompareAhead},
@@ -78,6 +89,68 @@ func TestScenario_V01_AMergeThatNeverReachedTheEnvironmentIsNamed(t *testing.T) 
 	evidenceLinks(t, result, "#3", missing.URL)
 }
 
+// TestAMergeNoLongerOnTheTrunkIsNotLate is issue #278. flow-demo-web's main
+// was reset, and the lag check went on reporting a merge from before the
+// reset as "still not running in production": it can never be, because no
+// branch the deployer ships holds it. It is left out and said so; a merge
+// that is on the trunk and never shipped is still named.
+func TestAMergeNoLongerOnTheTrunkIsNotLate(t *testing.T) {
+	stays := landedPR(1, "feat(api): still on main", daysAgo(2))
+	gone := landedPR(2, "feat(api): reset away", daysAgo(1))
+	env, _ := shippingEnv(t, shippingConfig(), coretest.ForgeFixture{
+		PullRequests: []core.PullRequest{stays, gone},
+		Commits:      trunkOf(stays),
+	})
+
+	result := liveResult(t, env, engine.CheckLiveDeploysLag)
+
+	wantState(t, result, engine.StateWarn)
+	wantCounts(t, result, 0, 1)
+	evidenceLinks(t, result, "#1", stays.URL)
+	if hasEvidence(result, "#2") {
+		t.Errorf("a merge no longer on the trunk is reported as late: %+v", result.Evidence)
+	}
+	if !hasEvidence(result, "left out 1 merge no longer on the trunk") {
+		t.Errorf("the check does not say it left a merge out: %+v", result.Evidence)
+	}
+}
+
+// A forge that still knows the commit a reset left behind says it has
+// diverged from the trunk, rather than that it is not there. Either way it
+// is not on the trunk.
+func TestAMergeThatDivergedFromTheTrunkIsNotLate(t *testing.T) {
+	orphan := landedPR(1, "feat(api): reset away", daysAgo(1))
+	env, _ := shippingEnv(t, shippingConfig(), coretest.ForgeFixture{
+		PullRequests: []core.PullRequest{orphan},
+		Commits:      []core.Commit{{SHA: "after-the-reset"}},
+		Comparisons:  map[string]core.Comparison{orphan.MergeSHA + "...main": {Status: core.CompareDiverged}},
+	})
+
+	result := liveResult(t, env, engine.CheckLiveDeploysLag)
+
+	if hasEvidence(result, "#1") {
+		t.Errorf("a merge that diverged from the trunk is reported as late: %+v", result.Evidence)
+	}
+}
+
+// Merges that are on time cost the forge nothing more: whether a merge is on
+// the trunk is asked only of one that would otherwise be late.
+func TestOnlyALateMergeIsAskedWhetherItIsOnTheTrunk(t *testing.T) {
+	first := landedPR(1, "feat(api): the first", daysAgo(2))
+	env, _ := shippingEnv(t, shippingConfig(), coretest.ForgeFixture{
+		PullRequests: []core.PullRequest{first},
+		Comparisons:  map[string]core.Comparison{first.MergeSHA + "...ship001": {Status: core.CompareAhead}},
+	}, shipment("ship001", daysAgo(2).Add(time.Hour)))
+
+	result := liveResult(t, env, engine.CheckLiveDeploysLag)
+
+	wantState(t, result, engine.StatePass)
+	// One comparison: the merge against the deployment that shipped it.
+	if calls := env.Adapters.Forge.(*coretest.FakeForge).Calls("Compare"); calls != 1 {
+		t.Errorf("the forge was asked %d comparisons, want 1: an on-time merge was asked about the trunk", calls)
+	}
+}
+
 // A deployment that slipped is never worse than a warning. Nothing in the
 // configuration can stop a release being slow, and a check that could fail
 // the daily run for it is one a team turns off.
@@ -86,6 +159,7 @@ func TestALateDeploymentIsNeverWorseThanAWarning(t *testing.T) {
 	second := landedPR(2, "feat(api): the second", daysAgo(2))
 	env, _ := shippingEnv(t, shippingConfig(), coretest.ForgeFixture{
 		PullRequests: []core.PullRequest{first, second},
+		Commits:      trunkOf(first, second),
 		Comparisons: map[string]core.Comparison{
 			first.MergeSHA + "...ship001":  {Status: core.CompareAhead},
 			second.MergeSHA + "...ship001": {Status: core.CompareAhead},
