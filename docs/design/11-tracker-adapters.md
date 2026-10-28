@@ -708,3 +708,20 @@ reopen, pagination, error mapping.
   (issue #184).** A missing board is the project check's finding,
   and every other tracker check waits on that one. A second complaint
   underneath it is noise.
+- **§4 a throttle stated in a GraphQL envelope is waited out like one
+  stated in a status (issue #294).** Linear says "slow down" as
+  `extensions.code: RATELIMITED`, and has documented both a 400 and, now, a
+  429 for it; GitHub's GraphQL can say `RATE_LIMITED` in a 200. The envelope
+  used to be read only after `core.Client` had spent its retries, so the one
+  refusal waiting would fix was the one that ended the run. `core.Request`
+  now carries a `Throttled` reader the retry loop consults on every answer,
+  and `core.GraphQL` supplies one that asks `GraphQLRefusal` itself, so what
+  is retried and what is reported cannot disagree. The wait honours
+  `Retry-After`, and otherwise, when the budget is spent, its reset — Linear's
+  `X-RateLimit-{Requests,Complexity,Endpoint-Requests}-Reset`, in epoch
+  milliseconds, read where the common `X-RateLimit-*` family is absent. A
+  reset beside a budget that is not spent is not waited for, because GitHub
+  sends one on every answer. A wait longer than `core.MaxBackoff` is reported
+  at once, with when to come back, instead of being slept through and asked
+  again into the same refusal; that changes GitHub's spent primary limit
+  from three futile retries to one honest answer.

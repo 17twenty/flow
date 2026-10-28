@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // graphQLServer answers every request with body, recording what was asked.
@@ -230,5 +232,129 @@ func TestGraphQLErrorPrefersTheNameBesideTheMessage(t *testing.T) {
 	e.Extensions.Code = "RATELIMITED"
 	if got := e.Kind(); got != "NOT_FOUND" {
 		t.Errorf("Kind() = %q, want the provider's own top-level name", got)
+	}
+}
+
+// throttledServer answers the first throttles requests with a GraphQL throttle
+// in the given status, and every request after them with data. header is set
+// on the throttles, so a test can say when the budget returns.
+func throttledServer(t *testing.T, status, throttles int, header map[string]string) (*httptest.Server, *int) {
+	t.Helper()
+	var asked int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked <= throttles {
+			for name, value := range header {
+				w.Header().Set(name, value)
+			}
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, `{"errors":[{"message":"Rate limit exceeded","extensions":{"code":"RATELIMITED"}}]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":{"viewer":{"login":"dev"}}}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &asked
+}
+
+// throttleSentinel reads Linear's name for a throttle, as its adapter does.
+func throttleSentinel(errType string) error {
+	switch errType {
+	case "RATELIMITED":
+		return ErrRateLimited
+	case "INVALID_INPUT":
+		return ErrValidation
+	default:
+		return nil
+	}
+}
+
+// A provider that says "slow down" in the envelope rather than the status is
+// heard inside the retry loop: in a 200, where GraphQL puts every failure, and
+// in the 400 Linear has answered it with (#294).
+func TestGraphQLWaitsOutAThrottleStatedInTheEnvelope(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusBadRequest} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv, asked := throttledServer(t, status, 1, nil)
+			client, clock := newTestClient(t, srv, nil)
+			data, err := GraphQL[graphQLViewer](t.Context(), client, Request{Path: "graphql"}, GraphQLQuery{Query: "x"}, throttleSentinel)
+			if err != nil {
+				t.Fatalf("GraphQL after one throttle = %v, want it to wait and ask again", err)
+			}
+			if data.Viewer.Login != "dev" {
+				t.Errorf("login = %q, want the data of the answer that succeeded", data.Viewer.Login)
+			}
+			if *asked != 2 {
+				t.Errorf("the provider was asked %d times, want exactly one retry", *asked)
+			}
+			if slept := clock.Slept(); len(slept) != 1 {
+				t.Errorf("slept %v, want one wait before the retry", slept)
+			}
+		})
+	}
+}
+
+// A throttle that does not lift ends in ErrRateLimited after the retries every
+// request is allowed, and the waits are the clock's, not the test's.
+func TestGraphQLReportsAThrottleThatDoesNotLift(t *testing.T) {
+	srv, asked := throttledServer(t, http.StatusBadRequest, 100, nil)
+	client, clock := newTestClient(t, srv, nil)
+	_, err := GraphQL[graphQLViewer](t.Context(), client, Request{Path: "graphql"}, GraphQLQuery{Query: "x"}, throttleSentinel)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("GraphQL under a lasting throttle = %v, want ErrRateLimited", err)
+	}
+	if *asked != 1+DefaultRetries {
+		t.Errorf("the provider was asked %d times, want %d", *asked, 1+DefaultRetries)
+	}
+	if slept := clock.Slept(); len(slept) != DefaultRetries {
+		t.Errorf("slept %v, want one wait per retry", slept)
+	}
+}
+
+// Only a throttle is waited out: an answer refusing the query is refused
+// again however long flow waits, and a status that is otherwise retried is
+// not made into a throttle by an envelope that says nothing of one.
+func TestGraphQLDoesNotRetryARefusalThatIsNotAThrottle(t *testing.T) {
+	for _, body := range []string{
+		`{"errors":[{"message":"Argument Validation Error","extensions":{"code":"INVALID_INPUT"}}]}`,
+		`not json at all`,
+	} {
+		var asked int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			asked++
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, body)
+		}))
+		client, _ := newTestClient(t, srv, nil)
+		_, err := GraphQL[graphQLViewer](t.Context(), client, Request{Path: "graphql"}, GraphQLQuery{Query: "x"}, throttleSentinel)
+		srv.Close()
+		if err == nil || errors.Is(err, ErrRateLimited) {
+			t.Errorf("%s: GraphQL = %v, want a refusal that is not a throttle", body, err)
+		}
+		if asked != 1 {
+			t.Errorf("%s: the provider was asked %d times, want once", body, asked)
+		}
+	}
+}
+
+// Linear says when its budget returns in its own headers, in milliseconds, and
+// a throttle is waited out until then rather than for a guessed backoff.
+func TestGraphQLWaitsUntilLinearSaysTheBudgetReturns(t *testing.T) {
+	now := newTestClock().Now()
+	srv, asked := throttledServer(t, http.StatusBadRequest, 1, map[string]string{
+		"X-RateLimit-Requests-Limit":     "1500",
+		"X-RateLimit-Requests-Remaining": "0",
+		"X-RateLimit-Requests-Reset":     strconv.FormatInt(now.Add(20*time.Second).UnixMilli(), 10),
+	})
+	client, clock := newTestClient(t, srv, func(o *ClientOptions) { o.Backoff = DefaultBackoff })
+	if _, err := GraphQL[graphQLViewer](t.Context(), client, Request{Path: "graphql"}, GraphQLQuery{Query: "x"}, throttleSentinel); err != nil {
+		t.Fatalf("GraphQL: %v", err)
+	}
+	if *asked != 2 {
+		t.Errorf("the provider was asked %d times, want 2", *asked)
+	}
+	if slept := clock.Slept(); len(slept) != 1 || slept[0] != 20*time.Second {
+		t.Errorf("slept %v, want the 20s until the budget returns", slept)
 	}
 }

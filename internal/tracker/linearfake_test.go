@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -68,6 +69,9 @@ type lnFakeRefusal struct {
 	Code    string
 	Type    string
 	Once    bool
+	// Status is the HTTP status it is answered with, 200 when zero. Linear
+	// states a throttle in the envelope and in the status at once (#294).
+	Status int
 }
 
 // newLinearServer stands a fake Linear up in front of the contract's fixture.
@@ -970,7 +974,7 @@ func (f *lnFake) tick() { f.now = f.now.Add(time.Minute) }
 // error answers one GraphQL refusal, in Linear's own shape: HTTP 200, a null
 // data, and the name of what went wrong under extensions.
 func (f *lnFake) error(w http.ResponseWriter, refusal lnFakeRefusal) {
-	f.write(w, map[string]any{
+	f.writeStatus(w, cmp.Or(refusal.Status, http.StatusOK), map[string]any{
 		"data": nil,
 		"errors": []any{map[string]any{
 			"message": refusal.Message,
@@ -1000,9 +1004,15 @@ func (f *lnFake) refusal(w http.ResponseWriter, status int, message, code string
 
 // write sends one answer.
 func (f *lnFake) write(w http.ResponseWriter, body map[string]any) {
+	f.writeStatus(w, http.StatusOK, body)
+}
+
+// writeStatus sends one answer with a status.
+func (f *lnFake) writeStatus(w http.ResponseWriter, status int, body map[string]any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-RateLimit-Requests-Limit", "1500")
 	w.Header().Set("X-RateLimit-Requests-Remaining", "1499")
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		f.t.Errorf("writing the answer: %v", err)
 	}
