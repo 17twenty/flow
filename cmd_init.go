@@ -48,6 +48,9 @@ type initReport struct {
 	// Pending names the values nobody knows yet, which doctor resolves
 	// (spec 03 §2). Empty when the configuration is complete.
 	Pending []string `json:"pending,omitempty"`
+	// FlowVersion is the version the written workflow installs, empty when
+	// no workflow was written.
+	FlowVersion string `json:"flow_version,omitempty"`
 	// Hook says what happened to the commit-msg hook: installed, updated,
 	// unchanged, deferred or skipped.
 	Hook string `json:"hook"`
@@ -518,20 +521,31 @@ func (c *InitCmd) report(app *Context, root string, source []byte, files []initF
 	if err != nil {
 		return err
 	}
+	built, pin := buildVersion(), ""
+	if !c.NoTemplates {
+		pin = assets.Pin(built)
+	}
 	if app.CLI.JSON {
 		return core.WriteJSON(app.Stdout, initReport{
-			Schema:  core.SchemaID("init"),
-			Root:    root,
-			Preset:  c.Preset,
-			Files:   files,
-			Pending: pending,
-			Hook:    hook,
+			Schema:      core.SchemaID("init"),
+			Root:        root,
+			Preset:      c.Preset,
+			Files:       files,
+			Pending:     pending,
+			Hook:        hook,
+			FlowVersion: pin,
 		})
 	}
 	for _, file := range files {
 		fmt.Fprintf(app.Stdout, "%s %s\n", file.Action, file.Path)
 	}
 	fmt.Fprintf(app.Stdout, "commit-msg hook %s\n", hook)
+	if pin == assets.Latest {
+		// Said, because the workflow will not run the flow that wrote it
+		// (issue #267).
+		fmt.Fprintf(app.Stdout, "\nThe workflow installs flow %s: this build (%s) is not a release.\n", assets.Latest, built)
+		fmt.Fprintf(app.Stdout, "Set FLOW_VERSION to a release to pin one.\n")
+	}
 	if len(pending) > 0 {
 		fmt.Fprintf(app.Stdout, "\nStill to find out: %s\n", strings.Join(pending, ", "))
 		fmt.Fprintf(app.Stdout, "Next: flow doctor --fix\n")
