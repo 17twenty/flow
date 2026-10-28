@@ -604,11 +604,20 @@ func (in SetupInput) forgeRepo() Check {
 					})
 			}
 			result := plannedResult(env, core.ItemForgeDefaultBranch, title)
-			if result.State == StateSkip {
+			switch {
+			case result.State == StateSkip:
 				// Nothing in the configuration asks for a particular trunk,
 				// so reachability was the whole question.
 				return Pass("%s is there, and its default branch is %s", env.Config.Forge.Repo, info.DefaultBranch).
 					Saw("read as "+env.Adapters.Forge.Kind(), "")
+			case result.State == StateBlocked:
+				// Nothing was planned while a value is still to find out.
+				// The repository answered, which is this check's own
+				// question; holding it would hold every forge check behind
+				// it for a reason that is not the forge's (issue #263).
+				return Pass("%s is there, and its default branch is %s", env.Config.Forge.Repo, info.DefaultBranch).
+					Saw("read as "+env.Adapters.Forge.Kind(), "").
+					Saw("whether it is the workflow's trunk is "+result.Message, "")
 			}
 			return result.Saw(fmt.Sprintf("%s's default branch is %s", env.Config.Forge.Repo, info.DefaultBranch), "")
 		},
@@ -790,7 +799,10 @@ func plannedResult(env *Env, id, title string) Result {
 		return Failed(env.PlanErr)
 	}
 	item, found := env.Plan.Find(id)
-	if !found {
+	switch {
+	case !found && env.Unplanned != "":
+		return Result{State: StateBlocked, Message: "not asked: " + env.Unplanned}
+	case !found:
 		return Skip("this configuration does not ask for it")
 	}
 	result := outcomeResult(item, title)
