@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -153,7 +155,7 @@ func (a *audit) deploysLag() Check {
 			comparer := env.Comparer()
 			where := env.Config.Deploys.Environment
 			now := env.Now()
-			waiting := 0
+			waiting, gone := 0, 0
 			var t tally
 			for _, pr := range prs {
 				// A forge that merged a pull request without saying what the
@@ -173,11 +175,25 @@ func (a *audit) deploysLag() Check {
 				case deadline.After(now):
 					waiting++
 				default:
+					// Asked only of a merge that would otherwise be a miss,
+					// so a healthy run costs nothing more (issue #278).
+					onTrunk, err := a.onTrunk(ctx, env, pr)
+					if err != nil {
+						return Failed(err)
+					}
+					if !onTrunk {
+						gone++
+						continue
+					}
 					t.broke(pr.URL, "#%d merged on %s and is still not running in %s",
 						pr.Number, day(pr.MergedAt), where)
 				}
 			}
 			result := t.gradeWarning(env)
+			if gone > 0 {
+				result = result.Saw(fmt.Sprintf("left out %d %s no longer on the trunk, which can never reach %s",
+					gone, plural(gone, "merge"), where), "")
+			}
 			switch {
 			case t.counts.Total == 0 && waiting > 0:
 				return result.Said("the %d %s merged in the window %s still inside the %s objective",
@@ -201,6 +217,32 @@ func (a *audit) deploysLag() Check {
 				})
 		},
 	}
+}
+
+// onTrunk reports whether a pull request's merge is still on the trunk. A trunk
+// that was rewritten — reset, force-pushed — no longer holds merges it once
+// did, and those can never reach production: counting them as late held a
+// team to work that no longer exists (issue #278).
+//
+// It asks the forge rather than the ancestry cache. The cache is keyed by a
+// pair of commits that never change, and the trunk is a name that does.
+func (a *audit) onTrunk(ctx context.Context, env *Env, pr core.PullRequest) (bool, error) {
+	trunk, err := a.trunk(ctx, env)
+	if err != nil {
+		return false, err
+	}
+	comparison, err := env.Adapters.Forge.Compare(ctx, pr.MergeSHA, trunk)
+	switch {
+	case errors.Is(err, core.ErrNotFound):
+		// The forge has forgotten the commit: nothing on the trunk holds it.
+		return false, nil
+	case err != nil:
+		return false, core.Explain(err, "tell whether #%d's merge is still on %s", pr.Number, trunk)
+	case !comparison.Known():
+		return false, core.Errorf(core.ErrUnavailable, "tell whether #%d's merge is still on %s", pr.Number, trunk).
+			WithWhy("the forge reports their ancestry as %q, which flow does not understand", comparison.Status)
+	}
+	return comparison.Contains(), nil
 }
 
 // shipped is every successful deployment of the environment in the period the

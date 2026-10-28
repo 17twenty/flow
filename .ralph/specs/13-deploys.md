@@ -186,3 +186,13 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   onto deployment states is written against `core.StatusSuccess` and its
   three companions. GitHub's spelling of them is the GitHub adapter's
   business, and the wire types that held it have gone.
+- **A merge no longer on the trunk is not late (#278).** After
+  flow-demo-web's `main` was reset, `live.deploys.lag` went on reporting a
+  merge from before the reset as "still not running in production"; no
+  branch the deployer ships holds it, so it never will be. A merge that
+  would otherwise be a miss is first asked whether the trunk still contains
+  it — straight from the forge, because the ancestry cache is keyed by
+  commits that never change and the trunk is a name that does — and one the
+  trunk does not contain (diverged, or a commit the forge has forgotten) is
+  left out, with a line saying how many. Merges that are on time are never
+  asked, so a healthy run costs nothing more.
