@@ -77,19 +77,22 @@ capabilities:
     notes: "Saved view filtered by label."
     by_hand:
       what: >-
-        A saved view on the board named {{name}} that shows only expedited
-        work: the tickets carrying a label `.flow.yaml` lists under
+        A saved view on the board that shows only expedited work: the
+        tickets carrying a label `.flow.yaml` lists under
         `workflow.expedite.labels`. Expedited work is exempt from the WIP
-        limits, and this view is where the team sees it.
+        limits, and this view is where the team sees it. Its name is the
+        team's: flow suggests {{name}}, and a view the team already has —
+        "Priority", say — does the job if it filters on those labels.
       where: >-
         On the board itself: the row of view tabs along its top. GitHub's API
         cannot read a board's views, which is why flow asks a person.
       steps:
         - >-
-          Open the board, press "+ New view" beside the view tabs, and name
-          the view {{name}}.
+          If the board already has a view for urgent work, open it; otherwise
+          press "+ New view" beside the view tabs and name it ({{name}}, or
+          whatever the team calls it).
         - >-
-          Set its filter to the expedite labels — `label:incident` for the
+          Make its filter the expedite labels — `label:incident` for the
           shipped presets — and save the view.
   labels:
     set: true
