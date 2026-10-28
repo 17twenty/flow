@@ -171,6 +171,10 @@ func (l *Linear) Probe(ctx context.Context) (core.Permissions, error) {
 		case errors.Is(err, core.ErrNotFound):
 			permissions.Evidence = append(permissions.Evidence,
 				fmt.Sprintf("it cannot see a team called %s", l.key))
+			// Linear answers an empty list for a team that does not exist
+			// and for one the credential is not let into, and either way
+			// the board it was given is out of its sight (issue #292).
+			permissions.Unreachable = "the team " + l.key
 		case err != nil:
 			return core.Permissions{}, err
 		case team.admin():
