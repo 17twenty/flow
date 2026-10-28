@@ -34,3 +34,15 @@ root, no replace directives, no cgo, generated schema committed.
   forgets them produces binaries whose `init` falls back to `@latest`, which
   still works — the guarantee at the end of this section is what makes the
   fallback safe.
+- **Only a tagged release is pinned; anything else writes `latest`, and
+  init says so (#267).** The pin was chosen when the templates ran
+  `go install`, which resolves a pseudo-version, so a build from a branch
+  pinned itself. Since the templates download a release's binary, a
+  pseudo-version names nothing that can be downloaded: `flow init` from a
+  development build wrote `v0.96.3-0.20261027223121-82a2b6f93b4f` into
+  flow-demo-web, and every job would have failed at install.
+  `assets.Pin` now accepts canonical semver with an optional pre-release and
+  no build metadata, minus Go's pseudo-version tail; everything else is
+  `latest`, which §2 guarantees resolves. init prints which flow the
+  workflow will install when it is not the build that wrote it, and
+  `--json` carries it as `flow_version`.
