@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -531,6 +532,11 @@ func TestGitLabWithoutApprovalRulesStillReadsProtection(t *testing.T) {
 	if !slices.Equal(main.RequiredChecks, []string{"ci/test"}) {
 		t.Errorf("RequiredChecks = %v, want [ci/test] still", main.RequiredChecks)
 	}
+	// A maintainer may read approval rules wherever they exist, so the
+	// refusal is the tier's: there are none, and that was seen.
+	if main.Unreadable {
+		t.Error("a maintainer refused a feature the tier lacks reads as unreadable, and no run on this instance could ever verify its protection")
+	}
 }
 
 // External status checks are where a named verdict is required, and only
@@ -549,6 +555,9 @@ func TestGitLabWithoutExternalChecksCannotRequireOne(t *testing.T) {
 	if len(main.RequiredChecks) != 0 {
 		t.Errorf("RequiredChecks = %v, want none: this instance has no external status checks", main.RequiredChecks)
 	}
+	if main.Unreadable || main.ChecksUnreadable {
+		t.Errorf("Protection(main) = %+v: a maintainer told the tier has no checks has read that there are none", main)
+	}
 
 	err = gitlab.SetProtection(t.Context(), "main", core.Protection{
 		Enabled:        true,
@@ -559,6 +568,138 @@ func TestGitLabWithoutExternalChecksCannotRequireOne(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "flow/policy") {
 		t.Errorf("the refusal does not name the check it could not require: %v", err)
+	}
+}
+
+// asDeveloper makes the fake's credential a developer of the project: one
+// who may push and may not administer it, which is the ordinary bot account.
+func asDeveloper(fake *gitLabFake, hiddenAs int) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.project.Permissions = glPermissions{Project: &glAccess{AccessLevel: gitLabDeveloper}}
+	fake.hiddenAs = hiddenAs
+}
+
+// A credential below maintainer may be refused the protected branch, the
+// approval rules and the external status checks, with 403 or with 404 — the
+// second being GitLab's answer for a branch nobody protected, too. The branch
+// itself says which (issue #291): this one is protected, and what the project
+// keeps is still read; the rest is unread, not off.
+func TestGitLabTellsProtectionItCannotReadFromNone(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			fake, gitlab := gitLabFixture(t)
+			asDeveloper(fake, status)
+			fake.mu.Lock()
+			fake.project.PipelineMustSucceed = true
+			fake.mu.Unlock()
+
+			got, err := gitlab.Protection(t.Context(), "main")
+			if err != nil {
+				t.Fatalf("Protection: %v", err)
+			}
+			if !got.Enabled || !got.Unreadable || !got.ChecksUnreadable {
+				t.Errorf("protection = %+v, want it on, unreadable, and its checks unread", got)
+			}
+			if !got.StrictChecks {
+				t.Error("the project's pipeline gate is readable by anybody and was dropped with what was not")
+			}
+
+			bare, bareLab := gitLabFixture(t)
+			asDeveloper(bare, status)
+			bare.mu.Lock()
+			delete(bare.protected, "main")
+			bare.mu.Unlock()
+			none, err := bareLab.Protection(t.Context(), "main")
+			if err != nil {
+				t.Fatalf("Protection of a bare branch: %v", err)
+			}
+			if none.Enabled || none.Unreadable {
+				t.Errorf("a branch with no protection reads as %+v", none)
+			}
+		})
+	}
+}
+
+// A wildcard rule is not kept under the name of the branch it covers, so even
+// a maintainer is told 404 for a branch it protects. The branch says it is
+// protected; the rule is unread rather than absent, and what the maintainer
+// could read — the checks it requires — is kept (issue #291).
+func TestGitLabCallsAWildcardRuleUnreadRatherThanAbsent(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	fake.refuse("/api/v4/projects/acme%2Fwidget/protected_branches/main", http.StatusNotFound)
+
+	got, err := gitlab.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !got.Enabled || !got.Unreadable || got.ChecksUnreadable || !slices.Equal(got.RequiredChecks, []string{"ci/test"}) {
+		t.Errorf("protection = %+v, want it on and unreadable, with the checks a maintainer can read", got)
+	}
+}
+
+// Each paid feature is judged on its own. A developer refused the approval
+// rules alone still reads the checks the branch requires, and one refused the
+// checks alone is told it could not read them — which is what keeps the gate
+// from being called unrequired on a branch that may require it (issue #291).
+func TestGitLabSaysWhichPartOfProtectionItCouldNotRead(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	asDeveloper(fake, 0)
+	fake.mu.Lock()
+	fake.hasApprovals = false
+	fake.mu.Unlock()
+	got, err := gitlab.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !got.Unreadable || got.ChecksUnreadable || !slices.Equal(got.RequiredChecks, []string{"ci/test"}) {
+		t.Errorf("refused the approval rules, protection = %+v, want it unreadable with its checks read", got)
+	}
+
+	fake, gitlab = gitLabFixture(t)
+	asDeveloper(fake, 0)
+	fake.mu.Lock()
+	fake.hasChecks = false
+	fake.mu.Unlock()
+	got, err = gitlab.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !got.Unreadable || !got.ChecksUnreadable || got.RequiredApprovals != 1 {
+		t.Errorf("refused the external checks, protection = %+v, want its checks unread and its approvals read", got)
+	}
+}
+
+// Only a refusal is a reach. Anything else GitLab answers about a paid feature
+// is a failure to read it, and a reading that went on without it would pass
+// off "something went wrong" as "there are none".
+func TestGitLabFailsAReadOfApprovalsThatWasNotARefusal(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	fake.refuse("/api/v4/projects/acme%2Fwidget/approval_rules", http.StatusBadRequest)
+	if _, err := gitlab.Protection(t.Context(), "main"); err == nil {
+		t.Fatal("Protection read past a broken approval rules endpoint as though there were none")
+	}
+}
+
+// A write is judged against what is already there, so a reading with parts
+// flow could not see is not one to write from. The refusal is flow's own,
+// made before any write is tried (issue #291).
+func TestGitLabWritesNoProtectionItCouldNotRead(t *testing.T) {
+	fake, gitlab := gitLabFixture(t)
+	asDeveloper(fake, http.StatusForbidden)
+
+	err := gitlab.SetProtection(t.Context(), "main", core.Protection{
+		Enabled:        true,
+		StrictChecks:   true,
+		RequiredChecks: []string{"flow/policy"},
+	})
+	if !errors.Is(err, core.ErrPermission) {
+		t.Fatalf("SetProtection = %v, want a refusal for what could not be read", err)
+	}
+	for _, method := range fake.Methods() {
+		if method != http.MethodGet {
+			t.Fatalf("methods = %v, want reads only: flow wrote over protection it could not see", fake.Methods())
+		}
 	}
 }
 

@@ -674,3 +674,24 @@ duplicate-pipeline hazards). MR closing issues: `GET
   may dismiss or skip review, blocked creation, fork syncing — is listed in
   `Immovable` and left exactly where it is; its place is taken as asked for
   and reported as a warning naming what a person would have to move.
+- **Gitea and GitLab tell protection they cannot read from none, too
+  (#291).** Both adapters mapped a refused protection read to "no rule", so
+  a credential without admin read `block_on_outdated_branch`, force-push and
+  the required checks as off. Gitea refuses `branch_protections` with 403 to
+  anybody but a repository admin, and answers 404 only for a rule that is not
+  under the name asked — a glob rule on a Gitea that does not name the rule
+  governing a branch; both follow a branch that has said it is protected, so
+  both are `Unreadable`, keeping what `GET /branches/{b}` showed. A write on
+  that reading is refused before it is tried, because Gitea replaces a rule
+  whole. GitLab answers 404 to `protected_branches/{name}` for a branch
+  nobody protected and for one a wildcard rule covers, and 403 or 404 to a
+  credential that may not look; on any of them the adapter asks
+  `repository/branches/{b}`, whose `protected` anybody who can read the code
+  may see. Approval rules and external status checks are refused alike by a
+  tier without them and to a credential below maintainer, so the probe's
+  access level decides: to a maintainer a refusal is the tier (none), to
+  anybody else it is `Unreadable`. Checks GitLab could not read are
+  `ChecksUnreadable`, which the plan takes as required with a warning, as it
+  does the protection fields — GitHub and Gitea show the checks on the branch
+  and never set it. A GitLab reading with any part unread is not written
+  from: every GitLab write is judged against what is already there.

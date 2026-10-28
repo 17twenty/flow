@@ -127,6 +127,11 @@ type Protection struct {
 	// not read in full: only Enabled and RequiredChecks are known, and the
 	// other fields say nothing (issue #255).
 	Unreadable bool
+	// ChecksUnreadable says the checks the branch requires could not be read
+	// either, so RequiredChecks says nothing. GitHub and Gitea show them on
+	// the branch to anybody who can read it; GitLab keeps them in external
+	// status checks a credential below maintainer may not read (issue #291).
+	ChecksUnreadable bool
 	// AdminOnly says some of the protection is kept where only an
 	// administrator may read it — GitHub's classic branch protection — so a
 	// run on any other credential cannot see it (issue #258). Read by an
