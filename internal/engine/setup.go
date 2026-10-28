@@ -732,7 +732,7 @@ func openFollowUps(lock *config.Lock) []config.FollowUp {
 	for _, followUp := range lock.FollowUps {
 		// The lock says open or closed. Verified and withdrawn are what flow
 		// did when it closed one, and are never what it records (#269).
-		if followUp.State == config.FollowUpClosed {
+		if followUp.State == config.FollowUpClosed || followUp.State == config.FollowUpDeclined {
 			continue
 		}
 		open = append(open, followUp)

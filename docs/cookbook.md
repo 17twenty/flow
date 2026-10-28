@@ -336,6 +336,27 @@ to take your word for the switch, and never for the outcome.
 
 ---
 
+### 6.2 Answering a follow-up flow filed
+
+**What it is:** something the configuration asks for that flow cannot do
+itself — the provider has no API for it, or the credential flow runs on is not
+allowed to — filed in your tracker with the steps, assigned to whoever
+`followups.owners` names. `flow doctor` checks it on every run, nudges it at
+most once a week, and closes it itself, with a comment, once it can see the
+work done. Nobody needs to close it by hand.
+
+**If it was closed as done, and isn't:** flow reopens it with what it still
+sees. It checks the work, not the ticket.
+
+**If your team has decided not to do it:** close it as **not planned**. flow
+leaves it closed, says once on the ticket how to write the decision down, and
+`flow doctor` reports the check as a warning — *declined, not yet written
+down* — rather than a failure. To make the decision permanent, change
+`.flow.yaml` so it no longer asks for the work (the ticket's own steps say how,
+for example `deploys.source: none` for a repository that deploys nowhere); the
+warning goes and the ticket stays closed. If you change your mind, reopen
+the ticket and flow will chase it again.
+
 ## 7. Requiring a status check by hand
 
 Flow writes required checks itself — `forge.required_status` is a planned
