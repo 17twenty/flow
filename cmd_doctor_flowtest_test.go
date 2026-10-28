@@ -283,6 +283,18 @@ func TestScenario_A05_DoctorAsksWhichBoardWhenThereAreTwo(t *testing.T) {
 			t.Errorf("%s says it was blocked by %q, want %s", id, checked.BlockedBy, core.ItemTrackerProject)
 		}
 	}
+	// The forge's items are asked for by the configuration too, and were
+	// not planned only because the question is open. Saying "this
+	// configuration does not ask for it" about them is false (issue #263).
+	if got := doc.checkState(t, engine.CheckForgeRepo); got != "pass" {
+		t.Errorf("%s is %q, want pass: the repository answered, and the open question is the tracker's", engine.CheckForgeRepo, got)
+	}
+	for _, id := range []string{core.ItemForgeProtection, core.ItemForgeRequiredStatus, core.ItemForgeFiles} {
+		checked := doc.check(t, id)
+		if checked.Result.State != "blocked" || !strings.Contains(checked.Result.Message, core.ItemTrackerProject+" is still to find out") {
+			t.Errorf("%s is %q %q, want it not asked until %s is answered", id, checked.Result.State, checked.Result.Message, core.ItemTrackerProject)
+		}
+	}
 
 	// Nothing was written down, because nothing was decided.
 	if content, err := os.ReadFile(filepath.Join(dir, ".flow.lock")); err == nil {

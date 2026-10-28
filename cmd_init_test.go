@@ -309,6 +309,32 @@ func TestInitNoTemplatesAndNoHooks(t *testing.T) {
 	if !strings.Contains(stdout, "commit-msg hook skipped") {
 		t.Errorf("stdout does not report the hook was skipped:\n%s", stdout)
 	}
+	if strings.Contains(stdout, "FLOW_VERSION") {
+		t.Errorf("stdout talks about a workflow nobody wrote:\n%s", stdout)
+	}
+}
+
+// TestInitSaysItsWorkflowWillNotRunAnUnreleasedBuild is issue #267: a build
+// that is not a release cannot pin itself, because the workflow downloads a
+// release. init writes latest instead, and says so, so nobody expects CI to
+// run the flow they have on their machine.
+func TestInitSaysItsWorkflowWillNotRunAnUnreleasedBuild(t *testing.T) {
+	dir := initRepo(t, "git@github.com:acme/api.git")
+
+	code, stdout, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--yes")
+	if code != core.ExitOK {
+		t.Fatalf("exited %d: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "installs flow latest") || !strings.Contains(stdout, "is not a release") {
+		t.Errorf("stdout does not say which flow the workflow installs:\n%s", stdout)
+	}
+	workflow, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "flow.yml"))
+	if err != nil {
+		t.Fatalf("read the workflow: %v", err)
+	}
+	if !strings.Contains(string(workflow), "FLOW_VERSION: latest") {
+		t.Error("the workflow pins something other than latest from a build that is not a release")
+	}
 }
 
 // TestInitLeavesAForeignHookAlone. A hook is a convenience and the gate on the
@@ -351,6 +377,7 @@ func TestInitJSON(t *testing.T) {
 		Files   []map[string]string `json:"files"`
 		Pending []string            `json:"pending"`
 		Hook    string              `json:"hook"`
+		Version string              `json:"flow_version"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(stdout))
 	if err := decoder.Decode(&report); err != nil {
@@ -376,6 +403,11 @@ func TestInitJSON(t *testing.T) {
 	}
 	if report.Hook != "installed" {
 		t.Errorf("hook = %q, want installed", report.Hook)
+	}
+	// The test binary is no release, so the workflow it wrote installs the
+	// version that always resolves (issue #267).
+	if report.Version != "latest" {
+		t.Errorf("flow_version = %q, want latest from a build that is not a release", report.Version)
 	}
 }
 

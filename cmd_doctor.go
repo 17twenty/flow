@@ -374,9 +374,20 @@ func (c *DoctorCmd) env(app *Context, s *session, setup engine.SetupInput) *engi
 		// and already holds the run at exit 2, and repeating that one
 		// question as twenty failures would bury it (scenario A05).
 		app.Log.Warn("doctor could not look at the providers", "error", err)
-		if len(engine.Pending(setup.Placeholders)) == 0 {
+		pending := engine.Pending(setup.Placeholders)
+		if len(pending) == 0 {
 			env.PlanErr = err
+			return env
 		}
+		names := make([]string, 0, len(pending))
+		for _, answer := range pending {
+			names = append(names, answer.Placeholder.Path)
+		}
+		verb := " is"
+		if len(names) > 1 {
+			verb = " are"
+		}
+		env.Unplanned = strings.Join(names, ", ") + verb + " still to find out"
 		return env
 	}
 	env.Plan = plan
