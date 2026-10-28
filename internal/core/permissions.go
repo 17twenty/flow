@@ -18,6 +18,12 @@ type Permissions struct {
 	// Evidence is what flow read to decide that, one line each: for example
 	// "repository permissions: maintain" or "X-OAuth-Scopes: repo, project".
 	Evidence []string
+	// Unreachable names what the credential was pointed at and could not
+	// see — a board not shared with it, or one that is gone — and is empty
+	// when it saw it or nothing was tried. A provider cannot always tell
+	// those two apart, and neither can flow; both leave the credential
+	// unable to do most of what it is there for (issue #264).
+	Unreachable string
 }
 
 // Has reports whether the credential holds one permission.

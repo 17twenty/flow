@@ -1230,3 +1230,12 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   with the account flow runs as, or name another with `--set`, which is the
   one thing that may replace it. This is #255's rule applied to the
   tracker: a run that could not look is not evidence that something is gone.
+- **`auth.tracker` warns when the credential cannot see its board (#264).**
+  An accepted credential used to pass whatever it could reach, on the
+  principle that a missing permission surfaces on the one item it blocks.
+  An unreadable board blocks nearly every item, and the passing line read
+  "accepted" above its own evidence that it could not read the project.
+  `core.Permissions.Unreachable` names what a probe was pointed at and
+  could not see; `auth.tracker` is then a warning naming it, with the steps
+  to share it, and the checks depending on the credential wait on it rather
+  than each reporting the same unreadable board.

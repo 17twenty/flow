@@ -307,3 +307,16 @@ golden; determinism; fork/read-only path; draft path.
   `unlabeled`. GitLab cannot: a merge-request pipeline does not start on a
   label change, so there the verdict is refreshed by the next push or a
   pipeline run by hand.
+- **A board the gate is not shown is "not judged", and the status still
+  goes out (#268).** On flow-demo-web the gate's tracker credential had not
+  been given the board, and `flow check pr` exited without posting
+  `flow/policy`: the required check could never pass and the pull request
+  said nothing about why. A tracker answering "not found" or "forbidden" for
+  the board is now recorded in the snapshot rather than fatal. The rules that
+  read the board — `pr.ticket.in_project`, `ticket.ready`, `wip.review`,
+  `wip.in_progress` — report themselves *unjudged*: a warning whatever their
+  configured severity, with the fix (share the board with the account the
+  gate runs as). Every other rule is judged as usual, the status and comment
+  are posted, and no card is moved on a board flow could not read. Any other
+  failure to read the board is still a failed run: only "not shown to you"
+  is a fact about the credential rather than an outage.
