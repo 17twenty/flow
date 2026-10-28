@@ -477,22 +477,36 @@ func (g *GitLab) File(ctx context.Context, filePath, ref string) ([]byte, error)
 // rules say how many reviews a merge request needs, and external status checks
 // name the verdicts it must carry (spec 10 §4).
 func (g *GitLab) Protection(ctx context.Context, branch string) (core.Protection, error) {
+	p, _, err := g.protection(ctx, branch)
+	return p, err
+}
+
+// protection is [GitLab.Protection], and whether the credential that read it
+// is a maintainer — which a write needs to know to read the paid features
+// again the way the reading did.
+func (g *GitLab) protection(ctx context.Context, branch string) (core.Protection, bool, error) {
 	if branch == "" {
-		return core.Protection{}, core.Errorf(core.ErrValidation, "read the protection of %s", g.Slug()).
+		return core.Protection{}, false, core.Errorf(core.ErrValidation, "read the protection of %s", g.Slug()).
 			WithWhy("no branch was named")
 	}
 	project, err := g.project(ctx)
 	if err != nil {
-		return core.Protection{}, err
+		return core.Protection{}, false, err
 	}
+	// Whether a refused read of a paid feature means "this GitLab has
+	// none" or "you may not look" depends on who asked: a maintainer may
+	// read both, so a refusal to one is the tier talking (issue #291).
+	maintainer := project.Permissions.level() >= gitLabMaintainer
 	protected, err := g.protectedBranch(ctx, branch)
 	if err != nil {
-		return core.Protection{}, err
+		return core.Protection{}, maintainer, err
 	}
 
-	p := core.Protection{Branch: branch}
+	var p core.Protection
 	if protected != nil {
 		p = protected.toProtection(branch)
+	} else if p, err = g.visibleProtection(ctx, branch); err != nil {
+		return core.Protection{}, maintainer, err
 	}
 	// Both of these are the project's, not the branch's. A project that
 	// refuses anything but a fast-forward or a rebase keeps a linear
@@ -501,12 +515,15 @@ func (g *GitLab) Protection(ctx context.Context, branch string) (core.Protection
 	p.RequireLinearHistory = project.MergeMethod != gitLabMergeCommit
 	p.StrictChecks = project.PipelineMustSucceed
 	if !p.Enabled {
-		return p, nil
+		return p, maintainer, nil
 	}
 
-	approvals, err := g.approvalRules(ctx)
+	approvals, reach, err := g.approvalRules(ctx, maintainer)
 	if err != nil {
-		return core.Protection{}, err
+		return core.Protection{}, maintainer, err
+	}
+	if reach == glHidden {
+		p.Unreadable = true
 	}
 	for _, rule := range approvals {
 		if rule.covers(branch) {
@@ -514,9 +531,12 @@ func (g *GitLab) Protection(ctx context.Context, branch string) (core.Protection
 		}
 	}
 
-	checks, _, err := g.externalChecks(ctx)
+	checks, reach, err := g.externalChecks(ctx, maintainer)
 	if err != nil {
-		return core.Protection{}, err
+		return core.Protection{}, maintainer, err
+	}
+	if reach == glHidden {
+		p.Unreadable, p.ChecksUnreadable = true, true
 	}
 	for _, check := range checks {
 		if check.covers(branch) && check.Name != "" {
@@ -524,18 +544,21 @@ func (g *GitLab) Protection(ctx context.Context, branch string) (core.Protection
 		}
 	}
 	slices.Sort(p.RequiredChecks)
-	return p, nil
+	return p, maintainer, nil
 }
 
-// protectedBranch reads a branch's protection, or nil when the branch is not
-// protected. A branch nobody protected is an answer rather than a failure:
-// flow asks about the trunk a configuration names, and an unprotected one is
-// the finding.
+// protectedBranch reads a branch's protection, or nil when it cannot be read.
+//
+// GitLab answers 404 for a branch nobody protected, and also for one protected
+// by a wildcard rule, which is not kept under the branch's own name; a
+// credential that may not read protected branches is refused. None of the
+// three says the branch is unprotected, so the caller asks the branch itself
+// (issue #291).
 func (g *GitLab) protectedBranch(ctx context.Context, branch string) (*glProtectedBranch, error) {
 	var payload glProtectedBranch
 	req := core.Request{Path: g.path("protected_branches", branch), Out: &payload}
 	if _, err := g.do(ctx, req); err != nil {
-		if errors.Is(err, core.ErrNotFound) {
+		if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission) {
 			return nil, nil
 		}
 		return nil, core.Explain(err, "read the protection of %s in %s", branch, g.Slug())
@@ -543,44 +566,95 @@ func (g *GitLab) protectedBranch(ctx context.Context, branch string) (*glProtect
 	return &payload, nil
 }
 
-// approvalRules reads the project's approval rules, and none when this GitLab
-// has no such feature.
+// visibleProtection is what anybody who can read the code can see of a
+// branch's protection: whether there is any. Where there is, what GitLab
+// implies of every protected branch holds, and whether it may be force-pushed
+// could not be read. A branch nobody protected — or nobody pushed — is an
+// answer rather than a failure: flow asks about the trunk a configuration
+// names, and an unprotected one is the finding.
+func (g *GitLab) visibleProtection(ctx context.Context, branch string) (core.Protection, error) {
+	var payload glBranch
+	if _, err := g.do(ctx, core.Request{Path: g.path("repository", "branches", branch), Out: &payload}); err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			return core.Protection{Branch: branch}, nil
+		}
+		return core.Protection{}, core.Explain(err, "read the branch %s of %s", branch, g.Slug())
+	}
+	if !payload.Protected {
+		return core.Protection{Branch: branch}, nil
+	}
+	seen := glProtectedBranch{}.toProtection(branch)
+	seen.Unreadable = true
+	return seen, nil
+}
+
+// glReach is what a read of one of GitLab's paid features came to.
+type glReach int
+
+const (
+	// glRead is a read that was answered, however little it held.
+	glRead glReach = iota
+	// glAbsent is a GitLab without the feature at all.
+	glAbsent
+	// glHidden is a feature this credential may not read.
+	glHidden
+)
+
+// reachOf judges a refused read of a paid feature, and reports whether the
+// error was a refusal at all.
 //
-// Approval rules are a paid feature. An instance without them answers 404, and
-// a credential without the access answers 403; both mean the same thing here —
-// flow cannot see a rule, so there is no rule it can report. Failing instead
-// would make every read of a protected branch fail on the tier most people
-// have (spec 05 §3).
-func (g *GitLab) approvalRules(ctx context.Context) ([]glApprovalRule, error) {
+// An instance without the feature answers 404 or 403 depending on its tier and
+// version, and so does one whose credential is below maintainer. Only who
+// asked tells them apart: a maintainer may read approval rules and external
+// status checks wherever they exist, so a refusal to one is the tier, and a
+// refusal to anybody else says nothing either way (issue #291).
+func reachOf(err error, maintainer bool) (glReach, bool) {
+	if !errors.Is(err, core.ErrNotFound) && !errors.Is(err, core.ErrPermission) {
+		return glRead, false
+	}
+	if maintainer {
+		return glAbsent, true
+	}
+	return glHidden, true
+}
+
+// approvalRules reads the project's approval rules, and how far it got.
+//
+// Approval rules are a paid feature, and a refusal is not a failure: failing
+// instead would make every read of a protected branch fail on the tier most
+// people have (spec 05 §3). Whether it means there are none or they could not
+// be seen is [reachOf]'s to say.
+func (g *GitLab) approvalRules(ctx context.Context, maintainer bool) ([]glApprovalRule, glReach, error) {
 	var rules []glApprovalRule
 	req := core.Request{Path: g.path("approval_rules"), Query: g.page(), Out: &rules}
 	if _, err := g.do(ctx, req); err != nil {
-		if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission) {
-			return nil, nil
+		if reach, refused := reachOf(err, maintainer); refused {
+			return nil, reach, nil
 		}
-		return nil, core.Explain(err, "read the approval rules of %s", g.Slug())
+		return nil, glRead, core.Explain(err, "read the approval rules of %s", g.Slug())
 	}
-	return rules, nil
+	return rules, glRead, nil
 }
 
-// externalChecks reads the project's external status checks, and reports
-// whether this GitLab has them at all.
+// externalChecks reads the project's external status checks, and how far it
+// got.
 //
 // The difference matters where the rules do not. An instance with no external
 // status checks cannot require a named verdict of a merge request, which is
-// what flow's gate is; an instance that has them and has none configured can.
-// Both read as "no check is required", so the second answer is what tells a
-// refusal which sentence to say (spec 10 §4).
-func (g *GitLab) externalChecks(ctx context.Context) ([]glExternalCheck, bool, error) {
+// what flow's gate is; an instance that has them and has none configured can;
+// and a credential that may not read them cannot say which checks are already
+// required. All three read as "no check is listed", so the reach is what tells
+// a refusal which sentence to say (spec 10 §4, issue #291).
+func (g *GitLab) externalChecks(ctx context.Context, maintainer bool) ([]glExternalCheck, glReach, error) {
 	var checks []glExternalCheck
 	req := core.Request{Path: g.path("external_status_checks"), Query: g.page(), Out: &checks}
 	if _, err := g.do(ctx, req); err != nil {
-		if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrPermission) {
-			return nil, false, nil
+		if reach, refused := reachOf(err, maintainer); refused {
+			return nil, reach, nil
 		}
-		return nil, false, core.Explain(err, "read the external status checks of %s", g.Slug())
+		return nil, glRead, core.Explain(err, "read the external status checks of %s", g.Slug())
 	}
-	return checks, true, nil
+	return checks, glRead, nil
 }
 
 // SetProtection applies protection additively: it never removes a required
@@ -599,7 +673,7 @@ func (g *GitLab) SetProtection(ctx context.Context, branch string, want core.Pro
 	g.writing.Lock()
 	defer g.writing.Unlock()
 
-	current, err := g.Protection(ctx, branch)
+	current, maintainer, err := g.protection(ctx, branch)
 	if err != nil {
 		return err
 	}
@@ -607,16 +681,27 @@ func (g *GitLab) SetProtection(ctx context.Context, branch string, want core.Pro
 	if sameProtection(current, merged) {
 		return nil
 	}
+	if current.Unreadable {
+		// Every write below is judged against what is already there:
+		// whether to create the protection or narrow it, whether a rule
+		// of flow's is there to edit, which checks are missing. A
+		// reading with parts flow could not see would misjudge all of
+		// them, and the credential that may not read them may not
+		// write them either (issue #291).
+		return core.Errorf(core.ErrPermission, "protect %s of %s", branch, g.Slug()).
+			WithWhy("this credential may not read all of the branch's protection, and flow will not write over what it cannot see").
+			WithFix("run flow apply with a credential that is a maintainer of the project")
+	}
 	if err := g.protectBranch(ctx, branch, current, merged); err != nil {
 		return err
 	}
 	if err := g.setProjectProtection(ctx, current, merged); err != nil {
 		return err
 	}
-	if err := g.setApprovals(ctx, current, merged); err != nil {
+	if err := g.setApprovals(ctx, current, merged, maintainer); err != nil {
 		return err
 	}
-	return g.requireChecks(ctx, branch, current, merged)
+	return g.requireChecks(ctx, branch, current, merged, maintainer)
 }
 
 // protectBranch creates the branch's protection, or narrows the one it has.
@@ -700,11 +785,11 @@ func (g *GitLab) setProjectProtection(ctx context.Context, current, merged core.
 // It never lowers them. A rule somebody else wrote is theirs, and flow's
 // protection changes are additive, so the rule flow writes is one of its own
 // and the greater of the two is what applies.
-func (g *GitLab) setApprovals(ctx context.Context, current, merged core.Protection) error {
+func (g *GitLab) setApprovals(ctx context.Context, current, merged core.Protection, maintainer bool) error {
 	if merged.RequiredApprovals <= current.RequiredApprovals {
 		return nil
 	}
-	rules, err := g.approvalRules(ctx)
+	rules, _, err := g.approvalRules(ctx, maintainer)
 	if err != nil {
 		return err
 	}
@@ -737,7 +822,7 @@ func (g *GitLab) setApprovals(ctx context.Context, current, merged core.Protecti
 // pipeline at all satisfies it. So the checks that could not be required are
 // reported as unavailable, and the capability's remediation turns that into a
 // follow-up for somebody who can (spec 05 §2, spec 10 §4).
-func (g *GitLab) requireChecks(ctx context.Context, branch string, current, merged core.Protection) error {
+func (g *GitLab) requireChecks(ctx context.Context, branch string, current, merged core.Protection, maintainer bool) error {
 	var missing []string
 	for _, context := range merged.RequiredChecks {
 		if !current.RequiresCheck(context) {
@@ -747,11 +832,11 @@ func (g *GitLab) requireChecks(ctx context.Context, branch string, current, merg
 	if len(missing) == 0 {
 		return nil
 	}
-	_, available, err := g.externalChecks(ctx)
+	_, reach, err := g.externalChecks(ctx, maintainer)
 	if err != nil {
 		return err
 	}
-	if !available {
+	if reach == glAbsent {
 		return core.Errorf(core.ErrUnavailable, "require %s of %s in %s",
 			strings.Join(missing, ", "), branch, g.Slug()).
 			WithWhy("this GitLab has no external status checks, which is where a named verdict is required").
