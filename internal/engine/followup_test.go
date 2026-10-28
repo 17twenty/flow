@@ -502,8 +502,156 @@ func TestAFollowUpClosedWithoutTheWorkIsReopened(t *testing.T) {
 	if !strings.Contains(comments[0].Body, "Reopened") {
 		t.Errorf("comment = %q, want it to explain itself", comments[0].Body)
 	}
-	if !strings.Contains(comments[0].Body, "change the configuration so flow stops asking") {
-		t.Errorf("comment = %q, want it to say how to stop being asked", comments[0].Body)
+	if !strings.Contains(comments[0].Body, "close this as **not planned**") {
+		t.Errorf("comment = %q, want it to say how to decline it instead", comments[0].Body)
+	}
+}
+
+// TestAFollowUpDeclinedIsLeftClosed is issue #265. Closed as not planned is a
+// person's answer, and reopening it is flow arguing with them. Flow leaves it
+// closed, says once on the ticket how to write the decision into the
+// configuration, and the check stays a warning — declined, not yet written
+// down — rather than a pass, because the configuration still asks for it.
+func TestAFollowUpDeclinedIsLeftClosed(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Close(t.Context(), filed.Ticket.Key, core.ClosedNotPlanned); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	w.clock.Advance(24 * time.Hour)
+	out := w.reconcile(t, needsAHuman(), true)
+
+	if out.Action != engine.FollowUpDeclined {
+		t.Fatalf("action = %q, want %q", out.Action, engine.FollowUpDeclined)
+	}
+	ticket, err := w.tracker.Ticket(t.Context(), filed.Ticket.Key)
+	if err != nil {
+		t.Fatalf("Ticket: %v", err)
+	}
+	if !ticket.Closed {
+		t.Fatal("a declined follow-up was reopened")
+	}
+	if out.Result.State != engine.StateWarn || !strings.Contains(out.Result.Message, "declined, not yet written down") {
+		t.Errorf("result = %q %q, want a warning that it was declined", out.Result.State, out.Result.Message)
+	}
+	if !strings.Contains(strings.Join(out.Result.Remediation.Steps, " "), ".flow.yaml") {
+		t.Errorf("the remedy does not say where to write the decision: %+v", out.Result.Remediation)
+	}
+	if got := w.locked(t).State; got != config.FollowUpDeclined {
+		t.Errorf("lock state = %q, want %q", got, config.FollowUpDeclined)
+	}
+	comments := w.tracker.Written(filed.Ticket.Key)
+	if len(comments) != 1 || !strings.Contains(comments[0].Body, "Left closed") {
+		t.Fatalf("comments = %+v, want one saying why it was left closed", comments)
+	}
+	said := comments[0].UpdatedAt
+
+	// The next run says nothing more, and the check is still a warning.
+	w.clock.Advance(24 * time.Hour)
+	again := w.reconcile(t, needsAHuman(), true)
+	if again.Action != engine.FollowUpDeclined || again.Would || again.Result.State != engine.StateWarn {
+		t.Errorf("the next run did %q (would %v) and reported %q, want it still declined, nothing to do, and a warning", again.Action, again.Would, again.Result.State)
+	}
+	report := engine.Report{Checks: []engine.Checked{{ID: followUpCheck.ID, Result: needsAHuman()}}}
+	report.Absorb([]engine.FollowUpOutcome{again})
+	if report.Checks[0].Result.State != engine.StateWarn {
+		t.Errorf("the report reads %q after a quiet run, want the decline to stand", report.Checks[0].Result.State)
+	}
+	if comments := w.tracker.Written(filed.Ticket.Key); len(comments) != 1 || !comments[0].UpdatedAt.Equal(said) {
+		t.Errorf("the explanation was written again: %+v", comments)
+	}
+}
+
+// Once the configuration stops asking for the work, the decision is written
+// down: the warning goes, the ticket stays closed and untouched, and the lock
+// stops calling it declined.
+func TestADeclineWrittenIntoTheConfigurationIsSettled(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Close(t.Context(), filed.Ticket.Key, core.ClosedNotPlanned); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	w.reconcile(t, needsAHuman(), true)
+
+	out := w.reconcile(t, engine.Skip("this configuration does not ask for it"), true)
+
+	if out.Result.State != engine.StateSkip {
+		t.Errorf("state = %q, want the check's own answer once nothing is asked", out.Result.State)
+	}
+	if got := w.locked(t).State; got != config.FollowUpClosed {
+		t.Errorf("lock state = %q, want %q", got, config.FollowUpClosed)
+	}
+	if comments := w.tracker.Written(filed.Ticket.Key); len(comments) != 1 {
+		t.Errorf("comments = %d, want only the one explaining the decline", len(comments))
+	}
+}
+
+// Declining is answered in writing, and a read-only run does not write.
+func TestADeclinedFollowUpIsNotAnsweredWithoutFix(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Close(t.Context(), filed.Ticket.Key, core.ClosedNotPlanned); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	out := w.reconcile(t, needsAHuman(), false)
+	if out.Action != engine.FollowUpDeclined || !out.Would || out.Result.State != engine.StateWarn {
+		t.Fatalf("action = %q would = %v state = %q, want it reported as a warning rather than done", out.Action, out.Would, out.Result.State)
+	}
+	if comments := w.tracker.Written(filed.Ticket.Key); len(comments) != 0 {
+		t.Errorf("a read-only run commented: %+v", comments)
+	}
+}
+
+// Flow closes a follow-up as not planned itself when the work stops being
+// needed. That is housekeeping, not a person's decision: if the configuration
+// asks for the work again, the ticket is reopened as before.
+func TestAFollowUpFlowWithdrewIsReopenedWhenWantedAgain(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Close(t.Context(), filed.Ticket.Key, core.ClosedNotPlanned); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	for i := range w.lock.FollowUps {
+		w.lock.FollowUps[i].State = config.FollowUpClosed
+	}
+
+	out := w.reconcile(t, needsAHuman(), true)
+	if out.Action != engine.FollowUpReopened {
+		t.Fatalf("action = %q, want %q: flow closed it, nobody declined it", out.Action, engine.FollowUpReopened)
+	}
+}
+
+// Somebody who declined a follow-up and then reopens it wants the work after
+// all: it is outstanding again, and counted as such.
+func TestAReopenedDeclineIsOutstandingAgain(t *testing.T) {
+	t.Parallel()
+
+	w := newFollowUpWorld(t)
+	filed := w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Close(t.Context(), filed.Ticket.Key, core.ClosedNotPlanned); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	w.reconcile(t, needsAHuman(), true)
+	if err := w.tracker.Reopen(t.Context(), filed.Ticket.Key, "we will do it after all"); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+
+	out := w.reconcile(t, needsAHuman(), true)
+	if out.Result.State != engine.StateExternal {
+		t.Errorf("state = %q, want it waiting on somebody again", out.Result.State)
+	}
+	if got := w.locked(t).State; got != config.FollowUpOpen {
+		t.Errorf("lock state = %q, want %q", got, config.FollowUpOpen)
 	}
 }
 

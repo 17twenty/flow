@@ -56,7 +56,8 @@ thing is and where it lives (from the capability's `by_hand` recipe, spec 05
 labels `followups.labels`, assignee from `followups.owners`. Lifecycle:
 create (after marker search) → `external` while unverified (nudge comment ≤ 1/7d)
 → verified: comment + close → closed-but-unverified: reopen with evidence →
-no longer required: comment + close.
+closed as not planned by a person: leave closed, comment once, `warn` until the
+configuration agrees (#265) → no longer required: comment + close.
 
 ## 5. Setup checks (v1 ids)
 
@@ -1230,12 +1231,19 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   with the account flow runs as, or name another with `--set`, which is the
   one thing that may replace it. This is #255's rule applied to the
   tracker: a run that could not look is not evidence that something is gone.
-- **`auth.tracker` warns when the credential cannot see its board (#264).**
-  An accepted credential used to pass whatever it could reach, on the
-  principle that a missing permission surfaces on the one item it blocks.
-  An unreadable board blocks nearly every item, and the passing line read
-  "accepted" above its own evidence that it could not read the project.
-  `core.Permissions.Unreachable` names what a probe was pointed at and
-  could not see; `auth.tracker` is then a warning naming it, with the steps
-  to share it, and the checks depending on the credential wait on it rather
-  than each reporting the same unreadable board.
+- **A follow-up a person closed as not planned is left closed (#265).** The
+  item 2.10 rule reopened any closed follow-up whose check still failed, with
+  a comment saying the way to stop being asked is the configuration. That
+  argued with an explicit answer: on flow-demo-web a reset closed every issue
+  as not planned, and the next apply reopened the deploys follow-up. Now a
+  ticket closed as not planned that flow did not close itself — flow records
+  its own withdrawals as `closed` in the lock — is left closed. flow says
+  once, on the ticket, how to write the decision into `.flow.yaml`; records
+  the follow-up as `declined`, which `followups.health` does not count as
+  waiting; and reports the check as a warning, *declined, not yet written
+  down*, every run until the configuration stops asking. It is never a pass,
+  because the configuration still asks for the work, and never a failure,
+  because nobody is failing to do something they agreed to. Closing as
+  completed when the work is not done is still reopened, and a person
+  reopening a declined ticket makes it outstanding again. The decision ends
+  up where it is reviewed, without flow overruling the person who made it.

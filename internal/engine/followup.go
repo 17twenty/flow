@@ -66,6 +66,9 @@ const (
 	FollowUpWithdrawn = "withdrawn"
 	// FollowUpReopened means somebody closed it but the work is not done.
 	FollowUpReopened = "reopened"
+	// FollowUpDeclined means somebody closed it as not planned, and flow
+	// left it closed and said how to make that decision permanent.
+	FollowUpDeclined = "declined"
 	// FollowUpNone means there was nothing to do.
 	FollowUpNone = "none"
 )
@@ -290,6 +293,9 @@ func (in FollowUpInput) chase(ctx context.Context, out FollowUpOutcome, ticket c
 	owner := in.ownerOf(ticket)
 	out.Result = external(in.Result, ticket, owner)
 
+	if ticket.Closed && in.declined(ticket) {
+		return in.respect(ctx, out, ticket, owner)
+	}
 	if ticket.Closed {
 		// Somebody marked it done and it is not done. Saying so, with what
 		// flow just saw, is the whole value of verifying rather than trusting
@@ -336,6 +342,11 @@ func (in FollowUpInput) chase(ctx context.Context, out FollowUpOutcome, ticket c
 			"check", in.Check.ID, "ticket", ticket.Key)
 		out.Action = FollowUpAdopted
 		return out
+	}
+	if previous, _ := in.recorded(); previous.State == config.FollowUpDeclined && in.Fix {
+		// Somebody reopened a ticket they had declined: the work is wanted
+		// after all, and is outstanding again.
+		in.record(ticket, owner, config.FollowUpOpen, previous.NudgedAt)
 	}
 	if !in.due() {
 		out.Action = FollowUpWaiting
@@ -664,6 +675,78 @@ func (in FollowUpInput) withdrawnBody() string {
 	return body.String()
 }
 
+// declined reports a ticket a person closed as not planned. Flow closes a
+// follow-up as not planned itself when the work stops being needed, and
+// records that as closed; one it was still chasing and finds closed that way
+// is somebody's decision rather than flow's own housekeeping.
+func (in FollowUpInput) declined(ticket core.Ticket) bool {
+	if ticket.CloseReason != core.ClosedNotPlanned {
+		return false
+	}
+	previous, known := in.recorded()
+	return !known || previous.State != config.FollowUpClosed
+}
+
+// respect leaves a declined follow-up closed (issue #265). Reopening it would
+// be flow arguing with an explicit answer from a person; saying nothing would
+// leave the decision in a closed ticket nobody reviews, while the check goes
+// on measuring work nobody intends to do. So flow says once, on the ticket,
+// how to write the decision into the configuration, and the check stays a
+// warning — declined, not yet written down — until the configuration agrees.
+func (in FollowUpInput) respect(ctx context.Context, out FollowUpOutcome, ticket core.Ticket, owner string) FollowUpOutcome {
+	out.Result = in.declinedResult(ticket)
+	out.Action = FollowUpDeclined
+	if previous, ok := in.recorded(); ok && previous.State == config.FollowUpDeclined && previous.Ticket == ticket.Key {
+		// Already said. It is still reported every run, as a follow-up
+		// waiting on somebody is, so the warning does not lapse back into
+		// the check's own finding.
+		return out
+	}
+	if !in.Fix {
+		out.Would = true
+		return out
+	}
+	if err := in.Tracker.Comment(ctx, ticket.Key, in.commentMarker(), in.declinedBody()); err != nil {
+		out.Err = err
+		return out
+	}
+	in.record(ticket, owner, config.FollowUpDeclined, time.Time{})
+	in.Log.Info("flow left a follow-up closed that a person declined",
+		"check", in.Check.ID, "ticket", ticket.Key)
+	return out
+}
+
+// declinedResult is the check once a person has declined its follow-up: a
+// warning, never a pass — the configuration still asks for the work — and
+// never a failure, because nobody is failing to do something they agreed to.
+func (in FollowUpInput) declinedResult(ticket core.Ticket) Result {
+	result := in.Result
+	result.State = StateWarn
+	result.Message = fmt.Sprintf("declined, not yet written down: %s was closed as not planned, and the configuration still asks for this", ticket.Key)
+	result.Evidence = append(result.Evidence, Evidence{Text: "follow-up " + ticket.Key + " (not planned)", URL: ticket.URL})
+	result.Remediation = Remediation{
+		Kind:    RemedyInput,
+		Summary: "write the decision into .flow.yaml so it is reviewed, and flow stops asking",
+		Steps: []string{
+			"change .flow.yaml so it no longer asks for " + in.Check.ID + " — the follow-up's own steps say how, where there is a way",
+			"or, if the work should be done after all, reopen " + ticket.Key,
+		},
+	}
+	return result
+}
+
+// declinedBody explains, once, why flow left the ticket closed.
+func (in FollowUpInput) declinedBody() string {
+	var body strings.Builder
+	body.WriteString("Left closed — this was closed as not planned, and flow takes that as the team's decision.\n\n")
+	fmt.Fprintf(&body, "The configuration still asks for it, so `flow doctor` will report `%s` as a warning ", in.Check.ID)
+	body.WriteString("(declined, not yet written down) until `.flow.yaml` says the same thing. ")
+	body.WriteString("Changing the configuration is what makes the decision permanent and visible to whoever reviews it; ")
+	body.WriteString("the steps in this ticket's description say how, where there is a way.\n\n")
+	body.WriteString("If the work should be done after all, reopen this ticket and flow will chase it again.\n")
+	return body.String()
+}
+
 // stillWrong is the one line recorded as the reason for reopening.
 func (in FollowUpInput) stillWrong() string {
 	return fmt.Sprintf("flow checked %s and it still does not hold", in.Check.ID)
@@ -682,9 +765,9 @@ func (in FollowUpInput) reopenedBody() string {
 			body.WriteString("- " + evidenceLine(evidence) + "\n")
 		}
 	}
-	body.WriteString("\nIf this is deliberate — the team has decided not to do it — change the ")
-	body.WriteString("configuration so flow stops asking, rather than closing the ticket. ")
-	body.WriteString("Closing it again will reopen it again.\n")
+	body.WriteString("\nIf the team has decided not to do it, close this as **not planned**: flow ")
+	body.WriteString("will leave it closed and say how to write the decision into the configuration. ")
+	body.WriteString("Closing it as done will reopen it again, because flow checks the work rather than the ticket.\n")
 	return body.String()
 }
 

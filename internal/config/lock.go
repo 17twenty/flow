@@ -37,6 +37,10 @@ const (
 	FollowUpOpen = "open"
 	// FollowUpClosed means flow verified the work and closed the ticket.
 	FollowUpClosed = "closed"
+	// FollowUpDeclined means a person closed the ticket as not planned while
+	// the configuration still asked for the work. Flow leaves it closed and
+	// says once how to write the decision down (issue #265).
+	FollowUpDeclined = "declined"
 )
 
 // Lock is what flow learned about the world: the ids it resolved, what it
