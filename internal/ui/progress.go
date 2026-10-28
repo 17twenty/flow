@@ -76,11 +76,18 @@ func (p Progress) Init() tea.Cmd { return p.spinner.Tick }
 
 // Update implements [tea.Model].
 //
-// A key press is not handled, and that is deliberate. The run is already
-// happening and this screen cannot stop it; ctrl-c reaches the run through
-// the context the program was given, which is the one thing that can.
+// Only ctrl-c is handled. The screen holds the terminal in raw mode, where
+// ctrl-c is a key rather than a signal, so the run never hears it unless the
+// screen passes it on: it interrupts, and the program that drew it cancels
+// the run (issue #289). Every other key is ignored — the run is already
+// happening, and nothing else here can change it.
 func (p Progress) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			return p, tea.Interrupt
+		}
+		return p, nil
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		return p, nil
@@ -164,5 +171,7 @@ func (p Progress) waiting() string {
 // wildly different times, so a bar that moved evenly would be a lie, and the
 // number somebody wants is how many are left.
 func (p Progress) counted() string {
-	return fmt.Sprintf("%d of %d", p.asked+1, p.total)
+	// Once the last check has answered there is no next one to count, and
+	// "44 of 43" is a number nobody can trust (issue #289).
+	return fmt.Sprintf("%d of %d", min(p.asked+1, p.total), p.total)
 }

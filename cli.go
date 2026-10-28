@@ -550,6 +550,10 @@ func onScreen[M tea.Model](a *Context, what string, screen M) (M, error) {
 	return answered, nil
 }
 
+// errInterrupted is a person pressing ctrl-c on a screen: the same request as
+// the signal a terminal would have sent, and answered the same way.
+var errInterrupted = errors.New("interrupted")
+
 // screenOptions are extra options every screen's program is run with.
 //
 // It exists for the same reason [terminalCheck] does, and only for tests. A
@@ -583,17 +587,30 @@ func (a *Context) programFor(screen tea.Model) *tea.Program {
 // The error returned is the screen's, never the work's. A terminal that could
 // not be drawn on has not stopped the work, and the caller is the one that
 // knows whether that matters.
-func (a *Context) whileWorking(screen tea.Model, work func(say func(tea.Msg))) error {
+func (a *Context) whileWorking(screen tea.Model, work func(ctx context.Context, say func(tea.Msg))) error {
+	// The work runs on a context the screen can cancel. A screen holds the
+	// terminal in raw mode, so ctrl-c reaches it as a key and never as the
+	// signal the run listens for; the screen interrupts, and this is what
+	// passes that on (issue #289).
+	ctx, cancel := context.WithCancel(a.Ctx)
+	defer cancel()
 	program := a.programFor(screen)
 	drawn := make(chan error, 1)
 	go func() {
 		_, err := program.Run()
+		if errors.Is(err, tea.ErrInterrupted) {
+			cancel()
+			err = errInterrupted
+		}
 		drawn <- err
 	}()
-	work(program.Send)
+	work(ctx, program.Send)
 	// The screen is told rather than killed, so that it can take itself off
 	// the terminal: what it drew is a few lines of this shell session, and
-	// the document the command is about to print goes underneath them.
+	// the document the command is about to print goes underneath them. Not
+	// telling it is a screen that spins on the last check for ever, and was,
+	// on every terminal since the screen was written (issue #289).
+	program.Send(ui.Finished{})
 	return <-drawn
 }
 

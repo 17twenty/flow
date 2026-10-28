@@ -273,3 +273,17 @@ Render functions are pure and golden-tested; models tested via `Update`.
   can read all of it. A preview that failed is on the screen in place of the
   file: a configuration flow would refuse to read is a thing to know before it
   is written, not after.
+- **A screen drawn while work runs is told when the work is over, and passes
+  ctrl-c on (#289).** `flow doctor` on a terminal answered every check and
+  then spun on the last for ever: the progress screen leaves only when it
+  is sent `Finished`, and nothing sent it, from the day it was written. It
+  could not be left with ctrl-c either — the screen holds the terminal in
+  raw mode, where ctrl-c is a key and never the signal the run listens
+  for, and the screen ignored keys. Every automated run (CI, a pipe,
+  `--json`) skips the screen, so only a person at a terminal ever met it.
+  Now the work runs on a context the screen can cancel; the screen turns
+  ctrl-c into an interrupt, which cancels the run and exits 130 as the
+  signal would; and the program is told `Finished` once the work returns.
+  A test drives `flow doctor` itself on a terminal flow believes is real,
+  both left alone and interrupted, because the screen's own tests proved it
+  left when told and nothing proved anybody told it.

@@ -91,8 +91,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
 	}
 	err = kctx.Run(app)
 
-	// An interrupt outranks whatever error the command reported on its way out.
-	if sigCtx.Err() != nil {
+	// An interrupt outranks whatever error the command reported on its way out,
+	// whether it came as a signal or as ctrl-c on a screen that held the
+	// terminal.
+	if sigCtx.Err() != nil || errors.Is(err, errInterrupted) {
 		fmt.Fprintln(stderr, "interrupted")
 		return core.ExitInterrupted
 	}
