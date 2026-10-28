@@ -121,6 +121,40 @@ func TestFlowsOwnTicketsAreNotDeliveredWork(t *testing.T) {
 	}
 }
 
+// TestATrackingIssueIsFinishedByItsSubIssues is issue #282. A tracking issue
+// is closed when its sub-issues are, and never has a pull request of its own:
+// counting it as Done with no merge held flow's own repository to a rule no
+// tracking issue can meet. It holds when every sub-issue is closed, and is
+// named — with how many are still open — when it reached Done early.
+func TestATrackingIssueIsFinishedByItsSubIssues(t *testing.T) {
+	sub := func(key, parent string, closed bool) core.Ticket {
+		ticket := boarded(key, "a piece of it", "Done", daysAgo(3))
+		ticket.Parent, ticket.Closed = parent, closed
+		ticket.CloseReason = core.ClosedNotPlanned // judged by the exemption, not by this test
+		if !closed {
+			ticket.Status, ticket.ColumnID = core.Status{ID: "in progress", Name: "In progress"}, "in progress"
+			ticket.CloseReason = ""
+		}
+		return ticket
+	}
+	finished := boarded("#10", "Phase 9", "Done", daysAgo(1))
+	early := boarded("#20", "Phase 10", "Done", daysAgo(1))
+	env, _ := boardEnv(t, liveConfig(), coretest.ForgeFixture{},
+		finished, sub("#11", "#10", true), sub("#12", "#10", true),
+		early, sub("#21", "#20", true), sub("#22", "#20", false), sub("#23", "#20", false),
+	)
+
+	result := liveResult(t, env, engine.CheckLiveTicketsDoneMerged)
+
+	evidenceMentions(t, result, "#20")
+	evidenceMentions(t, result, "2 of its 3 sub-issues still open")
+	if hasEvidence(result, "#10 ") {
+		t.Errorf("a tracking issue whose sub-issues are all closed was named: %+v", result.Evidence)
+	}
+	// #10, #20, and the three closed sub-issues; the open ones are not in Done.
+	wantCounts(t, result, 4, 5)
+}
+
 // TestTheDoneWindowIsAboutWhenTheWorkFinished: a Done column holds everything
 // the team has ever finished, and an audit that judged all of it would report
 // a year-old ticket whose pull request is long outside the window as having no
