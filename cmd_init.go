@@ -30,6 +30,10 @@ type InitCmd struct {
 	NoHooks     bool   `name:"no-hooks" help:"Do not install the local commit-msg hook."`
 	NoTemplates bool   `name:"no-templates" help:"Do not write CI, PR or issue templates."`
 	Yes         bool   `short:"y" help:"Accept every default without prompting."`
+
+	// deployNote says which deployment source init wrote in place of the
+	// preset's, and why; empty when the preset's stands (issue #295).
+	deployNote string
 }
 
 // configFile is the name of the team configuration, relative to the repository
@@ -162,7 +166,57 @@ func (c *InitCmd) configure(app *Context, repo *git.Repo) ([]byte, error) {
 			return nil, err
 		}
 	}
-	return source, c.validate(source)
+	registry, err := shippedRegistry()
+	if err != nil {
+		return nil, err
+	}
+	if source, c.deployNote, err = deploySource(source, registry); err != nil {
+		return nil, err
+	}
+	return source, c.validate(source, registry)
+}
+
+// deploySource writes a deployment source the forge can be read through, when
+// the preset's cannot (issue #295).
+//
+// Every preset ships `source: forge_deployments`, and only some forges keep
+// deployment records flow can read; which ones is the forge's declaration's
+// to say (`deployments_read`), so a forge added later follows without this
+// code naming it. Elsewhere init writes `commit_status`, which every forge
+// can answer (spec 13, issue #129), with one context for the deployer to
+// post.
+//
+// `none` was the other choice and is not valid everywhere: deploy-done means
+// done when deployed, which with no source could never happen (spec 04 §6),
+// and the environment and lag the preset sets would have to go with it. A
+// placeholder is no better, because doctor has no way to find out which
+// status a deployer posts. So the context is a name, not a guess at one:
+// what flow will look for, which the note says, and which a team that
+// already posts a different status changes once.
+//
+// The note is what init prints, empty when the preset's source stands. An
+// adapter this build has never heard of reads as one that keeps nothing, and
+// validate refuses it whatever source is written.
+func deploySource(source []byte, registry core.Registry) ([]byte, string, error) {
+	cfg, err := config.Parse(source, configFile)
+	if err != nil {
+		return nil, "", err
+	}
+	forge, _ := registry.Of(cfg.Forge.Type)
+	if cfg.Deploys.Source != config.DeploySourceForge || forge.CanVerify(core.CapDeploymentsRead) {
+		return source, "", nil
+	}
+	context := "deploy/" + cfg.Deploys.Environment
+	if source, err = config.Set(source, "deploys.source", config.DeploySourceCommitStatus); err != nil {
+		return nil, "", err
+	}
+	if source, err = config.SetList(source, "deploys.contexts", []string{context}); err != nil {
+		return nil, "", err
+	}
+	note := fmt.Sprintf("deploys.source is %s: %s keeps no deployment records flow can read.\n", config.DeploySourceCommitStatus, cfg.Forge.Type) +
+		fmt.Sprintf("Have your deployer post a commit status named %s on the commit it ships,\n", context) +
+		"or set deploys.contexts to the one it already posts.\n"
+	return source, note, nil
 }
 
 // ask puts the questions of spec 12 §1 to whoever is running init, and
@@ -353,20 +407,21 @@ func forgeKindFor(host string) (string, bool) {
 
 // validate parses and checks the configuration before it is written, so init
 // can never leave behind a file flow itself refuses to read.
-func (c *InitCmd) validate(source []byte) error {
+func (c *InitCmd) validate(source []byte, registry core.Registry) error {
 	cfg, err := config.Parse(source, configFile)
 	if err != nil {
 		return err
 	}
+	return config.Validate(cfg, configFile, registry)
+}
+
+// shippedRegistry is the capability declarations this build carries.
+func shippedRegistry() (core.Registry, error) {
 	capabilities, err := assets.Capabilities()
 	if err != nil {
-		return core.Errorf(core.ErrNotFound, "read the capability declarations").WithWhy("%s", err)
+		return nil, core.Errorf(core.ErrNotFound, "read the capability declarations").WithWhy("%s", err)
 	}
-	registry, err := core.LoadRegistry(capabilities)
-	if err != nil {
-		return err
-	}
-	return config.Validate(cfg, configFile, registry)
+	return core.LoadRegistry(capabilities)
 }
 
 // write puts the configuration and the templates in the working tree.
@@ -540,6 +595,9 @@ func (c *InitCmd) report(app *Context, root string, source []byte, files []initF
 		fmt.Fprintf(app.Stdout, "%s %s\n", file.Action, file.Path)
 	}
 	fmt.Fprintf(app.Stdout, "commit-msg hook %s\n", hook)
+	if c.deployNote != "" {
+		fmt.Fprintf(app.Stdout, "\n%s", c.deployNote)
+	}
 	if pin == assets.Latest {
 		// Said, because the workflow will not run the flow that wrote it
 		// (issue #267).

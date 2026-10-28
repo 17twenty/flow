@@ -596,6 +596,7 @@ func (v *validator) deploys() {
 		if len(deploys.Contexts) > 0 {
 			v.add("deploys.contexts is set but deploys.source is %s; contexts name commit statuses, which only the %s source reads", DeploySourceForge, DeploySourceCommitStatus)
 		}
+		v.forgeDeployments()
 	case DeploySourceCommitStatus:
 		if len(deploys.Contexts) == 0 {
 			v.add("deploys.source is %s but deploys.contexts is empty; flow would not know which status means deployed", DeploySourceCommitStatus)
@@ -610,6 +611,25 @@ func (v *validator) deploys() {
 			v.add("deploys.source is %s but other deploys keys are set; flow reads no deployments at all, so none of them can be honoured", DeploySourceNone)
 		}
 	}
+}
+
+// forgeDeployments refuses `source: forge_deployments` on a forge whose
+// declaration says flow cannot read its deployment records (issue #295).
+//
+// GitLab and Gitea are both declared that way, and the only reader of the
+// source is GitHub's: a configuration naming it there had every check doctor
+// plans fail on one observation that could never succeed, with nothing
+// pointing at deploys.source. Like [validator.branchLinkage], it is a fact
+// about the provider, so it is wrong when it is written. An adapter this
+// build has never heard of is left to declares, which has already said so;
+// so is a run with no registry at all, where every adapter is one.
+func (v *validator) forgeDeployments() {
+	set, err := v.registry.Of(v.cfg.Forge.Type)
+	if err != nil || set.CanVerify(core.CapDeploymentsRead) {
+		return
+	}
+	v.add("deploys.source is %s, but %s keeps no deployment records flow can read; use %s with deploys.contexts naming the status your deployer posts, or %s",
+		DeploySourceForge, v.cfg.Forge.Type, DeploySourceCommitStatus, DeploySourceNone)
 }
 
 // policy checks how the pull request gate presents itself.

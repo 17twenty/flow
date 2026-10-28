@@ -196,3 +196,26 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   trunk does not contain (diverged, or a commit the forge has forgotten) is
   left out, with a line saying how many. Merges that are on time are never
   asked, so a healthy run costs nothing more.
+- **§1 init writes a source the forge can be read through (#295).** Every
+  preset ships `source: forge_deployments`, but GitLab and Gitea declare
+  `deployments_read` unverifiable and the only reader of that source is
+  GitHub's, so a repository on either had doctor's deploy observation fail
+  on day one and take every planned check down with it, with nothing naming
+  deploys.source. init now reads the forge's declaration — not a list of
+  forge names, so a forge added later follows — and where it cannot read
+  deployment records writes `source: commit_status` with
+  `contexts: ['deploy/<environment>']`, and prints that it did and what the
+  deployer must post. `commit_status` rather than `none`, because `none` is
+  invalid under deploy-done (`done_on: deployed` needs a source, spec 04 §6)
+  and would have meant deleting the environment and lag a team picked the
+  preset for; and a named context rather than a `${pending:…}` placeholder,
+  because placeholders are only allowed where doctor has a way to find the
+  answer, and no API says which status a deployer means as "deployed". The
+  name is the contract flow states, not a guess at the deployer's: a team
+  already posting another changes it once. There is no `--deploy-source`
+  flag to override this (spec 02 §2 Decisions); the file is the override.
+  The other half is semantics: `forge_deployments` on a forge whose
+  declaration cannot read them is refused by config.semantics, naming
+  `commit_status` and `none`, in the same way a tracker that cannot see a
+  ticket's branches refuses `branch_created` — a fact about the provider is
+  wrong when written, not when doctor first observes it.
