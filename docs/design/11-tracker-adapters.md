@@ -714,3 +714,14 @@ reopen, pagination, error mapping.
   which is what `Permissions.Unreachable` holds, so `auth.tracker`
   warns with steps instead of burying it in evidence. Neither probe
   can reach that answer without a project or team configured.
+- **§1 Jira's follow-up search reads the follow-up label, not the
+  project (issue #296).** `FindFollowUp` narrows its JQL with
+  `labels = "<first usable followups.labels entry>"` and still matches
+  the marker in the descriptions it gets back. With no label Jira would
+  take, it reads the whole project as before. There is no fallback to
+  the full scan on a miss: a miss is the ordinary answer before a
+  follow-up is filed, and scanning then would cost exactly what the
+  label saves. A follow-up filed before the label was configured, or
+  one whose label somebody removed, is not found, and flow files a
+  fresh labelled one in its place. The health issue is found the same
+  way and carries the same labels.

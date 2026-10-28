@@ -58,6 +58,8 @@ type jiraFake struct {
 	// nextID is the id the next issue, comment or status gets.
 	nextID int
 
+	// jqls is every query a search was asked, in order.
+	jqls []string
 	// requests counts every call, by method and path.
 	requests []string
 	// refuseResolutions makes /resolution answer 403, which is an instance
@@ -434,6 +436,7 @@ func (f *jiraFake) search(w http.ResponseWriter, r *http.Request) {
 		f.refuse(w, http.StatusBadRequest, "the body is not JSON")
 		return
 	}
+	f.jqls = append(f.jqls, body.JQL)
 	matching, err := f.matching(body.JQL)
 	if err != nil {
 		f.refuse(w, http.StatusBadRequest, err.Error())
@@ -467,6 +470,7 @@ func (f *jiraFake) matching(jql string) ([]*jiraFakeIssue, error) {
 	var (
 		project string
 		status  string
+		label   string
 		since   time.Time
 	)
 	for _, clause := range strings.Split(expression, " AND ") {
@@ -479,6 +483,8 @@ func (f *jiraFake) matching(jql string) ([]*jiraFakeIssue, error) {
 			project = value
 		case "status":
 			status = value
+		case "labels":
+			label = value
 		case "updated":
 			when, err := time.Parse("2006-01-02 15:04", value)
 			if err != nil {
@@ -501,6 +507,8 @@ func (f *jiraFake) matching(jql string) ([]*jiraFakeIssue, error) {
 		case issue.archived:
 			continue
 		case status != "" && !strings.EqualFold(issue.fields.Status.Name, status):
+			continue
+		case label != "" && !slices.Contains(issue.fields.Labels, label):
 			continue
 		case !since.IsZero() && issue.fields.Updated.Time.Before(since):
 			continue
