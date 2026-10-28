@@ -695,3 +695,18 @@ duplicate-pipeline hazards). MR closing issues: `GET
   does the protection fields — GitHub and Gitea show the checks on the branch
   and never set it. A GitLab reading with any part unread is not written
   from: every GitLab write is judged against what is already there.
+- **Gitea protection is written to the rule that governs the branch, and its
+  required contexts are read as patterns (#293).** A Gitea rule may be a
+  glob (`main*`), and the branch names the rule that governs it as
+  `effective_branch_protection_name`. flow used to edit
+  `branch_protections/{branch}`, which under a glob rule is 404, and then
+  created a rule named after the branch — which wins over the glob and
+  carries none of its push or merge whitelists. Writes now edit the
+  governing rule by its (escaped) name, and create one only when no rule
+  governs the branch. From 1.21 Gitea also matches each required context as
+  a glob, so `Protection.CheckPatterns` says so and `RequiresCheck` matches
+  with Gitea's own `modules/glob` semantics without separators (`*` crosses
+  `/`, `?`, `[...]`/`[!...]`, `{a,b}`, `\` escapes) rather than
+  `path.Match`, whose `*` stops at a slash. A trunk requiring `flow/*`
+  therefore already requires `flow/policy`; a check no pattern covers is
+  appended by its literal name, and the team's patterns are never rewritten.

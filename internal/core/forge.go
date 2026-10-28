@@ -107,6 +107,11 @@ type Protection struct {
 	Enabled bool
 	// RequiredChecks are the status contexts that must succeed before a merge.
 	RequiredChecks []string
+	// CheckPatterns says RequiredChecks are glob patterns rather than names,
+	// as Gitea reads them from 1.21 on: a rule requiring `flow/*` requires
+	// `flow/policy`, and a reader comparing the two as strings would ask for
+	// a check the forge already demands (issue #293).
+	CheckPatterns bool
 	// StrictChecks requires the branch to be up to date with its base.
 	StrictChecks bool
 	// RequiredApprovals is how many reviews a pull request needs.
@@ -161,9 +166,18 @@ type DormantRule struct {
 	URL string
 }
 
-// RequiresCheck reports whether context is already required.
+// RequiresCheck reports whether context is already required: named outright,
+// or matched by one of the patterns of a forge that reads them as patterns.
 func (p Protection) RequiresCheck(context string) bool {
-	return slices.Contains(p.RequiredChecks, context)
+	if slices.Contains(p.RequiredChecks, context) {
+		return true
+	}
+	if !p.CheckPatterns {
+		return false
+	}
+	return slices.ContainsFunc(p.RequiredChecks, func(pattern string) bool {
+		return MatchCheckPattern(pattern, context)
+	})
 }
 
 // Merge returns p with everything want adds, and nothing it takes away: the

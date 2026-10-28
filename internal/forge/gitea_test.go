@@ -728,6 +728,101 @@ func TestGiteaDoesNotLookForARuleBehindAnUnprotectedBranch(t *testing.T) {
 	}
 }
 
+func TestGiteaWritesProtectionToTheGlobRuleThatGovernsTheBranch(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, _ := newGiteaServer(t, fx)
+	recorder := &recordingGitea{inner: fake}
+	srv := httptest.NewServer(recorder)
+	t.Cleanup(srv.Close)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+	// The trunk is governed by a glob rule and has no rule of its own name,
+	// so an edit addressed to `main` is told there is no such rule.
+	delete(fake.rules, "main")
+	fake.rules["main*"] = core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}}
+	fake.whitelists["main*"] = []string{"release-bot"}
+	fake.effective["main"] = "main*"
+
+	want := core.Protection{Branch: "main", Enabled: true, RequiredChecks: []string{"flow/policy"}}
+	if err := adapter.SetProtection(t.Context(), "main", want); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+
+	if _, ok := fake.ruleFor("main"); ok {
+		t.Error("a rule named after the branch was created beside the glob; it shadows the glob and carries none of its whitelists")
+	}
+	rule, _ := fake.ruleFor("main*")
+	if !slices.Equal(rule.RequiredChecks, []string{"ci/test", "flow/policy"}) {
+		t.Errorf("the glob rule requires %v, want what it had and flow/policy beside it", rule.RequiredChecks)
+	}
+	if !slices.Equal(fake.whitelists["main*"], []string{"release-bot"}) {
+		t.Errorf("the glob rule's push whitelist is %v, want it left as the team wrote it", fake.whitelists["main*"])
+	}
+	// The rule's name is escaped like any other, so its star reaches Gitea
+	// as part of the name rather than as something to expand.
+	recorder.body(t, http.MethodPatch+" "+fake.prefix()+"/branch_protections/main%2A")
+}
+
+// A rule may be written before anybody pushes the branch it names, and then
+// there is no branch to say which rule governs it: the rule flow creates is
+// the branch's own.
+func TestGiteaProtectsABranchNobodyHasPushedYet(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+
+	want := core.Protection{Branch: "release/2.0", Enabled: true, RequiredChecks: []string{"flow/policy"}}
+	if err := adapter.SetProtection(t.Context(), "release/2.0", want); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	if _, ok := fake.ruleFor("release/2.0"); !ok {
+		t.Error("no rule was written for a branch that does not exist yet")
+	}
+}
+
+func TestGiteaReadsARequiredContextAsThePatternGiteaMatches(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, _ := newGiteaServer(t, fx)
+	recorder := &recordingGitea{inner: fake}
+	srv := httptest.NewServer(recorder)
+	t.Cleanup(srv.Close)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+	fake.rules["main"] = core.Protection{Enabled: true, RequiredChecks: []string{"flow/*"}}
+
+	protection, err := adapter.Protection(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !protection.RequiresCheck("flow/policy") {
+		t.Error("a trunk requiring flow/* reads as not requiring flow/policy, which Gitea matches and demands")
+	}
+	if protection.RequiresCheck("ci/test") {
+		t.Error("a trunk requiring flow/* reads as requiring ci/test, which the pattern does not match")
+	}
+
+	// Asking for what a pattern already requires writes nothing at all.
+	only := core.Protection{Branch: "main", Enabled: true, RequiredChecks: []string{"flow/policy"}}
+	if err := adapter.SetProtection(t.Context(), "main", only); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	recorder.mu.Lock()
+	writes := len(recorder.bodies)
+	recorder.mu.Unlock()
+	if writes != 0 {
+		t.Errorf("protecting with a check flow/* already covers wrote %d times, want none", writes)
+	}
+
+	// Asking for one it does not cover adds the name and keeps the pattern
+	// the team wrote, rather than rewriting either.
+	more := core.Protection{Branch: "main", Enabled: true, RequiredChecks: []string{"ci/test", "flow/policy"}}
+	if err := adapter.SetProtection(t.Context(), "main", more); err != nil {
+		t.Fatalf("SetProtection: %v", err)
+	}
+	rule, _ := fake.ruleFor("main")
+	if !slices.Equal(rule.RequiredChecks, []string{"ci/test", "flow/*"}) {
+		t.Errorf("the rule requires %v, want the team's pattern and ci/test beside it", rule.RequiredChecks)
+	}
+}
+
 // recordingGitea keeps the bytes of every write, so that a request can be
 // read as the forge would read it rather than as the adapter composed it.
 type recordingGitea struct {

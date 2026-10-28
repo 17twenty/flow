@@ -834,6 +834,49 @@ func TestProtectionOnlyAnAdminCanReadIsMovedUnlessItCannotBe(t *testing.T) {
 	wantState(t, setupResult(t, engine.SetupInput{Config: env.Config}, env, core.ItemForgeProtection), engine.StateWarn)
 }
 
+// A forge that requires contexts by pattern requires every check the pattern
+// matches (issue #293): a Gitea trunk requiring `flow/*` already demands
+// flow's gate, and a plan that asked to add it would ask for nothing. The
+// same pattern on a forge that compares names literally requires only itself,
+// so the rows differ in the flag and in the answer.
+func TestARequiredPatternRequiresTheChecksItMatches(t *testing.T) {
+	planned := func(patterns bool, required ...string) engine.PlanItem {
+		t.Helper()
+		w := githubProjectsWorld(t)
+		fx := forgeFixture(t)
+		protection := fx.Protections["main"]
+		protection.RequiredChecks, protection.CheckPatterns = required, patterns
+		fx.Protections["main"] = protection
+		w.forge = coretest.NewFakeForge(fx)
+		item, ok := planFor(t, w).Find(core.ItemForgeRequiredStatus)
+		if !ok {
+			t.Fatal("forge.required_status is not in the plan")
+		}
+		return item
+	}
+	creates := func(item engine.PlanItem, name string) bool {
+		return slices.ContainsFunc(item.Changes, func(c core.Change) bool {
+			return c.Op == core.ChangeCreate && c.Item.Name == name
+		})
+	}
+
+	if item := planned(true, "flow/*"); creates(item, engine.DefaultStatusContext) {
+		t.Errorf("a trunk requiring flow/* by pattern plans to add %s: %+v", engine.DefaultStatusContext, item.Changes)
+	}
+	if item := planned(false, "flow/*"); !creates(item, engine.DefaultStatusContext) {
+		t.Errorf("a trunk requiring the literal context flow/* plans no %s, which nothing requires: %+v", engine.DefaultStatusContext, item.Changes)
+	}
+	// A name is a pattern that matches only itself, so reading it as one
+	// must observe the trunk a literal reading does: one check, not the same
+	// check twice.
+	once := engine.HashObservation(core.Observation{What: core.ItemForgeRequiredStatus, Exists: true, Items: []core.Item{{Name: engine.DefaultStatusContext}}})
+	for _, patterns := range []bool{false, true} {
+		if read := planned(patterns, engine.DefaultStatusContext); read.ObservedHash != once {
+			t.Errorf("a trunk requiring only %s, read with patterns %v, observed something other than that one check", engine.DefaultStatusContext, patterns)
+		}
+	}
+}
+
 // A rule the forge holds for the trunk and does not enforce is a fact about
 // the repository, not a difference flow would act on. It has to reach the
 // report, because it is the difference between "somebody has to write this"
