@@ -309,11 +309,6 @@ func TestValidate(t *testing.T) {
 			wantIn: "no way to learn that anything was deployed",
 		},
 		{
-			name:   "deployment records a forge does not keep",
-			change: func(c *Config) { c.Forge.Type = ForgeGitLab },
-			wantIn: "but gitlab keeps no deployment records flow can read; use commit_status",
-		},
-		{
 			name: "merged but tracking deployments anyway",
 			change: func(c *Config) {
 				c.Workflow.Transitions[EventDeployed] = Transition{To: "done", Owner: OwnerFlow}
@@ -745,46 +740,4 @@ func TestParseAcceptsThingsThatMerelyLookLikeNames(t *testing.T) {
 	if _, err := Parse([]byte(src), DefaultPath); err != nil {
 		t.Errorf("Parse refused a file that only names variables:\n%v", err)
 	}
-}
-
-// TestDeploymentRecordsFollowTheForgesDeclaration is issue #295 from the
-// other side: the refusal is the declaration's, so a forge that can read
-// deployment records is let through, a commit status source is accepted on
-// one that cannot, and a forge flow has never heard of is told so once — by
-// forge.type — and not a second time about deployments it was never going
-// to be asked for.
-func TestDeploymentRecordsFollowTheForgesDeclaration(t *testing.T) {
-	registry := testRegistry(t)
-
-	for _, forge := range []string{ForgeGitHub, ForgeGitLab, ForgeGitea} {
-		t.Run(forge+" with commit statuses", func(t *testing.T) {
-			cfg := presetConfig(t, PresetLeanKanban)
-			cfg.Forge.Type = forge
-			cfg.Deploys.Source = DeploySourceCommitStatus
-			cfg.Deploys.Contexts = []string{"deploy/production"}
-			if err := Validate(cfg, DefaultPath, registry); err != nil {
-				t.Errorf("Validate refused a source every forge can answer: %v", err)
-			}
-		})
-	}
-
-	t.Run("github with deployments", func(t *testing.T) {
-		cfg := presetConfig(t, PresetLeanKanban)
-		cfg.Forge.Type = ForgeGitHub
-		if err := Validate(cfg, DefaultPath, registry); err != nil {
-			t.Errorf("Validate refused deployments on the forge that keeps them: %v", err)
-		}
-	})
-
-	t.Run("a forge nobody declared", func(t *testing.T) {
-		cfg := presetConfig(t, PresetLeanKanban)
-		cfg.Forge.Type = "forgejo"
-		err := Validate(cfg, DefaultPath, registry)
-		if err == nil {
-			t.Fatal("Validate accepted a forge with no declaration")
-		}
-		if strings.Contains(err.Error(), "deployment records") {
-			t.Errorf("one unknown forge was reported twice:\n%v", err)
-		}
-	})
 }

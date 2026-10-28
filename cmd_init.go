@@ -31,9 +31,9 @@ type InitCmd struct {
 	NoTemplates bool   `name:"no-templates" help:"Do not write CI, PR or issue templates."`
 	Yes         bool   `short:"y" help:"Accept every default without prompting."`
 
-	// deployNote says which deployment source init wrote in place of the
-	// preset's, and why; empty when the preset's stands (issue #295).
-	deployNote string
+	// deploys is the deployment source init wrote in place of the preset's,
+	// and why; zero when the preset's stands (issue #295).
+	deploys deploySwap
 }
 
 // configFile is the name of the team configuration, relative to the repository
@@ -55,6 +55,10 @@ type initReport struct {
 	// FlowVersion is the version the written workflow installs, empty when
 	// no workflow was written.
 	FlowVersion string `json:"flow_version,omitempty"`
+	// DeploysSource is the deployment source init wrote in place of the
+	// preset's, because the forge keeps no records the preset's could read
+	// (issue #295). Empty when the preset's stands.
+	DeploysSource string `json:"deploys_source,omitempty"`
 	// Hook says what happened to the commit-msg hook: installed, updated,
 	// unchanged, deferred or skipped.
 	Hook string `json:"hook"`
@@ -170,13 +174,20 @@ func (c *InitCmd) configure(app *Context, repo *git.Repo) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if source, c.deployNote, err = deploySource(source, registry); err != nil {
+	if source, c.deploys, err = readableDeploySource(source, registry); err != nil {
 		return nil, err
 	}
 	return source, c.validate(source, registry)
 }
 
-// deploySource writes a deployment source the forge can be read through, when
+// deploySwap is a deployment source init chose over the preset's: the source
+// written, and the lines it prints to say so.
+type deploySwap struct {
+	Source string
+	Note   string
+}
+
+// readableDeploySource writes a deployment source the forge can be read through, when
 // the preset's cannot (issue #295).
 //
 // Every preset ships `source: forge_deployments`, and only some forges keep
@@ -194,29 +205,28 @@ func (c *InitCmd) configure(app *Context, repo *git.Repo) ([]byte, error) {
 // what flow will look for, which the note says, and which a team that
 // already posts a different status changes once.
 //
-// The note is what init prints, empty when the preset's source stands. An
-// adapter this build has never heard of reads as one that keeps nothing, and
+// The swap is zero when the preset's source stands. An adapter this build has never heard of reads as one that keeps nothing, and
 // validate refuses it whatever source is written.
-func deploySource(source []byte, registry core.Registry) ([]byte, string, error) {
+func readableDeploySource(source []byte, registry core.Registry) ([]byte, deploySwap, error) {
 	cfg, err := config.Parse(source, configFile)
 	if err != nil {
-		return nil, "", err
+		return nil, deploySwap{}, err
 	}
 	forge, _ := registry.Of(cfg.Forge.Type)
 	if cfg.Deploys.Source != config.DeploySourceForge || forge.CanVerify(core.CapDeploymentsRead) {
-		return source, "", nil
+		return source, deploySwap{}, nil
 	}
 	context := "deploy/" + cfg.Deploys.Environment
 	if source, err = config.Set(source, "deploys.source", config.DeploySourceCommitStatus); err != nil {
-		return nil, "", err
+		return nil, deploySwap{}, err
 	}
 	if source, err = config.SetList(source, "deploys.contexts", []string{context}); err != nil {
-		return nil, "", err
+		return nil, deploySwap{}, err
 	}
 	note := fmt.Sprintf("deploys.source is %s: %s keeps no deployment records flow can read.\n", config.DeploySourceCommitStatus, cfg.Forge.Type) +
 		fmt.Sprintf("Have your deployer post a commit status named %s on the commit it ships,\n", context) +
 		"or set deploys.contexts to the one it already posts.\n"
-	return source, note, nil
+	return source, deploySwap{Source: config.DeploySourceCommitStatus, Note: note}, nil
 }
 
 // ask puts the questions of spec 12 §1 to whoever is running init, and
@@ -582,21 +592,22 @@ func (c *InitCmd) report(app *Context, root string, source []byte, files []initF
 	}
 	if app.CLI.JSON {
 		return core.WriteJSON(app.Stdout, initReport{
-			Schema:      core.SchemaID("init"),
-			Root:        root,
-			Preset:      c.Preset,
-			Files:       files,
-			Pending:     pending,
-			Hook:        hook,
-			FlowVersion: pin,
+			Schema:        core.SchemaID("init"),
+			Root:          root,
+			Preset:        c.Preset,
+			Files:         files,
+			Pending:       pending,
+			Hook:          hook,
+			FlowVersion:   pin,
+			DeploysSource: c.deploys.Source,
 		})
 	}
 	for _, file := range files {
 		fmt.Fprintf(app.Stdout, "%s %s\n", file.Action, file.Path)
 	}
 	fmt.Fprintf(app.Stdout, "commit-msg hook %s\n", hook)
-	if c.deployNote != "" {
-		fmt.Fprintf(app.Stdout, "\n%s", c.deployNote)
+	if c.deploys.Note != "" {
+		fmt.Fprintf(app.Stdout, "\n%s", c.deploys.Note)
 	}
 	if pin == assets.Latest {
 		// Said, because the workflow will not run the flow that wrote it

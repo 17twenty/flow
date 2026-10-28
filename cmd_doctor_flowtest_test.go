@@ -1090,3 +1090,129 @@ func TestDoctorDoesNotAskARunnerForAGitHook(t *testing.T) {
 		t.Errorf("the skip says %q, which does not say why a runner needs no hook", message)
 	}
 }
+
+// oldGitLabRepo is a GitLab repository configured before init knew better
+// (issue #295): the preset's forge_deployments, which GitLab keeps none of
+// that flow can read, on providers that are fakes.
+func oldGitLabRepo(t *testing.T, preset string, seed func(*fakeWorld)) string {
+	t.Helper()
+	dir := initRepo(t, "git@gitlab.com:acme/api.git")
+	if code, _, stderr := exec(t, "-C", dir, "init", "--preset", preset, "--tracker", "github-projects", "--owner", "acme", "--project", "2", "--yes"); code != core.ExitOK {
+		t.Fatalf("flow init exited %d: %s", code, stderr)
+	}
+	editFlowConfig(t, dir, "source: commit_status", "source: forge_deployments")
+	editFlowConfig(t, dir, "  contexts: ['deploy/production']\n", "")
+	t.Setenv(fakeEnv, "1")
+	if seed != nil {
+		seedFakeWorld(dir, seed)
+	}
+	return dir
+}
+
+// TestDoctorWarnsOfADeploySourceTheForgeCannotProvide is issue #295 as doctor
+// sees it. The source is a warning naming both ways out, not a failure: flow
+// guides by default, and a deploy setting is not a reason to go red. And it
+// stays one check's business — the forge and tracker checks are answered as
+// they would be anyway, rather than every planned check failing on one
+// observation that could never succeed, and the deploy audit steps aside
+// pointing at deploys.source.
+func TestDoctorWarnsOfADeploySourceTheForgeCannotProvide(t *testing.T) {
+	for _, preset := range []string{"lean-kanban", "deploy-done"} {
+		t.Run(preset, func(t *testing.T) { doctorWarnsOfUnreadableDeploys(t, preset) })
+	}
+}
+
+func doctorWarnsOfUnreadableDeploys(t *testing.T, preset string) {
+	dir := oldGitLabRepo(t, preset, nil)
+	// The owners are answered first, so that the providers are planned at
+	// all: with a placeholder still open, doctor makes no plan, and a plan
+	// that one observation poisoned would never be seen.
+	execAt(t, dir, append([]string{"doctor", "--fix"}, owners()...)...)
+
+	doc, code := doctorJSON(t, dir)
+	if code == core.ExitFail {
+		t.Errorf("doctor exited %d over a deploy setting", code)
+	}
+	var source *checkDoc
+	for i := range doc.Checks {
+		if doc.Checks[i].ID == engine.CheckDeploysSource {
+			source = &doc.Checks[i]
+		}
+	}
+	if source == nil {
+		t.Fatal("the report has no deploys.source")
+	}
+	if source.Result.State != string(engine.StateWarn) {
+		t.Errorf("deploys.source is %s, want %s: %s", source.Result.State, engine.StateWarn, source.Result.Message)
+	}
+	if !strings.Contains(source.Result.Message, "gitlab keeps no deployment records") {
+		t.Errorf("deploys.source does not say why: %q", source.Result.Message)
+	}
+	steps := strings.Join(source.Result.Remediation.Steps, "\n")
+	for _, want := range []string{"deploys.source: commit_status", "deploys.contexts: ['deploy/production']", "deploys.source: none"} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("the fix does not say %q:\n%s", want, steps)
+		}
+	}
+
+	for _, checked := range doc.Checks {
+		if checked.Result.State == string(engine.StateError) {
+			t.Errorf("%s could not find out: %s", checked.ID, checked.Result.Message)
+		}
+	}
+	for _, id := range []string{engine.CheckForgeRepo, core.ItemTrackerProject} {
+		if state := doc.checkState(t, id); state != string(engine.StatePass) {
+			t.Errorf("%s is %s; it was not answered as if the deploy setting were not there", id, state)
+		}
+	}
+	asides := []string{engine.CheckLiveDeploysRecent, engine.CheckLiveDeploysLag}
+	if preset == "deploy-done" {
+		// The board's moves include the deployed one, and cannot be
+		// judged without it.
+		asides = append(asides, engine.CheckLiveTicketsDoneDeployed, engine.CheckLiveTransitionsFlow)
+	} else {
+		// Done on merge needs no deployment to judge the board.
+		for _, checked := range doc.Checks {
+			if checked.ID == engine.CheckLiveTransitionsFlow && strings.Contains(checked.Result.Message, "deploys.source") {
+				t.Errorf("%s stepped aside on a workflow done on merge: %s", checked.ID, checked.Result.Message)
+			}
+		}
+	}
+	for _, id := range asides {
+		for _, checked := range doc.Checks {
+			if checked.ID == id && (checked.Result.State != string(engine.StateSkip) || !strings.Contains(checked.Result.Message, "deploys.source says")) {
+				t.Errorf("%s is %s (%s), want it to step aside for deploys.source", id, checked.Result.State, checked.Result.Message)
+			}
+		}
+		doc.checkState(t, id)
+	}
+}
+
+// TestDoctorDoesNotWarnOfTheSourceInitWrites: a GitLab repository as init now
+// configures it reads commit statuses, which GitLab keeps, so the warning of
+// issue #295 is about forge_deployments only and not about GitLab.
+func TestDoctorDoesNotWarnOfTheSourceInitWrites(t *testing.T) {
+	dir := initRepo(t, "git@gitlab.com:acme/api.git")
+	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--project", "2", "--yes"); code != core.ExitOK {
+		t.Fatalf("flow init exited %d: %s", code, stderr)
+	}
+	t.Setenv(fakeEnv, "1")
+
+	doc, _ := doctorJSON(t, dir)
+	if state := doc.checkState(t, engine.CheckDeploysSource); state == string(engine.StateWarn) {
+		t.Errorf("%s warns about the source init wrote", engine.CheckDeploysSource)
+	}
+
+	// Nor about GitHub's deployments, which GitHub keeps.
+	github, _ := doctorJSON(t, fakeRepo(t))
+	if state := github.checkState(t, engine.CheckDeploysSource); state == string(engine.StateWarn) {
+		t.Errorf("%s warns about forge_deployments on github", engine.CheckDeploysSource)
+	}
+	for _, id := range []string{engine.CheckLiveDeploysRecent, engine.CheckLiveDeploysLag} {
+		for _, checked := range doc.Checks {
+			if checked.ID == id && strings.Contains(checked.Result.Message, "keeps no deployment records") {
+				t.Errorf("%s stepped aside for a source GitLab can answer: %s", id, checked.Result.Message)
+			}
+		}
+	}
+}

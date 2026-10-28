@@ -204,8 +204,8 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   deploys.source. init now reads the forge's declaration — not a list of
   forge names, so a forge added later follows — and where it cannot read
   deployment records writes `source: commit_status` with
-  `contexts: ['deploy/<environment>']`, and prints that it did and what the
-  deployer must post. `commit_status` rather than `none`, because `none` is
+  `contexts: ['deploy/<environment>']`, and says so — what the deployer
+  must post, in text, and `deploys_source` in `--json`. `commit_status` rather than `none`, because `none` is
   invalid under deploy-done (`done_on: deployed` needs a source, spec 04 §6)
   and would have meant deleting the environment and lag a team picked the
   preset for; and a named context rather than a `${pending:…}` placeholder,
@@ -214,8 +214,20 @@ compare API, cached per pair in `FLOW_CACHE_DIR`.
   name is the contract flow states, not a guess at the deployer's: a team
   already posting another changes it once. There is no `--deploy-source`
   flag to override this (spec 02 §2 Decisions); the file is the override.
-  The other half is semantics: `forge_deployments` on a forge whose
-  declaration cannot read them is refused by config.semantics, naming
-  `commit_status` and `none`, in the same way a tracker that cannot see a
-  ticket's branches refuses `branch_created` — a fact about the provider is
-  wrong when written, not when doctor first observes it.
+- **§4 a source the forge cannot provide is a warning, and costs nothing
+  else (#295).** A configuration written before init knew better still names
+  `forge_deployments` on GitLab or Gitea. Refusing it in config.semantics
+  was tried and withdrawn: configuration is read by every command, so the
+  gate would have gone red on every pull request over a deploy setting, and
+  flow guides by default and blocks only where a team opts a rule in. The
+  fault was further down: flow built GitHub's deployments reader against
+  whatever forge it had, so the one observation of `deploys.records` failed
+  and took every check doctor plans with it. Now no source is built for that
+  combination; the item is left unobserved, so it plans as unsupported
+  instead of poisoning the plan; `deploys.source` is a warning naming
+  `commit_status` with the context init writes, or `none` for a workflow done
+  on merge; and the checks that need deployment records — `live.deploys.*`,
+  `live.tickets.done_deployed`, and `live.transitions.flow` when flow owns
+  the deployed move — skip pointing at it, since judging them without the
+  records would be an error that is really the same warning. The gate never
+  reads deployments and is unaffected.

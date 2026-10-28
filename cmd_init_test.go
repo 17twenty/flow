@@ -689,37 +689,6 @@ func TestInitTheForgeFlagDecidesTheDeploySource(t *testing.T) {
 	}
 }
 
-// TestDoctorSaysWhichDeploySourceTheForgeCannotProvide is the other half of
-// issue #295: a GitLab configuration written before init knew better, still
-// naming forge_deployments, is refused by name with both ways out, instead
-// of every planned check failing on one observation that could never work.
-func TestDoctorSaysWhichDeploySourceTheForgeCannotProvide(t *testing.T) {
-	dir := initRepo(t, "git@gitlab.com:acme/api.git")
-	if code, _, stderr := exec(t, "-C", dir, "init", "--tracker", "github-projects", "--owner", "acme", "--project", "7", "--yes"); code != core.ExitOK {
-		t.Fatalf("init exited %d: %s", code, stderr)
-	}
-	path := filepath.Join(dir, configFile)
-	written := readFlowConfig(t, dir)
-	old := strings.Replace(written, "source: commit_status", "source: forge_deployments", 1)
-	old = strings.Replace(old, "  contexts: ['deploy/production']\n", "", 1)
-	if old == written || strings.Contains(old, "contexts: ['deploy") {
-		t.Fatalf("the fixture did not take:\n%s", old)
-	}
-	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	code, stdout, stderr := exec(t, "-C", dir, "doctor", "--check", "config.*")
-	if code == core.ExitOK {
-		t.Fatalf("doctor passed a source gitlab cannot provide:\n%s", stdout)
-	}
-	for _, want := range []string{"deploys.source is forge_deployments", "gitlab keeps no deployment records", "use commit_status", "or none"} {
-		if !strings.Contains(stdout+stderr, want) {
-			t.Errorf("doctor does not say %q:\n%s%s", want, stdout, stderr)
-		}
-	}
-}
-
 // TestInitOnlyReplacesTheSourceItCannotRead: the preset's source is changed
 // only when it is forge_deployments. A source somebody — or a future preset —
 // already chose is theirs, on any forge.
@@ -729,11 +698,42 @@ func TestInitOnlyReplacesTheSourceItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	const source = "version: 1\nforge:\n  type: gitlab\ndeploys:\n  source: none\n"
-	got, note, err := deploySource([]byte(source), registry)
+	got, swap, err := readableDeploySource([]byte(source), registry)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != source || note != "" {
-		t.Errorf("deploySource changed a source of none:\n%s\nnote: %q", got, note)
+	if string(got) != source || swap != (deploySwap{}) {
+		t.Errorf("readableDeploySource changed a source of none:\n%s\nswap: %+v", got, swap)
+	}
+}
+
+// TestInitJSONNamesTheDeploySourceItChose: a script reading --json is told
+// what a person reading the text is told (issue #295), and told nothing when
+// the preset's source stands.
+func TestInitJSONNamesTheDeploySourceItChose(t *testing.T) {
+	for _, tc := range []struct{ remote, want string }{
+		{"git@gitlab.com:acme/api.git", config.DeploySourceCommitStatus},
+		{"git@github.com:acme/api.git", ""},
+	} {
+		t.Run(tc.remote, func(t *testing.T) {
+			dir := initRepo(t, tc.remote)
+			code, stdout, stderr := exec(t, "-C", dir, "--json", "init", "--tracker", "github-projects", "--owner", "acme", "--yes")
+			if code != core.ExitOK {
+				t.Fatalf("exited %d: %s", code, stderr)
+			}
+			var report struct {
+				DeploysSource *string `json:"deploys_source"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+				t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+			}
+			got := ""
+			if report.DeploysSource != nil {
+				got = *report.DeploysSource
+			}
+			if got != tc.want {
+				t.Errorf("deploys_source = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
