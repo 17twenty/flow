@@ -230,8 +230,13 @@ func (in PlanInput) item(wanted DesiredItem) PlanItem {
 		Hazards:      declared.Hazards,
 		Notes:        observation.Notes,
 	}
-	if item.Outcome == OutcomeFollowUp {
+	switch item.Outcome {
+	case OutcomeFollowUp:
 		item.Owner = Owner(in.Config, in.Lock, ownerRole(wanted.Target))
+		item.Recipe = in.recipe(declared, changes)
+	case OutcomeAttest:
+		// A person makes it true and vouches for it, so they are told how
+		// (issue #281).
 		item.Recipe = in.recipe(declared, changes)
 	}
 	return item

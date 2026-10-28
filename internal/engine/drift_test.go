@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -665,4 +666,57 @@ func evidenceText(result engine.Result) string {
 		lines = append(lines, evidence.Text+" "+evidence.URL)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// An unvouched check's remedy says what to look at before it asks for a word
+// (issue #281). "Look at it yourself" said nothing about what, and a person who
+// does not know what flow wanted can only vouch for what they assume. The
+// provider's recipe says it in the reader's words; without one, flow says
+// what it wanted in its own; with neither, the check's title is all there is.
+func TestAnUnvouchedCheckSaysWhatToLookAt(t *testing.T) {
+	t.Parallel()
+
+	recipe := core.Recipe{
+		What:  "A saved view on the board named Expedite.",
+		Where: "On the board: the row of view tabs.",
+		Steps: []string{"press + New view and name it Expedite"},
+	}
+	for name, tc := range map[string]struct {
+		in    engine.AttestInput
+		first string
+		want  []string
+	}{
+		"in the provider's words": {
+			in:    engine.AttestInput{Recipe: recipe, Asked: []string{`create "Expedite"`}},
+			first: "what it is: A saved view on the board named Expedite.",
+			want:  []string{"where it lives: On the board: the row of view tabs.", "press + New view and name it Expedite"},
+		},
+		"in flow's words": {
+			in:    engine.AttestInput{Asked: []string{`create "Expedite" labels="incident"`}},
+			first: `flow is asking for: create "Expedite" labels="incident"`,
+		},
+		"with nothing else to say": {
+			in:    engine.AttestInput{},
+			first: "look at it yourself: " + attestCheck.Title,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tc.in.Check, tc.in.Result, tc.in.Lock, tc.in.Now = attestCheck, cannotTell(), config.NewLock("v0.3.0"), coretest.ContractNow
+			steps := engine.Attest(tc.in).Remediation.Steps
+			if len(steps) == 0 || steps[0] != tc.first {
+				t.Fatalf("steps = %q, want them to open with %q", steps, tc.first)
+			}
+			for _, want := range tc.want {
+				if !slices.Contains(steps, want) {
+					t.Errorf("steps = %q, want %q among them", steps, want)
+				}
+			}
+			if last := steps[len(steps)-1]; !strings.HasPrefix(last, "run flow attest "+attestCheck.ID) {
+				t.Errorf("the last step is %q, want the command that settles it", last)
+			}
+			if name != "in the provider's words" && slices.ContainsFunc(steps, func(s string) bool { return strings.HasPrefix(s, "what it is:") }) {
+				t.Errorf("steps = %q, a recipe nobody declared", steps)
+			}
+		})
+	}
 }

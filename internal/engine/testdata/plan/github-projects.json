@@ -127,7 +127,15 @@
             }
           }
         }
-      ]
+      ],
+      "recipe": {
+        "what": "The board's built-in \"Code changes requested\" workflow, which moves a ticket on the board when it happens. GitHub's API cannot say whether a board's workflow is switched on, which is why flow asks a person.",
+        "where": "On the board: the ⋯ menu at its top right → Workflows.",
+        "steps": [
+          "Open the board's Workflows and choose \"Code changes requested\". Choose the column `.flow.yaml` names for `changes_requested` (In progress in the shipped presets) as the status it sets.",
+          "Switch it on, and save."
+        ]
+      }
     },
     {
       "id": "tracker.wip",
