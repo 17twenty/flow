@@ -231,7 +231,7 @@ func (in PlanInput) item(wanted DesiredItem) PlanItem {
 		Notes:        observation.Notes,
 	}
 	if item.Outcome == OutcomeFollowUp {
-		item.Owner = followUpOwner(in.Config, wanted.Target)
+		item.Owner = Owner(in.Config, in.Lock, ownerRole(wanted.Target))
 		item.Recipe = in.recipe(declared, changes)
 	}
 	return item
@@ -419,24 +419,21 @@ func (in PlanInput) attested(id, inputs string) bool {
 	return FindAttestation(in.Lock, id, inputs, in.ConfigHash, in.Now).Valid
 }
 
-// followUpOwner routes a follow-up to whoever can actually act on it: the
-// tracker's administrator for a board, the repository's for a forge setting,
-// the platform for a deployment (spec 07 §4).
-func followUpOwner(cfg *config.Config, target string) string {
-	owners := cfg.FollowUps.Owners
-	var owner config.Pending
+// ownerRole is the owner role whose access a target's follow-ups need. Who
+// holds it is [Owner]'s answer, which reads what doctor resolved into the
+// lock: the plan once answered it from the configuration alone and showed a
+// person's role as `${pending:owners.platform}` after the lock had a name for
+// it (#271).
+func ownerRole(target string) string {
 	switch target {
 	case TargetTracker:
-		owner = owners.TrackerAdmin
+		return OwnerTrackerAdmin
 	case TargetForge:
-		owner = owners.ForgeAdmin
+		return OwnerForgeAdmin
 	case TargetDeploys:
-		owner = owners.Platform
+		return OwnerPlatform
 	}
-	if owner.IsZero() {
-		owner = owners.Default
-	}
-	return owner.String()
+	return OwnerDefault
 }
 
 // Find returns the planned item with that id.

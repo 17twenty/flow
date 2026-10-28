@@ -1258,6 +1258,22 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   were. `forge.repo` passes on reachability, which is its own question,
   rather than holding every forge check behind a question that is the
   tracker's.
+- **A follow-up says the ask first, in the reader's words, to the person the
+  lock names (#271).** flow-demo-web's deploys follow-up, read cold, was
+  titled "Flow can read the deployment history — somebody else has to do
+  it", which reads as already true; led with "the provider has no API for
+  this" above a step that was the API call; and ended with "In flow's own
+  words: create deploys.records "production"". Titles now lead with the
+  ask — `Needs a person: <check>`, or `Needs <permission>: <check>` — which
+  supersedes the item 2.10 wording. The plan's reason for a follow-up no
+  longer claims the provider has no API; it says flow has no way to do it
+  itself. Flow's own phrasing of the change appears only when the provider
+  wrote no steps, so a ticket with the provider's steps speaks one
+  vocabulary and names the check under how flow will know it is done. The
+  plan's owner is [Owner]'s answer, which reads the lock, instead of a
+  second copy that read only the configuration and printed
+  `${pending:owners.platform}` after doctor had resolved it; an owner
+  nobody has named yet reads "nobody yet".
 - **A board is taken without asking only if it is this repository's, or
   nobody's (#262).** Discovery took a lone candidate as the answer. With
   flow-demo-web's own board deleted, the only board on the account was
