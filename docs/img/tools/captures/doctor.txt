@@ -1,0 +1,74 @@
+config
+  ✓ config.syntax  ~/flow-demo-web/.flow.yaml parses
+  ✓ config.semantics  every column, transition and gate the configuration names exists
+  ✓ config.secrets  ~/flow-demo-web/.flow.yaml names where to find its credentials and holds none
+  ✓ lock.consistent  the lock is version 1, with 5 resolved values, 1 observation, 2 attestations and 5 follow-ups
+      - the configuration has changed since the lock was written, so an attestation taken against the whole of it has lapsed
+
+local
+  ✓ local.git  this working copy is 17twenty/flow-demo-web
+  ✓ local.hook  the commit-msg hook is at ~/flow-demo-web/.git/hooks/commit-msg
+
+auth
+  ✓ auth.forge  the forge credential is accepted by github
+      - repository permissions: push, triage, pull
+      - can act as reader, gate, actor (spec 15 §3.1)
+  ✓ auth.tracker  the tracker credential is accepted by github-projects
+      - read the project 17twenty/projects/6
+      - can act as reader, actor (spec 15 §3.1)
+
+forge
+  ✓ forge.repo  the provider already matches what was asked for
+      - 17twenty/flow-demo-web's default branch is main
+  ✓ forge.protection  the provider already matches what was asked for
+  ✓ forge.required_status  the provider already matches what was asked for
+  ✓ forge.merge_settings  the provider already matches what was asked for
+  ✓ forge.squash_text  the provider already matches what was asked for
+  ✓ forge.files  the provider already matches what was asked for
+
+tracker
+  ✓ tracker.project  the provider already matches what was asked for
+      - tracker.project was locked this run
+  ✓ tracker.status_options  the provider already matches what was asked for
+  ✓ tracker.labels  the provider already matches what was asked for
+  ✓ tracker.native.changes_requested  flow cannot verify this, and a human has attested that it is true
+  ✓ tracker.wip  the provider cannot be made to do this, so flow enforces the same intent through policy.wip
+      - enforced by policy.wip instead of what the configuration named
+  ✓ tracker.expedite  flow cannot verify this, and a human has attested that it is true
+
+deploys
+  ✓ deploys.source  the provider already matches what was asked for
+
+live
+  ✓ live.prs.linked 4/4  all 4 merged pull requests named a ticket
+  ✓ live.prs.gated 4/4  all 4 merged pull requests carried a flow/policy success
+  ✓ live.prs.conventional 5/5  all 5 commits on the trunk read as the convention
+  ✓ live.prs.reviewed 0/0  nothing a machine wrote merged in the window
+  · live.trunk.built  forge.required_checks names nothing the trunk must build
+  ✓ live.prs.current 0/0  no pull request that passed the gate is behind its base
+  ✓ live.deploys.recent  github-pages took db99140 on 2026-10-28
+  ✓ live.deploys.lag 3/3  all 3 merged pull requests reached github-pages within 2h
+      - left out 1 merge no longer on the trunk, which can never reach github-pages
+  ✓ live.tickets.shared_board 0/0  every ticket on this board is 17twenty/flow-demo-web's
+  ✓ live.tickets.done_merged 0/0  nothing reached Done in the window
+  · live.tickets.done_deployed  workflow.done_on is merged, so a deployment is verified as lag rather than tracked as status
+  ✓ live.tickets.review_has_pr 0/0  nothing is in In review
+  ✓ live.tickets.review_stuck 0/0  nothing in In review has been approved yet
+  ✓ live.tickets.review_stale 0/0  nothing is in In review
+  ✓ live.tickets.progress_stale 0/0  nothing is in In progress
+  ✓ live.tickets.ready_dor 0/0  nothing is in Ready
+  ✓ live.tickets.blocked_explained 0/0  nothing on the board is marked blocked
+  ✓ live.transitions.native.changes_requested 0/0  nothing in the window needed the tracker to move a ticket on changes_requested
+  ✓ live.transitions.flow 0/0  nothing in the window needed flow to move a ticket
+  ✓ live.prs.closed_issues 0/0  no merged pull request in the window named an issue this tracker holds
+  ✓ live.wip 15/15  all 15 days in the window were inside the limit of 3 on In review and the limit of 2 each in In progress
+      - every day but today is reconstructed from how long each pull request was open, because no tracker records what a column held last week
+  ✓ live.flags.cleanup 0/0  nothing in the window added a feature flag
+  ✓ live.flags.age 0/0  no feature flag flow has a ticket for has stood longer than 90d
+  ✓ live.agents.rework 0/0  nothing a machine wrote merged since 2026-10-14
+
+followups
+  ✓ followups.health  nothing is waiting on anybody, and 1 follow-up open
+      - deploys.source: #10
+
+0 actions for you · 0 waiting on others · 0 attestations due · exit 0
