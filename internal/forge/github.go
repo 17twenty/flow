@@ -772,6 +772,7 @@ func sameProtection(a, b core.Protection) bool {
 		a.AllowForcePush == b.AllowForcePush &&
 		a.AllowDeletions == b.AllowDeletions &&
 		a.Unreadable == b.Unreadable &&
+		a.ChecksUnreadable == b.ChecksUnreadable &&
 		a.AdminOnly == b.AdminOnly &&
 		slices.Equal(a.Immovable, b.Immovable) &&
 		slices.Equal(a.Dormant, b.Dormant)

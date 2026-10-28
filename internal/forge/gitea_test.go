@@ -402,6 +402,51 @@ func TestGiteaReadsProtectionWithoutBeingAnAdministrator(t *testing.T) {
 	if !slices.Equal(protection.RequiredChecks, []string{"ci/test"}) {
 		t.Errorf("RequiredChecks = %v, want the contexts the branch itself carries", protection.RequiredChecks)
 	}
+	// What only the rule carries is unread, not off: a run that read
+	// `block_on_outdated_branch` as false here called an admin's work
+	// undone (issue #291).
+	if !protection.Unreadable {
+		t.Error("the rule could not be read and the protection does not say so")
+	}
+
+	// Asked for what the branch already shows, there is nothing to write.
+	// Asked for more, flow refuses before it writes: Gitea replaces a rule
+	// whole, so a write built on one it could not read would switch off
+	// what it holds.
+	if err := adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}}); err != nil {
+		t.Errorf("SetProtection of what the branch already says: %v", err)
+	}
+	err = adapter.SetProtection(t.Context(), "main", core.Protection{Enabled: true, RequiredChecks: []string{"flow/policy"}})
+	if !errors.Is(err, core.ErrPermission) {
+		t.Errorf("SetProtection = %v, want a refusal for a rule that could not be read", err)
+	}
+	for _, method := range fake.Methods() {
+		if method != http.MethodGet {
+			t.Fatalf("methods = %v, want reads only: flow wrote over a rule it could not see", fake.Methods())
+		}
+	}
+}
+
+// A Gitea that does not name the rule governing a branch sends flow to look
+// for it under the branch's own name, and a glob rule is not there: 404, from
+// a branch that has just said it is protected. That is a rule flow could not
+// find, not a branch with none (issue #291).
+func TestGiteaCallsARuleItCannotFindUnread(t *testing.T) {
+	fx := coretest.ContractForge()
+	fake, srv := newGiteaServer(t, fx)
+	adapter := newGiteaAdapter(t, srv, fx, nil)
+	fake.unnamed = true
+	fake.refs["release/1.0"] = coretest.SHADeployed
+	fake.rules["release/*"] = core.Protection{Enabled: true, RequiredChecks: []string{"ci/test"}, StrictChecks: true}
+	fake.effective["release/1.0"] = "release/*"
+
+	protection, err := adapter.Protection(t.Context(), "release/1.0")
+	if err != nil {
+		t.Fatalf("Protection: %v", err)
+	}
+	if !protection.Enabled || !protection.Unreadable || !protection.RequiresCheck("ci/test") {
+		t.Errorf("protection = %+v, want it on, unreadable, and requiring what the branch says", protection)
+	}
 }
 
 func TestGiteaCreatesARuleWhereThereIsNoneToEdit(t *testing.T) {
@@ -651,6 +696,9 @@ func TestGiteaReadsTheRuleThatGovernsABranchAndNotOneOfItsName(t *testing.T) {
 	}
 	if !protection.StrictChecks {
 		t.Error("StrictChecks is off: the settings only the rule carries were never read, because flow looked under the branch's own name")
+	}
+	if protection.Unreadable {
+		t.Error("an administrator read the rule in full and the protection says it could not")
 	}
 	// The rule's name is a name, not a path, so the character that makes it
 	// a glob is escaped on the way out and means itself on the way in.

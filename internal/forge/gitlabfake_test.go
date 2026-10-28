@@ -131,6 +131,12 @@ type gitLabFake struct {
 	// hasApprovals says whether approval rules can be read. They are a
 	// paid feature too, and a free instance refuses them.
 	hasApprovals bool
+	// hiddenAs is what this GitLab answers a credential below maintainer
+	// that asks for a protected branch, the approval rules or the external
+	// status checks: 403 where `authorize!` refuses it, 404 where the route
+	// hides what the caller may not know of. Zero answers it as it would a
+	// maintainer.
+	hiddenAs int
 
 	// branches holds the files on each branch, tips the commit each branch
 	// points at, and ancestry the commits each commit contains, oldest
@@ -433,6 +439,9 @@ func (f *gitLabFake) route(w http.ResponseWriter, r *http.Request, rest []string
 		f.serveRepository(w, r, rest[1:])
 	case rest[0] == "statuses" && len(rest) == 2 && r.Method == http.MethodPost:
 		f.servePublishStatus(w, r, rest[1])
+	case f.hiddenAs != 0 && f.project.Permissions.level() < gitLabMaintainer &&
+		slices.Contains([]string{"protected_branches", "approval_rules", "external_status_checks"}, rest[0]):
+		glRefuse(w, f.hiddenAs, strconv.Itoa(f.hiddenAs)+" refused")
 	case rest[0] == "protected_branches":
 		f.serveProtectedBranches(w, r, rest[1:])
 	case rest[0] == "approval_rules":
@@ -903,9 +912,13 @@ func (f *gitLabFake) readBranch(w http.ResponseWriter, branch string) {
 		glRefuse(w, http.StatusNotFound, "404 Branch Not Found")
 		return
 	}
+	// Whether a branch is protected is answered to anybody who can read
+	// the code, however little of the protection itself they may read.
+	_, protected := f.protected[branch]
 	glWrite(w, http.StatusOK, map[string]any{
-		"name":   branch,
-		"commit": map[string]string{"id": sha},
+		"name":      branch,
+		"protected": protected,
+		"commit":    map[string]string{"id": sha},
 	})
 }
 

@@ -169,7 +169,11 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 			return core.Observation{}, err
 		}
 		if item.ID == core.ItemForgeRequiredStatus {
-			return requiredStatus(protection), nil
+			observation := requiredStatus(protection)
+			if protection.ChecksUnreadable {
+				observation = unreadChecks(observation, item)
+			}
+			return observation, nil
 		}
 		observation := protectionObservation(protection)
 		switch {
@@ -233,7 +237,26 @@ func unreadProtection(observation core.Observation, item DesiredItem) core.Obser
 	}
 	observation.Notes = append(observation.Notes, core.Note{
 		Text:       "this credential may see that the trunk is protected, and not how: what it could not read is taken as asked for",
-		Fix:        "keep the trunk's protection in a ruleset, which anybody who can read the repository can read — flow apply run by an admin writes one",
+		Fix:        "read it with a credential that may administer the repository; on GitHub, flow apply run by an admin keeps it in a ruleset, which anybody who can read the repository can read",
+		Unverified: true,
+	})
+	return observation
+}
+
+// unreadChecks takes the checks a credential could not read as required, and
+// says so (issue #291). GitLab names a required verdict in an external status
+// check, which a credential below maintainer may not read; calling the gate
+// unrequired on that reading would send a run to require a check it may not
+// see, on a branch that may well require it already.
+func unreadChecks(observation core.Observation, item DesiredItem) core.Observation {
+	// Nothing was read, so there is nothing to keep beside what was asked.
+	observation.Items = make([]core.Item, 0, len(item.Items))
+	for _, wanted := range item.Items {
+		observation.Items = append(observation.Items, core.Item{Name: wanted.Name})
+	}
+	observation.Notes = append(observation.Notes, core.Note{
+		Text:       "this credential may see that the trunk is protected, and not which checks it requires: the ones asked for are taken as required",
+		Fix:        "read it with a credential that may administer the repository",
 		Unverified: true,
 	})
 	return observation

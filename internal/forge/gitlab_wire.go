@@ -673,6 +673,15 @@ type glAccessLevel struct {
 	AccessLevel int `json:"access_level"`
 }
 
+// glBranch is GET /projects/{id}/repository/branches/{branch}, read for the
+// one thing about its protection that anybody who can read the code may see:
+// whether there is any. GitLab answers it for a wildcard rule as well as for
+// one of the branch's own name.
+type glBranch struct {
+	Name      string `json:"name"`
+	Protected bool   `json:"protected"`
+}
+
 // glProtectedBranch is GET /projects/{id}/protected_branches/{name}.
 type glProtectedBranch struct {
 	ID                        int             `json:"id"`
