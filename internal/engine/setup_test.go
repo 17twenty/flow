@@ -850,6 +850,11 @@ func TestARefusedItemHandsOverEverythingFlowKnows(t *testing.T) {
 	if !strings.Contains(result.Remediation.Summary, "admin") {
 		t.Errorf("the summary does not say what access is short: %q", result.Remediation.Summary)
 	}
+	// The ask first (#271): a check's title is the state it wants, and
+	// written first it read as though it were already true.
+	if !strings.HasPrefix(result.Remediation.Summary, "Needs admin: ") {
+		t.Errorf("the summary does not lead with the ask: %q", result.Remediation.Summary)
+	}
 	steps := strings.Join(result.Remediation.Steps, "\n")
 	if !strings.Contains(steps, "admin") {
 		t.Errorf("no step asks for the access that was refused:\n%s", steps)
@@ -913,15 +918,35 @@ func TestARefusedUpdateAsksOnlyForWhatIsNotAlreadySo(t *testing.T) {
 	}
 }
 
+// A follow-up a person has to do, with no access short, still leads with the
+// ask (#271): "Flow can read the deployment history — somebody else has to do
+// it" read as if flow already could.
+func TestAFollowUpTitleLeadsWithTheAsk(t *testing.T) {
+	env := setupEnv(t, setupConfig())
+	env.Plan = engine.Plan{Items: []engine.PlanItem{{
+		ID:      core.ItemForgeProtection,
+		Target:  engine.TargetForge,
+		Outcome: engine.OutcomeFollowUp,
+		Why:     "flow has no way to do this itself, so a person has to",
+	}}}
+
+	result := setupResult(t, engine.SetupInput{Config: setupConfig()}, env, core.ItemForgeProtection)
+
+	if want := "Needs a person: The trunk is protected"; result.Remediation.Summary != want {
+		t.Errorf("summary = %q, want %q", result.Remediation.Summary, want)
+	}
+}
+
 // The steps of a refused item are the provider's own, from its declaration,
-// and flow's item vocabulary comes last and labelled.
+// and nothing else: flow's item vocabulary after them meant nothing to the
+// person reading the ticket (#271).
 //
 // What flow knows is that this credential was short of this permission and
 // what it would have written. What it does not know is what kind of thing a
 // `ruleset` is to the reader, which page it is on, or whether there is a
 // page. Only the research behind the adapter knows that, and a ticket
 // written without it hands somebody an item id.
-func TestARefusedItemLeadsWithTheProvidersWordsAndSaysFlowsLast(t *testing.T) {
+func TestARefusedItemSpeaksInTheProvidersWordsOnly(t *testing.T) {
 	env := setupEnv(t, setupConfig())
 	env.Plan = engine.Plan{Items: []engine.PlanItem{{
 		ID:      core.ItemForgeProtection,
@@ -959,23 +984,13 @@ func TestARefusedItemLeadsWithTheProvidersWordsAndSaysFlowsLast(t *testing.T) {
 	if next := slices.Index(steps, "require the status flow/policy"); next != provider+1 {
 		t.Errorf("the provider's steps are out of order:\n%v", steps)
 	}
-	mine := slices.IndexFunc(steps, func(step string) bool {
-		return strings.Contains(step, `create ruleset "flow"`)
-	})
-	if mine < 0 {
-		t.Fatalf("the ticket never says what flow itself wanted:\n%v", steps)
+	if slices.ContainsFunc(steps, func(step string) bool { return strings.Contains(step, `create ruleset "flow"`) }) {
+		t.Errorf("flow's own vocabulary is in a ticket the provider's steps already explain:\n%v", steps)
 	}
-	if mine < provider {
-		t.Errorf("flow's own vocabulary comes before the provider's:\n%v", steps)
-	}
-	if !strings.Contains(steps[mine], "In flow's own words") {
-		t.Errorf("flow's vocabulary is not labelled as its own:\n%v", steps)
-	}
-	// And exactly once. Saying it again as evidence is what made the
-	// shortest ticket flow files read as the same sentence under two
-	// headings.
+	// Nor as evidence, which is what once made the shortest ticket flow
+	// files read as the same sentence under two headings.
 	if hasEvidence(result, `create ruleset "flow"`) {
-		t.Errorf("the same change is in the ticket twice:\n%+v", result.Evidence)
+		t.Errorf("flow's own vocabulary is in the evidence:\n%+v", result.Evidence)
 	}
 }
 

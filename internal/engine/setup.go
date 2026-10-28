@@ -837,15 +837,19 @@ func plannedResult(env *Env, id, title string) Result {
 // a repository identical in the issue list — two of them on flow's own repo,
 // and no way to tell from the title which was the trunk's protection and
 // which was the status check a merge must pass.
+//
+// The ask comes first (#271). A check's title is the state it wants — "Flow
+// can read the deployment history" — and written first, followed by "somebody
+// else has to do it", it read as if it were already true.
 func followUpSummary(item PlanItem, title string) string {
 	what := strings.TrimSpace(title)
 	if what == "" {
 		what = item.ID
 	}
 	if len(item.Missing) == 0 {
-		return what + " — somebody else has to do it"
+		return "Needs a person: " + what
 	}
-	return fmt.Sprintf("%s — needs %s", what, joinWords(item.Missing))
+	return fmt.Sprintf("Needs %s: %s", joinWords(item.Missing), what)
 }
 
 // followUpSteps is the "exact steps" spec 07 §4 asks a follow-up to carry.
@@ -880,17 +884,16 @@ func followUpSteps(item PlanItem) []string {
 	// the ticket it appears — spelling it out again under "what flow saw"
 	// turned the shortest tickets into the same sentence twice.
 	//
-	// It is labelled as flow's vocabulary only where there is another
-	// vocabulary to tell it apart from. An item that names no capability
-	// has no declaration behind it and so no recipe, and announcing a
-	// translation of the only sentence in the ticket is worse than the
-	// sentence.
+	// Only where there is no other vocabulary (#271). An item whose provider
+	// wrote the steps has already said it in words the reader has, and
+	// `create deploys.records "production"` after them means nothing to
+	// anybody but flow; the check that verifies it is named under how flow
+	// will know it is done. An item with no recipe has nothing else to say.
+	if len(item.Recipe.Steps) > 0 {
+		return steps
+	}
 	for _, change := range item.Changes {
-		instruction := changeInstruction(change)
-		if len(item.Recipe.Steps) > 0 {
-			instruction = "In flow's own words: " + instruction
-		}
-		steps = append(steps, instruction)
+		steps = append(steps, changeInstruction(change))
 	}
 	return steps
 }

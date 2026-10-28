@@ -51,6 +51,11 @@ func (i PlanItem) Detail() string {
 	case OutcomeCompensated:
 		return i.Mechanism
 	case OutcomeFollowUp:
+		if i.Owner == "" {
+			// Said, rather than dropping the arrow: a follow-up nobody will
+			// receive is the thing worth knowing before it is filed.
+			return "nobody yet"
+		}
 		return i.Owner
 	case OutcomeAttest:
 		return "flow attest " + i.ID

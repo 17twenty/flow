@@ -1108,3 +1108,55 @@ func TestThePresetAsksNoTrackerForWhatItCannotDo(t *testing.T) {
 		t.Errorf("plan exits %d, want 2", got)
 	}
 }
+
+// A follow-up's owner is who the lock says holds the role its target needs,
+// once doctor has resolved it, and the default's holder when only that is
+// known. The plan answered from the configuration alone and showed the role
+// as `${pending:owners.tracker_admin}` after the lock had a name for it
+// (#271).
+func TestAFollowUpGoesToTheOwnerTheLockResolved(t *testing.T) {
+	everybody := map[string]string{
+		"followups.owners.default":       "@dev",
+		"followups.owners.tracker_admin": "@board-admin",
+		"followups.owners.forge_admin":   "@repo-admin",
+		"followups.owners.platform":      "@sre",
+	}
+	worlds := map[string]func(t *testing.T) world{
+		core.ItemTrackerStatusOptions: jiraWorld,
+		core.ItemDeploysRecords:       nothingHasDeployedWorld,
+		core.ItemForgeProtection: func(t *testing.T) world {
+			w := jiraWorld(t)
+			fixture := forgeFixture(t)
+			fixture.Permissions = core.Permissions{Tokens: []string{"statuses_write", "contents_write", "pulls_write"}}
+			w.forge = coretest.NewFakeForge(fixture)
+			return w
+		},
+	}
+	for _, tc := range []struct {
+		name     string
+		item     string
+		resolved map[string]string
+		want     string
+	}{
+		{name: "nobody yet", item: core.ItemTrackerStatusOptions, want: ""},
+		{name: "the default holder", item: core.ItemTrackerStatusOptions, resolved: map[string]string{"followups.owners.default": "@dev"}, want: "@dev"},
+		{name: "the board's", item: core.ItemTrackerStatusOptions, resolved: everybody, want: "@board-admin"},
+		{name: "the repository's", item: core.ItemForgeProtection, resolved: everybody, want: "@repo-admin"},
+		{name: "the platform's", item: core.ItemDeploysRecords, resolved: everybody, want: "@sre"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := worlds[tc.item](t)
+			w.lock = config.NewLock("v0.3.0")
+			for path, handle := range tc.resolved {
+				w.lock.Resolve(path, handle)
+			}
+			item, ok := planFor(t, w).Find(tc.item)
+			if !ok || item.Outcome != engine.OutcomeFollowUp {
+				t.Fatalf("%s is %+v, want a follow-up for this test to mean anything", tc.item, item)
+			}
+			if item.Owner != tc.want {
+				t.Errorf("owner = %q, want %q", item.Owner, tc.want)
+			}
+		})
+	}
+}
