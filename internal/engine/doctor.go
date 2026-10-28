@@ -329,6 +329,11 @@ type Env struct {
 	// providers at all would otherwise report every one of them as "this
 	// configuration does not ask for it" and exit 0.
 	PlanErr error
+	// Unplanned is why no plan was made when that was deliberate: values the
+	// configuration still needs, which their own checks are asking for. A
+	// check reading the plan then says it was not asked, rather than that
+	// the configuration does not ask for it (issue #263).
+	Unplanned string
 	// Adapters are the providers. Any may be nil.
 	Adapters Adapters
 	// Ancestry answers whether a merge is contained in a deployed commit,
