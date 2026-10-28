@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -679,5 +680,131 @@ func TestJiraFilesAFollowUpTheLabelsCannotStop(t *testing.T) {
 	}
 	if !slices.Contains(filed.Labels, "flow-followup") {
 		t.Errorf("the labels that could be applied were not: %v", filed.Labels)
+	}
+}
+
+// A project the credential cannot see is named, so that auth.tracker can say
+// which board it is blind to; one it can see, or none at all, is not
+// (issue #292).
+func TestJiraProbeNamesAProjectItCannotSee(t *testing.T) {
+	fx := coretest.ContractTracker()
+	_, srv := newJiraServer(t, &fx)
+	for _, tc := range []struct {
+		name, project, want string
+	}{
+		{"reachable", jiraFixtureProject, ""},
+		{"unreachable", "NOPE", "the project NOPE"},
+		{"not configured", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			jira := newJiraAdapter(t, srv, func(opts *JiraCloudOptions) { opts.Project = tc.project })
+			permissions, err := jira.Probe(t.Context())
+			if err != nil {
+				t.Fatalf("Probe: %v", err)
+			}
+			if permissions.Unreachable != tc.want {
+				t.Errorf("Unreachable = %q, want %q", permissions.Unreachable, tc.want)
+			}
+		})
+	}
+}
+
+// jiraSeedFollowUp puts an issue carrying a marker into the fake, as a
+// follow-up filed by an earlier run would be.
+func jiraSeedFollowUp(fake *jiraFake, title string, marker core.Marker, labels ...string) string {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.tick()
+	fake.nextID++
+	body := adfFromText(core.MarkBody("filed by an earlier run", marker, true))
+	issue := &jiraFakeIssue{
+		id:  strconv.Itoa(fake.nextID),
+		key: fake.key + "-" + strconv.Itoa(fake.nextID),
+		fields: jiraIssueFields{
+			Summary: title, Description: &body, Labels: labels,
+			Status:  fake.statusAt(0),
+			Updated: jiraTime{Time: fake.now}, Created: jiraTime{Time: fake.now},
+		},
+	}
+	fake.issues = append(fake.issues, issue)
+	return issue.key
+}
+
+// The follow-up search is narrowed by the follow-up label, so a large
+// project is not read whole on every run (issue #296). The marker still
+// decides: issues with the label and another marker are passed over, and
+// there are more of them than fit on a page, so an adapter that read only
+// the first page would miss the target.
+func TestJiraNarrowsTheFollowUpSearchByTheLabel(t *testing.T) {
+	fx := coretest.ContractTracker()
+	fake, srv := newJiraServer(t, &fx)
+	jira := newJiraAdapter(t, srv, func(o *JiraCloudOptions) {
+		o.FollowUpLabels = []string{"needs triage", "flow-followup"}
+	})
+	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.issue296", "repo", "acme/widget")
+	other := core.NewMarker(core.MarkerFollowUp, "check", "tracker.labels", "repo", "acme/widget")
+	// The search reads newest first, so the target is filed first and
+	// read last, on the third page.
+	want := jiraSeedFollowUp(fake, "flow: limit the work", marker, "flow-followup")
+	for range 5 {
+		jiraSeedFollowUp(fake, "another check's follow-up", other, "flow-followup")
+	}
+	// Created last, so newest first it is read before the target: the
+	// match has to be the label's, not the order's.
+	jiraSeedFollowUp(fake, "somebody pasted the marker", marker)
+
+	found, err := jira.FindFollowUp(t.Context(), marker)
+	if err != nil {
+		t.Fatalf("FindFollowUp: %v", err)
+	}
+	if found == nil || found.Key != want {
+		t.Fatalf("FindFollowUp = %+v, want %s", found, want)
+	}
+	fake.mu.Lock()
+	jqls := slices.Clone(fake.jqls)
+	fake.mu.Unlock()
+	if len(jqls) == 0 || !strings.Contains(jqls[0], `labels = "flow-followup"`) {
+		t.Errorf("the search was not narrowed by the usable label: %q", jqls)
+	}
+}
+
+// An issue carrying the marker and not the label is not flow's: with a
+// label configured nothing outside it is read, and a fresh labelled
+// follow-up is filed rather than the whole project walked (issue #296).
+func TestJiraDoesNotFindAnUnlabelledFollowUp(t *testing.T) {
+	fx := coretest.ContractTracker()
+	fake, srv := newJiraServer(t, &fx)
+	jira := newJiraAdapter(t, srv, func(o *JiraCloudOptions) {
+		o.FollowUpLabels = []string{"flow-followup"}
+	})
+	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.issue296", "repo", "acme/widget")
+	jiraSeedFollowUp(fake, "the label was taken off", marker)
+
+	found, err := jira.FindFollowUp(t.Context(), marker)
+	if err != nil {
+		t.Fatalf("FindFollowUp: %v", err)
+	}
+	if found != nil {
+		t.Errorf("FindFollowUp matched %s, which does not carry the follow-up label", found.Key)
+	}
+}
+
+// Without a label Jira would take, the search reads the whole project as it
+// always has: narrowing by a label the filing leaves off finds nothing.
+func TestJiraReadsTheProjectWithoutAUsableLabel(t *testing.T) {
+	fx := coretest.ContractTracker()
+	fake, srv := newJiraServer(t, &fx)
+	jira := newJiraAdapter(t, srv, func(o *JiraCloudOptions) {
+		o.FollowUpLabels = []string{"needs triage"}
+	})
+	marker := core.NewMarker(core.MarkerFollowUp, "check", "tracker.issue296", "repo", "acme/widget")
+	want := jiraSeedFollowUp(fake, "filed before labels were configured", marker)
+
+	found, err := jira.FindFollowUp(t.Context(), marker)
+	if err != nil {
+		t.Fatalf("FindFollowUp: %v", err)
+	}
+	if found == nil || found.Key != want {
+		t.Errorf("FindFollowUp = %+v, want %s", found, want)
 	}
 }

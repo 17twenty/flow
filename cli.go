@@ -746,9 +746,10 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 			// The site is where people read the issues, which is what
 			// tracker.url names; the API root underneath it is the
 			// endpoint's business.
-			Site:         strings.TrimSuffix(s.Config.Tracker.URL, "/"),
-			Project:      projectKey(s.Config, s.Lock),
-			Capabilities: declaration,
+			Site:           strings.TrimSuffix(s.Config.Tracker.URL, "/"),
+			Project:        projectKey(s.Config, s.Lock),
+			Capabilities:   declaration,
+			FollowUpLabels: s.Config.FollowUps.Labels,
 		})
 		if err != nil {
 			return engine.Adapters{}, err
