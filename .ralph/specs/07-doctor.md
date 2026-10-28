@@ -1247,3 +1247,15 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   completed when the work is not done is still reopened, and a person
   reopening a declined ticket makes it outstanding again. The decision ends
   up where it is reviewed, without flow overruling the person who made it.
+- **A board is taken without asking only if it is this repository's, or
+  nobody's (#262).** Discovery took a lone candidate as the answer. With
+  flow-demo-web's own board deleted, the only board on the account was
+  flow's — linked to 17twenty/flow, 161 items — and doctor offered it as
+  "the only answer there is", which `--fix` would have written down.
+  Creating a board is always another answer. Candidates now carry the
+  repositories the tracker links them to (`core.Candidate.Linked`; GitHub
+  Projects reads `ProjectV2.repositories`). One linked to this repository is
+  taken however many others there are; otherwise a lone board is taken only
+  when it is linked to no repository at all. A lone board linked elsewhere
+  is offered beside "or create a board for this repository", and nothing is
+  written. A tracker with no notion of links leaves the old rule unchanged.

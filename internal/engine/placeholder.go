@@ -124,6 +124,9 @@ type Answer struct {
 	// would not answer. A placeholder nobody can resolve is not an error —
 	// it is a question.
 	Err error
+	// Takeable reports that flow found one candidate it would take without
+	// asking, had it been told to act (#262).
+	Takeable bool
 	// Unseen is the identifier the lock holds that the tracker would not
 	// show this credential. It is kept, never replaced, because a tracker
 	// that says "no such board" may only mean "not to you" (issue #261).
@@ -266,11 +269,12 @@ func fromDiscovery(ctx context.Context, in ResolveInput, p Placeholder) (Answer,
 	if err != nil {
 		return Answer{Placeholder: p, How: HowAsked, Err: err, Steps: steps(in, p)}, true
 	}
+	only, takeable := takeable(in, candidates)
 	switch {
 	case len(candidates) == 0:
 		return Answer{}, false
-	case len(candidates) == 1 && in.Fix:
-		return Answer{Placeholder: p, How: HowDiscovered, Ref: refFor(p, candidates[0])}, true
+	case takeable && in.Fix:
+		return Answer{Placeholder: p, How: HowDiscovered, Ref: refFor(p, only)}, true
 	case in.Fix && in.Choose != nil:
 		chosen, err := in.Choose(ctx, p, candidates)
 		if err == nil {
@@ -287,8 +291,38 @@ func fromDiscovery(ctx context.Context, in ResolveInput, p Placeholder) (Answer,
 		Placeholder: p,
 		How:         HowAsked,
 		Candidates:  candidates,
-		Steps:       chooseSteps(p, candidates),
+		Takeable:    takeable,
+		Steps:       chooseSteps(in, p, candidates),
 	}, true
+}
+
+// takeable is the one candidate flow may take without asking, and whether
+// there is one (issue #262).
+//
+// One linked to this repository is the answer however many there are: the
+// tracker has already said whose it is. Otherwise a lone candidate is taken
+// only if it is linked to no repository at all. A lone board linked to other
+// repositories is somebody else's: with flow-demo-web's own board deleted,
+// the only board left on the account was flow's, and doctor offered it as
+// "the only answer there is" — creating a board is always another answer.
+func takeable(in ResolveInput, candidates []core.Candidate) (core.Candidate, bool) {
+	repo := ""
+	if in.Config != nil {
+		repo = in.Config.Forge.Repo
+	}
+	var mine []core.Candidate
+	for _, candidate := range candidates {
+		if repo != "" && slices.ContainsFunc(candidate.Linked, func(linked string) bool { return strings.EqualFold(linked, repo) }) {
+			mine = append(mine, candidate)
+		}
+	}
+	switch {
+	case len(mine) == 1:
+		return mine[0], true
+	case len(candidates) == 1 && len(candidates[0].Linked) == 0:
+		return candidates[0], true
+	}
+	return core.Candidate{}, false
 }
 
 // fromCreation makes the thing, when the provider's API can and the credential
@@ -438,20 +472,27 @@ func steps(in ResolveInput, p Placeholder) []string {
 // missing is leave to write it down, so asking somebody to "pick the one"
 // puts a decision in front of them that has already been made — and tells
 // them to type an id flow is holding.
-func chooseSteps(p Placeholder, candidates []core.Candidate) []string {
-	if len(candidates) == 1 {
+func chooseSteps(in ResolveInput, p Placeholder, candidates []core.Candidate) []string {
+	if only, ok := takeable(in, candidates); ok {
 		return []string{
-			fmt.Sprintf("%s has one possible answer, and flow would take it:", p.Path),
-			"  " + describe(candidates[0]),
+			fmt.Sprintf("%s has one answer flow would take:", p.Path),
+			"  " + describe(only),
 			"run flow doctor --fix to write it down",
 		}
 	}
-	chosen := make([]string, 0, len(candidates)+1)
-	chosen = append(chosen, fmt.Sprintf("%s has %d answers; pick the one this repository's work belongs on:", p.Path, len(candidates)))
+	chosen := make([]string, 0, len(candidates)+3)
+	if len(candidates) == 1 {
+		chosen = append(chosen, fmt.Sprintf("%s has one candidate, and it is another repository's board:", p.Path))
+	} else {
+		chosen = append(chosen, fmt.Sprintf("%s has %d answers; pick the one this repository's work belongs on:", p.Path, len(candidates)))
+	}
 	for _, candidate := range candidates {
 		chosen = append(chosen, "  "+describe(candidate))
 	}
-	return append(chosen, fmt.Sprintf("run flow doctor --fix --set %s=<id or URL>", p.Path))
+	return append(chosen,
+		fmt.Sprintf("run flow doctor --fix --set %s=<id or URL> to use one of them", p.Path),
+		"or create a board for this repository, link it to the repository, and run flow doctor --fix",
+	)
 }
 
 // describe is one candidate on one line.
@@ -462,6 +503,9 @@ func describe(candidate core.Candidate) string {
 	}
 	if candidate.Detail != "" {
 		parts = append(parts, candidate.Detail)
+	}
+	if len(candidate.Linked) > 0 {
+		parts = append(parts, "linked to "+strings.Join(candidate.Linked, ", "))
 	}
 	if candidate.URL != "" {
 		parts = append(parts, candidate.URL)
@@ -506,10 +550,10 @@ func (r Answer) Result() Result {
 		Command: "flow doctor --fix --set " + r.Placeholder.Path + "=<value>",
 		Steps:   r.Steps,
 	}
-	if len(r.Candidates) == 1 {
+	if r.Takeable {
 		// Nothing is being asked of anybody: flow found one answer and was
 		// only told to look. The remedy is leave to write it down.
-		remediation.Summary = "let flow write down the only answer there is"
+		remediation.Summary = "let flow write down the answer it found"
 		remediation.Command = "flow doctor --fix"
 	}
 	result := Result{

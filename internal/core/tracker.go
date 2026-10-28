@@ -137,6 +137,10 @@ type Candidate struct {
 	URL string
 	// Detail is one line distinguishing it from the other candidates.
 	Detail string
+	// Linked are the repositories the tracker says this candidate belongs
+	// to, as owner/name. Empty when it records none, or has no such notion:
+	// a board that names no repository is nobody else's either (#262).
+	Linked []string
 }
 
 // Ref is the candidate as a reference: what a human pasted, resolved to

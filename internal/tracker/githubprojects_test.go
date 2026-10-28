@@ -233,6 +233,36 @@ func TestGitHubProjectsDiscoverSkipsAClosedProject(t *testing.T) {
 	}
 }
 
+// A board says which repositories it belongs to, and the candidate carries
+// that, so the engine never takes another repository's board as this one's
+// (issue #262). A board linked to nothing carries nothing.
+func TestGitHubProjectsDiscoverSaysWhichRepositoriesABoardIsLinkedTo(t *testing.T) {
+	fake, srv := newGitHubProjectsServer(t, coretest.ContractTracker())
+	fake.projects[0].Repositories.Nodes = append(fake.projects[0].Repositories.Nodes,
+		struct {
+			NameWithOwner string `json:"nameWithOwner"`
+		}{NameWithOwner: "acme/flow"})
+	adapter := newGitHubProjectsAdapter(t, srv, nil)
+
+	candidates, err := adapter.Discover(t.Context(), core.ItemTrackerProject, nil)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(candidates) < 2 {
+		t.Fatalf("got %d candidates, want both boards", len(candidates))
+	}
+	linked := map[string][]string{}
+	for _, candidate := range candidates {
+		linked[candidate.Name] = candidate.Linked
+	}
+	if got := linked[fake.projects[0].Title]; !slices.Equal(got, []string{"acme/flow"}) {
+		t.Errorf("%s is linked to %v, want [acme/flow]", fake.projects[0].Title, got)
+	}
+	if got := linked[fake.projects[1].Title]; len(got) != 0 {
+		t.Errorf("%s is linked to %v, want nothing", fake.projects[1].Title, got)
+	}
+}
+
 // Nothing but the board is discoverable: everything else flow resolves is a
 // part of a board it has already been pointed at.
 func TestGitHubProjectsDiscoversNothingElse(t *testing.T) {
