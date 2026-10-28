@@ -2,6 +2,8 @@ package core
 
 import (
 	"net/http"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -173,5 +175,69 @@ func TestStatusSentinelCoversEveryDocumentedMapping(t *testing.T) {
 		if got := StatusSentinel(tc.status, http.Header{}, nil); got != tc.want {
 			t.Errorf("StatusSentinel(%d) = %v, want %v", tc.status, got, tc.want)
 		}
+	}
+}
+
+// Linear reports each budget under a family of its own, with the reset in
+// epoch milliseconds, and the budget that ran out is the one whose reset
+// matters (#294).
+func TestParseRateLimitReadsLinearsBudgets(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	ms := func(d time.Duration) string { return strconv.FormatInt(now.Add(d).UnixMilli(), 10) }
+	t.Run("requests", func(t *testing.T) {
+		h := header("X-RateLimit-Requests-Limit", "1500", "X-RateLimit-Requests-Remaining", "0",
+			"X-RateLimit-Requests-Reset", ms(90*time.Second))
+		rate := ParseRateLimit(h, now)
+		if !rate.Known || rate.Limit != 1500 || rate.Remaining != 0 || rate.Resource != "requests" || !rate.Exhausted() {
+			t.Errorf("rate = %+v, want the requests budget, spent", rate)
+		}
+		if got := rate.Wait(now); got != 90*time.Second {
+			t.Errorf("Wait = %v, want 90s: the reset is in milliseconds", got)
+		}
+	})
+	t.Run("the spent budget wins", func(t *testing.T) {
+		h := header("X-RateLimit-Requests-Limit", "1500", "X-RateLimit-Requests-Remaining", "1400",
+			"X-RateLimit-Requests-Reset", ms(time.Hour),
+			"X-RateLimit-Complexity-Limit", "250000", "X-RateLimit-Complexity-Remaining", "0",
+			"X-RateLimit-Complexity-Reset", ms(30*time.Second))
+		rate := ParseRateLimit(h, now)
+		if rate.Resource != "complexity" || rate.Wait(now) != 30*time.Second {
+			t.Errorf("rate = %+v, want the complexity budget that ran out", rate)
+		}
+	})
+	t.Run("the first budget while none is spent", func(t *testing.T) {
+		h := header("X-RateLimit-Requests-Limit", "1500", "X-RateLimit-Requests-Remaining", "1400",
+			"X-RateLimit-Complexity-Limit", "250000", "X-RateLimit-Complexity-Remaining", "1000")
+		if rate := ParseRateLimit(h, now); rate.Resource != "requests" || rate.Remaining != 1400 {
+			t.Errorf("rate = %+v, want the requests budget", rate)
+		}
+	})
+	t.Run("a spent budget keeps no other budget's reset", func(t *testing.T) {
+		h := header("X-RateLimit-Requests-Limit", "1500", "X-RateLimit-Requests-Remaining", "1400",
+			"X-RateLimit-Requests-Reset", ms(time.Hour),
+			"X-RateLimit-Complexity-Limit", "250000", "X-RateLimit-Complexity-Remaining", "0")
+		if rate := ParseRateLimit(h, now); rate.Resource != "complexity" || !rate.Reset.IsZero() {
+			t.Errorf("rate = %+v, want the complexity budget and no reset: it named none", rate)
+		}
+	})
+	// Each header of the common family is enough on its own to say which
+	// family the provider speaks.
+	linear := []string{"X-RateLimit-Requests-Limit", "1500", "X-RateLimit-Requests-Remaining", "0",
+		"X-RateLimit-Requests-Reset", ms(time.Minute)}
+	for _, c := range []struct {
+		name   string
+		common []string
+		want   func(RateLimit) bool
+	}{
+		{"limit", []string{"X-RateLimit-Limit", "60"}, func(r RateLimit) bool { return r.Limit == 60 }},
+		{"remaining", []string{"X-RateLimit-Remaining", "59"}, func(r RateLimit) bool { return r.Remaining == 59 }},
+		{"reset", []string{"X-RateLimit-Reset", "1772370000"}, func(r RateLimit) bool { return r.Reset.Equal(time.Unix(1772370000, 0)) }},
+	} {
+		t.Run("the common family's "+c.name+" wins", func(t *testing.T) {
+			rate := ParseRateLimit(header(append(slices.Clone(linear), c.common...)...), now)
+			if !c.want(rate) || rate.Resource != "" {
+				t.Errorf("rate = %+v, want the X-RateLimit-* family a provider sends for itself", rate)
+			}
+		})
 	}
 }

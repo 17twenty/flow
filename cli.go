@@ -746,9 +746,10 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 			// The site is where people read the issues, which is what
 			// tracker.url names; the API root underneath it is the
 			// endpoint's business.
-			Site:         strings.TrimSuffix(s.Config.Tracker.URL, "/"),
-			Project:      projectKey(s.Config, s.Lock),
-			Capabilities: declaration,
+			Site:           strings.TrimSuffix(s.Config.Tracker.URL, "/"),
+			Project:        projectKey(s.Config, s.Lock),
+			Capabilities:   declaration,
+			FollowUpLabels: s.Config.FollowUps.Labels,
 		})
 		if err != nil {
 			return engine.Adapters{}, err
@@ -772,9 +773,14 @@ func liveAdapters(a *Context, s *session) (engine.Adapters, error) {
 		}
 	}
 
-	switch s.Config.Deploys.Source {
-	case "", config.DeploySourceNone:
-	case config.DeploySourceForge, config.DeploySourceCommitStatus:
+	switch {
+	case s.Config.Deploys.Source == "", s.Config.Deploys.Source == config.DeploySourceNone:
+	case s.Config.Deploys.Source == config.DeploySourceForge && engine.DeploysUnreadable(adapters.Forge):
+		// The only reader of forge deployments is GitHub's, and building it
+		// against a forge that keeps none would make every observation of
+		// it an error (issue #295). No source is built; doctor's
+		// deploys.source warns and says what to configure instead.
+	case s.Config.Deploys.Source == config.DeploySourceForge, s.Config.Deploys.Source == config.DeploySourceCommitStatus:
 		// One declaration covers both sources: what a deployment record is
 		// does not change with where it was written (assets/capabilities/
 		// deploys.yaml), so the registry is keyed by the kind rather than by

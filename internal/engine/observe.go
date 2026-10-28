@@ -169,7 +169,11 @@ func (o *observer) forge(ctx context.Context, item DesiredItem) (core.Observatio
 			return core.Observation{}, err
 		}
 		if item.ID == core.ItemForgeRequiredStatus {
-			return requiredStatus(protection, item), nil
+			observation := requiredStatus(protection, item)
+			if protection.ChecksUnreadable {
+				observation = unreadChecks(observation, item)
+			}
+			return observation, nil
 		}
 		observation := protectionObservation(protection)
 		switch {
@@ -233,7 +237,26 @@ func unreadProtection(observation core.Observation, item DesiredItem) core.Obser
 	}
 	observation.Notes = append(observation.Notes, core.Note{
 		Text:       "this credential may see that the trunk is protected, and not how: what it could not read is taken as asked for",
-		Fix:        "keep the trunk's protection in a ruleset, which anybody who can read the repository can read — flow apply run by an admin writes one",
+		Fix:        "read it with a credential that may administer the repository; on GitHub, flow apply run by an admin keeps it in a ruleset, which anybody who can read the repository can read",
+		Unverified: true,
+	})
+	return observation
+}
+
+// unreadChecks takes the checks a credential could not read as required, and
+// says so (issue #291). GitLab names a required verdict in an external status
+// check, which a credential below maintainer may not read; calling the gate
+// unrequired on that reading would send a run to require a check it may not
+// see, on a branch that may well require it already.
+func unreadChecks(observation core.Observation, item DesiredItem) core.Observation {
+	// Nothing was read, so there is nothing to keep beside what was asked.
+	observation.Items = make([]core.Item, 0, len(item.Items))
+	for _, wanted := range item.Items {
+		observation.Items = append(observation.Items, core.Item{Name: wanted.Name})
+	}
+	observation.Notes = append(observation.Notes, core.Note{
+		Text:       "this credential may see that the trunk is protected, and not which checks it requires: the ones asked for are taken as required",
+		Fix:        "read it with a credential that may administer the repository",
 		Unverified: true,
 	})
 	return observation
@@ -382,6 +405,14 @@ func flowCommands(content []byte, wanted string) []string {
 // and flow only has to be able to see it (spec 13 §3).
 func (o *observer) deploys(ctx context.Context, item DesiredItem) (core.Observation, error) {
 	if o.adapters.Deploys == nil {
+		// A forge that keeps no deployment records flow can read is given no
+		// source for them (issue #295), and the item is left unobserved: with
+		// no provider behind it the plan resolves it as unsupported, and
+		// deploys.source says why. Refusing here instead would fail the whole
+		// observation, and with it every check doctor plans, over one setting.
+		if DeploysUnreadable(o.adapters.Forge) {
+			return core.Observation{}, nil
+		}
 		return core.Observation{}, fmt.Errorf("%w: no deployment source", core.ErrUnsupported)
 	}
 	var items []core.Item

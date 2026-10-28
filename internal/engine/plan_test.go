@@ -760,6 +760,36 @@ func TestProtectionACredentialCannotReadIsNotCalledUndone(t *testing.T) {
 	wantState(t, result, engine.StateWarn)
 }
 
+// TestChecksACredentialCannotReadAreNotCalledUnrequired is issue #291. GitLab
+// names a required verdict in an external status check, which a credential
+// below maintainer may not read, so it cannot tell whether the gate is
+// required. What it cannot see is taken as asked for, with a note that doctor
+// reports as a warning — not a check for apply to add on a branch that may
+// already require it.
+func TestChecksACredentialCannotReadAreNotCalledUnrequired(t *testing.T) {
+	w := githubProjectsWorld(t)
+	fx := forgeFixture(t)
+	fx.Protections["main"] = core.Protection{Branch: "main", Enabled: true, Unreadable: true, ChecksUnreadable: true}
+	w.forge = coretest.NewFakeForge(fx)
+	plan := planFor(t, w)
+
+	item, ok := plan.Find(core.ItemForgeRequiredStatus)
+	if !ok {
+		t.Fatal("forge.required_status is not in the plan")
+	}
+	if item.Outcome != engine.OutcomeNoop {
+		t.Errorf("forge.required_status is %s (%s), want noop: a check that could not be read is not unrequired", item.Outcome, item.Why)
+	}
+	if !slices.ContainsFunc(item.Notes, func(n core.Note) bool { return n.Unverified }) {
+		t.Errorf("the plan does not say what it could not read: %+v", item.Notes)
+	}
+
+	env := setupEnv(t, preset(t, config.PresetLeanKanban))
+	env.Plan = plan
+	result := setupResult(t, engine.SetupInput{Config: env.Config}, env, core.ItemForgeRequiredStatus)
+	wantState(t, result, engine.StateWarn)
+}
+
 // Protection kept where only an admin can read it is a change for apply to
 // make even when it says everything asked of it (issue #258): left there, a
 // run on any other credential can never see it. Where it says something flow

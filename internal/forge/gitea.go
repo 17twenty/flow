@@ -396,7 +396,8 @@ func (g *Gitea) Probe(ctx context.Context) (core.Permissions, error) {
 // and any credential that can see the branch can see that. The rule carries the
 // settings the branch does not mention, and only an administrator may read it —
 // so a credential without admin still learns what is required of the branch,
-// which is the part the gate depends on (spec 10 §3).
+// which is the part the gate depends on, and is told the rest is unread rather
+// than off (spec 10 §3, issue #291).
 func (g *Gitea) Protection(ctx context.Context, branch string) (core.Protection, error) {
 	if branch == "" {
 		return core.Protection{}, core.Errorf(core.ErrValidation, "read the protection of %s", g.Slug()).
@@ -418,6 +419,12 @@ func (g *Gitea) Protection(ctx context.Context, branch string) (core.Protection,
 		return core.Protection{}, err
 	}
 	if rule == nil {
+		// The branch says it is protected and the rule could not be
+		// read, so what only the rule carries is unknown rather than
+		// off. Reading it as off is how a daily run on a credential
+		// without admin called the trunk's protection undone (issue
+		// #291).
+		effective.Unreadable = true
 		return effective, nil
 	}
 	return rule.refine(effective), nil
@@ -438,13 +445,16 @@ func (g *Gitea) branch(ctx context.Context, name string) (*gtBranch, error) {
 	return &payload, nil
 }
 
-// rule reads one branch protection rule, or nil when there is none to read.
+// rule reads one branch protection rule, or nil when it cannot be read.
 //
-// A credential without admin is refused rather than told the rule is absent,
-// and both answers mean the same thing here: flow cannot see the rule, so what
-// the branch said about itself stands. Reporting the refusal instead would make
-// every read of a protected branch fail for a credential that can do everything
-// flow asks of it (spec 05 §3).
+// A credential without admin is refused with 403. A rule that is not where the
+// branch said answers 404, which only happens to a protected branch on a Gitea
+// that does not name the rule governing it — a glob rule, looked for under the
+// branch's own name. Both mean flow cannot see the rule, not that there is
+// none: the branch has already said it is protected, so the caller keeps what
+// the branch said and marks the rest unread. Reporting the refusal instead
+// would make every read of a protected branch fail for a credential that can do
+// everything flow asks of it (spec 05 §3, issue #291).
 func (g *Gitea) rule(ctx context.Context, name string) (*gtProtection, error) {
 	var payload gtProtection
 	path := g.path("branch_protections", name)
@@ -479,6 +489,15 @@ func (g *Gitea) SetProtection(ctx context.Context, branch string, want core.Prot
 	}
 	if sameProtection(effective, effective.Merge(want)) {
 		return nil
+	}
+	if effective.Unreadable {
+		// Gitea edits a rule by sending the whole of it, so a write built
+		// on a rule flow could not read would turn off whatever it holds
+		// that the branch does not show. The credential that was refused
+		// the read would be refused the write too (issue #291).
+		return core.Errorf(core.ErrPermission, "protect %s of %s", branch, g.Slug()).
+			WithWhy("this credential may not read the rule that protects the branch, and writing it means replacing all of it").
+			WithFix("run flow apply with a credential that administers the repository")
 	}
 	merged := effective.Merge(want)
 	body := protectionRequestGitea(merged)

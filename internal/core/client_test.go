@@ -787,3 +787,101 @@ func TestAClientCanSendACredentialWithNoSchemeInFrontOfIt(t *testing.T) {
 		})
 	}
 }
+
+// throttle answers the first throttles requests with 429 and header, and the
+// rest with an empty object.
+func throttle(t *testing.T, throttles int, header map[string]string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if int(calls.Add(1)) <= throttles {
+			for name, value := range header {
+				w.Header().Set(name, value)
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+// A throttle whose budget returns later than any wait flow will endure is
+// reported at once, with when to come back: asking again inside the window
+// is only refused again (#294).
+func TestDoReportsAThrottleLongerThanItWillWait(t *testing.T) {
+	now := newTestClock().Now()
+	for name, header := range map[string]map[string]string{
+		"retry-after": {"Retry-After": "3600"},
+		"spent budget": {
+			"X-RateLimit-Limit":     "5000",
+			"X-RateLimit-Remaining": "0",
+			"X-RateLimit-Reset":     strconv.FormatInt(now.Add(time.Hour).Unix(), 10),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, calls := throttle(t, 100, header)
+			client, clock := newTestClient(t, srv, func(o *ClientOptions) { o.Backoff = DefaultBackoff })
+			_, err := client.Do(t.Context(), Request{Path: "x"})
+			if !errors.Is(err, ErrRateLimited) {
+				t.Fatalf("Do = %v, want ErrRateLimited", err)
+			}
+			if calls.Load() != 1 {
+				t.Errorf("sent %d requests, want one: an hour is not waited out", calls.Load())
+			}
+			if slept := clock.Slept(); len(slept) != 0 {
+				t.Errorf("slept %v, want no wait", slept)
+			}
+			var user *UserError
+			if !errors.As(err, &user) || !strings.Contains(user.Fix, "1h0m0s") {
+				t.Errorf("the refusal is %v, want it to say to come back in an hour", err)
+			}
+		})
+	}
+}
+
+// A reset beside a budget that is not spent is the window the next refusal
+// would wait for, not this one: GitHub sends it on every answer, including a
+// secondary limit's. That throttle is retried on the ordinary backoff.
+func TestDoDoesNotWaitForAResetWhileTheBudgetLasts(t *testing.T) {
+	now := newTestClock().Now()
+	srv, calls := throttle(t, 1, map[string]string{
+		"X-RateLimit-Limit":     "5000",
+		"X-RateLimit-Remaining": "4000",
+		"X-RateLimit-Reset":     strconv.FormatInt(now.Add(time.Hour).Unix(), 10),
+	})
+	client, clock := newTestClient(t, srv, func(o *ClientOptions) { o.Backoff = DefaultBackoff })
+	if _, err := client.Do(t.Context(), Request{Path: "x"}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Errorf("sent %d requests, want the throttle retried", calls.Load())
+	}
+	if slept := clock.Slept(); len(slept) != 1 || slept[0] > DefaultBackoffBase {
+		t.Errorf("slept %v, want one ordinary backoff", slept)
+	}
+}
+
+// A request that came back with a body throttling it is retried when the
+// caller can read the throttle there, and only then.
+func TestDoHearsAThrottleInTheBody(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`slow down`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	client, _ := newTestClient(t, srv, nil)
+	throttled := func(body []byte) bool { return string(body) == "slow down" }
+	res, err := client.Do(t.Context(), Request{Method: http.MethodPost, Path: "x", Throttled: throttled})
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if res.Attempts != 2 {
+		t.Errorf("Attempts = %d, want the throttled answer asked again", res.Attempts)
+	}
+}

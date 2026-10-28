@@ -90,6 +90,10 @@ type giteaFake struct {
 	// so a rule keeps them across every edit and a rule created beside it
 	// has none — which is what shadowing a glob rule loses (issue #293).
 	whitelists map[string][]string
+	// unnamed answers a branch without naming the rule that governs it, as
+	// a Gitea from before `effective_branch_protection_name` does. A branch
+	// a glob rule covers is then looked for under its own name, and 404s.
+	unnamed bool
 	// blobs is the identity Gitea gave each file it holds, so that an
 	// update quotes the blob it replaces.
 	blobs map[string]string
@@ -654,8 +658,10 @@ func (f *giteaFake) branch(w http.ResponseWriter, r *http.Request, name string) 
 		"name":      name,
 		"protected": protected,
 	}
-	if protected {
+	if protected && !f.unnamed {
 		doc["effective_branch_protection_name"] = governing
+	}
+	if protected {
 		doc["enable_status_check"] = len(rule.RequiredChecks) > 0
 		doc["status_check_contexts"] = rule.RequiredChecks
 		doc["required_approvals"] = rule.RequiredApprovals

@@ -63,23 +63,24 @@ func (r RateLimit) Wait(now time.Time) time.Duration {
 // Retry-After expressed as an HTTP date.
 func ParseRateLimit(h http.Header, now time.Time) RateLimit {
 	var r RateLimit
-	number := func(name string, into *int) {
+	number := func(name string, into *int) bool {
 		raw := h.Get(name)
 		if raw == "" {
-			return
+			return false
 		}
 		n, err := strconv.Atoi(strings.TrimSpace(raw))
 		if err != nil {
-			return
+			return false
 		}
 		*into = n
 		r.Known = true
+		return true
 	}
-	number(headerRateLimit, &r.Limit)
-	number(headerRateRemaining, &r.Remaining)
+	limit := number(headerRateLimit, &r.Limit)
+	remaining := number(headerRateRemaining, &r.Remaining)
 	number(headerRateUsed, &r.Used)
 	var reset int
-	number(headerRateReset, &reset)
+	resets := number(headerRateReset, &reset)
 	if reset > 0 {
 		r.Reset = time.Unix(int64(reset), 0).UTC()
 	}
@@ -91,7 +92,50 @@ func ParseRateLimit(h http.Header, now time.Time) RateLimit {
 		r.RetryAfter = after
 		r.Known = true
 	}
+	// A provider that answers with the common family has said what it
+	// means by it, and Linear's are read only where it is absent.
+	if !limit && !remaining && !resets {
+		r = linearBudget(h, r)
+	}
 	return r
+}
+
+// linearBudgets are the budgets Linear reports, each under its own family of
+// headers rather than the X-RateLimit-* one, with a reset in epoch
+// milliseconds rather than seconds. A RATELIMITED answer can mean any of them
+// is spent, so the one that is spent is the one whose reset matters (#294).
+var linearBudgets = []string{"Requests", "Complexity", "Endpoint-Requests"}
+
+// linearBudget fills base from Linear's headers: the first budget it reports,
+// unless a later one is a budget that ran out.
+func linearBudget(h http.Header, base RateLimit) RateLimit {
+	r, found := base, false
+	for _, budget := range linearBudgets {
+		prefix := "X-RateLimit-" + budget + "-"
+		limit, okLimit := headerInt(h, prefix+"Limit")
+		remaining, okRemaining := headerInt(h, prefix+"Remaining")
+		reset, okReset := headerInt(h, prefix+"Reset")
+		if !okLimit && !okRemaining && !okReset {
+			continue
+		}
+		next := base
+		next.Known = true
+		next.Limit, next.Remaining = limit, remaining
+		next.Resource = strings.ToLower(budget)
+		if reset > 0 {
+			next.Reset = time.UnixMilli(int64(reset)).UTC()
+		}
+		if !found || next.Exhausted() {
+			r, found = next, true
+		}
+	}
+	return r
+}
+
+// headerInt reads one header as a whole number.
+func headerInt(h http.Header, name string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(h.Get(name)))
+	return n, err == nil
 }
 
 // parseRetryAfter reads a Retry-After value, which RFC 9110 allows to be a

@@ -708,3 +708,37 @@ reopen, pagination, error mapping.
   (issue #184).** A missing board is the project check's finding,
   and every other tracker check waits on that one. A second complaint
   underneath it is noise.
+- **§3 Jira and Linear name the board their credential cannot see
+  (issue #292).** Jira's 404 on `mypermissions?projectKey=` and
+  Linear's empty `teams(filter: {key})` each mean "gone or not shared",
+  which is what `Permissions.Unreachable` holds, so `auth.tracker`
+  warns with steps instead of burying it in evidence. Neither probe
+  can reach that answer without a project or team configured.
+- **§1 Jira's follow-up search reads the follow-up label, not the
+  project (issue #296).** `FindFollowUp` narrows its JQL with
+  `labels = "<first usable followups.labels entry>"` and still matches
+  the marker in the descriptions it gets back. With no label Jira would
+  take, it reads the whole project as before. There is no fallback to
+  the full scan on a miss: a miss is the ordinary answer before a
+  follow-up is filed, and scanning then would cost exactly what the
+  label saves. A follow-up filed before the label was configured, or
+  one whose label somebody removed, is not found, and flow files a
+  fresh labelled one in its place. The health issue is found the same
+  way and carries the same labels.
+- **§4 a throttle stated in a GraphQL envelope is waited out like one
+  stated in a status (issue #294).** Linear says "slow down" as
+  `extensions.code: RATELIMITED`, and has documented both a 400 and, now, a
+  429 for it; GitHub's GraphQL can say `RATE_LIMITED` in a 200. The envelope
+  used to be read only after `core.Client` had spent its retries, so the one
+  refusal waiting would fix was the one that ended the run. `core.Request`
+  now carries a `Throttled` reader the retry loop consults on every answer,
+  and `core.GraphQL` supplies one that asks `GraphQLRefusal` itself, so what
+  is retried and what is reported cannot disagree. The wait honours
+  `Retry-After`, and otherwise, when the budget is spent, its reset — Linear's
+  `X-RateLimit-{Requests,Complexity,Endpoint-Requests}-Reset`, in epoch
+  milliseconds, read where the common `X-RateLimit-*` family is absent. A
+  reset beside a budget that is not spent is not waited for, because GitHub
+  sends one on every answer. A wait longer than `core.MaxBackoff` is reported
+  at once, with when to come back, instead of being slept through and asked
+  again into the same refusal; that changes GitHub's spent primary limit
+  from three futile retries to one honest answer.
