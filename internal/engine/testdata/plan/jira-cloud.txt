@@ -6,8 +6,8 @@ deploys  forge_deployments
 · up to date  tracker.project (project)
     the provider already matches what was asked for
 
-⚠ follow-up → ${pending:owners.tracker_admin}  tracker.status_options (status_options)
-    the provider has no API for this, so a person has to do it
+⚠ follow-up → nobody yet  tracker.status_options (status_options)
+    flow has no way to do this itself, so a person has to
     create "Backlog"
     update "In progress"
     create "In review"
