@@ -1286,6 +1286,14 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   when it is linked to no repository at all. A lone board linked elsewhere
   is offered beside "or create a board for this repository", and nothing is
   written. A tracker with no notion of links leaves the old rule unchanged.
+- **A tracking issue is finished by its sub-issues (#282).**
+  `live.tickets.done_merged` named flow's own phase issues — each closed
+  when its last sub-issue was, by design never with a pull request of its
+  own — as Done with no merge behind them, which no tracking issue can ever
+  avoid. A ticket in the done column that the board's other tickets name as
+  their parent is now judged by them: it holds when every sub-issue on the
+  board is closed, and is named, with how many are still open, when it
+  reached Done early. A merge of its own still counts first.
 - **An attestation's remedy says what to check (#281).** The remedy for
   an unvouched check was "look at it yourself", so on flow-demo-web a
   person asked to vouch for `tracker.expedite` was told nothing about a

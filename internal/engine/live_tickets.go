@@ -157,6 +157,11 @@ func (a *audit) inFlight(ctx context.Context, env *Env) ([]core.PullRequest, err
 // is done, so counting it made fixing a repository's setup turn this check
 // red for a fortnight (issue #203). A flag cleanup ticket is flow's writing
 // too, but removing a flag is a change to the code, and it is counted.
+//
+// A tracking issue — one the board's other tickets name as their parent — is
+// finished by its sub-issues, never by a pull request of its own. It holds
+// when every sub-issue on the board is closed, and is named when it reached
+// the done column with some still open (issue #282).
 func (a *audit) ticketsDoneMerged() Check {
 	return Check{
 		ID:        CheckLiveTicketsDoneMerged,
@@ -177,6 +182,11 @@ func (a *audit) ticketsDoneMerged() Check {
 				return Failed(err)
 			}
 			work := prsByTicket(env, prs)
+			board, err := a.board(ctx, env)
+			if err != nil {
+				return Failed(err)
+			}
+			children := childrenOf(board)
 			since := env.Since()
 			var t tally
 			var elsewhere, own int
@@ -198,6 +208,23 @@ func (a *audit) ticketsDoneMerged() Check {
 				}
 				if len(work[ticketKey(ticket)]) > 0 {
 					t.held()
+					continue
+				}
+				// A tracking issue is finished by its sub-issues, and has no
+				// pull request of its own to find (issue #282).
+				if kids := children[ticket.Key]; len(kids) > 0 {
+					open := 0
+					for _, kid := range kids {
+						if !kid.Closed {
+							open++
+						}
+					}
+					if open == 0 {
+						t.held()
+						continue
+					}
+					t.broke(ticket.URL, "%s %s — closed with %d of its %d sub-issues still open",
+						ticket.Key, ticket.Title, open, len(kids))
 					continue
 				}
 				t.broke(ticket.URL, "%s %s — no pull request merged in the window was for it", ticket.Key, ticket.Title)
@@ -1069,4 +1096,17 @@ func repositories(n int) string {
 		return "a repository"
 	}
 	return "repositories"
+}
+
+// childrenOf is the board's tickets grouped by the parent they name. The
+// tracker writes a parent's key the way it writes the parent's own, so the
+// two are compared as they are.
+func childrenOf(board []core.Ticket) map[string][]core.Ticket {
+	children := map[string][]core.Ticket{}
+	for _, ticket := range board {
+		if ticket.Parent != "" {
+			children[ticket.Parent] = append(children[ticket.Parent], ticket)
+		}
+	}
+	return children
 }
