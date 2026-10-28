@@ -35,10 +35,11 @@ func flowVersionOf(t *testing.T, tree fs.FS) string {
 	return ""
 }
 
-// The version a workflow installs must be one the module proxy can resolve. A
-// build that names a release pins to it; a build with no release behind it
-// falls back to the version spec 16 §2 guarantees always resolves. Neither is
-// ever a version nobody tagged.
+// The version a workflow installs must be one that was released: the templates
+// download a release's binary, and a version with no release behind it is a
+// workflow that fails at its first step (issue #267). A build that names a
+// release pins to it; anything else falls back to the version spec 16 §2
+// guarantees always resolves.
 func TestTheWorkflowInstallsAVersionThatExists(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -48,7 +49,10 @@ func TestTheWorkflowInstallsAVersionThatExists(t *testing.T) {
 	}{
 		{name: "a release", version: "v1.4.0", want: "v1.4.0"},
 		{name: "a release candidate", version: "v2.0.0-rc.1", want: "v2.0.0-rc.1"},
-		{name: "a build from a branch", version: "v0.0.0-20260101120000-abcdef123456", want: "v0.0.0-20260101120000-abcdef123456"},
+		{name: "a build from a branch", version: "v0.0.0-20260101120000-abcdef123456", want: "latest"},
+		{name: "a build from a commit after a release", version: "v0.96.3-0.20261027223121-82a2b6f93b4f", want: "latest"},
+		{name: "a build from a commit after a pre-release", version: "v2.0.0-rc.1.0.20261027223121-82a2b6f93b4f", want: "latest"},
+		{name: "a release built from a modified tree", version: "v1.4.0+dirty", want: "latest"},
 		{name: "an unreleased build", version: "dev", want: "latest"},
 		{name: "a build that says nothing", version: "", want: "latest"},
 		{name: "a name somebody made up", version: "nightly", want: "latest"},
