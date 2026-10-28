@@ -84,17 +84,21 @@ func TestTheDemoPointsAtTheRepositoryFlowIsConfiguredFor(t *testing.T) {
 	}
 }
 
-// TestTheDemoSaysWhereTheStreakStands keeps the one number plan item 8.2 asks
-// for. A demo section that stopped saying how many of the fourteen days are
-// green would still link everything and prove nothing: the streak is the
-// claim, and the rest is where to go and check it.
-func TestTheDemoSaysWhereTheStreakStands(t *testing.T) {
+// TestTheDemoSaysWhereTheStreakIsKept: plan item 8.2 asks the demo to say
+// where the fourteen-day streak stands. It once did so with a number, which
+// this test required to exist and to carry a date — and which nothing but a
+// person ever changed, so the README led with a count that was stale by the
+// next morning. The record is the health issue the daily run rewrites; the
+// demo points there, and a hand-kept count is refused rather than required.
+func TestTheDemoSaysWhereTheStreakIsKept(t *testing.T) {
 	section := demoSection(t)
-	streak := regexp.MustCompile(`\*\*Streak: (\d+) of 14 green daily runs\*\*`).FindStringSubmatch(section)
-	if streak == nil {
-		t.Fatalf("the demo section does not say how the fourteen-day streak stands:\n%s", section)
+	if !strings.Contains(section, "fourteen consecutive green daily runs") {
+		t.Errorf("the demo section does not say what v1.0.0 waits for:\n%s", section)
 	}
-	if !regexp.MustCompile(`\(as of \d{4}-\d{2}-\d{2}\)`).MatchString(section) {
-		t.Errorf("the demo says the streak is %s of 14 and not when, so nobody can tell how old the claim is", streak[1])
+	if !regexp.MustCompile(`\[health issue\]\(https://github\.com/[^)]+/issues/\d+\)`).MatchString(section) {
+		t.Errorf("the demo section does not link the health issue as where the count is kept:\n%s", section)
+	}
+	if regexp.MustCompile(`(?i)\d+ of 14`).MatchString(section) {
+		t.Errorf("the demo section keeps a count by hand, which only a person updates:\n%s", section)
 	}
 }

@@ -76,14 +76,10 @@ what flow could do: it is the one flow enforces here, on itself, every day.
 | Agent pull requests | [`is:pr label:agent`](https://github.com/17twenty/flow/pulls?q=is%3Apr+label%3Aagent) — opened by `flow-bot-gh`, approved by `@17twenty`, merged on a green `flow/policy` |
 | The gate | [`.github/workflows/flow.yml`](.github/workflows/flow.yml) — builds flow from the pull request's own checkout and judges it with that |
 
-**Streak: 0 of 14 green daily runs** (as of 2026-10-28). The number lives in the
-health issue, which is where to read it rather than here: this line is a date
-and a claim, and that issue is the record. v1.0.0 is tagged after fourteen
-consecutive green mornings. What holds the count at zero today is the audit
-window remembering the sprint that finished the build: a merge that skipped the
-gate, merges from before `test` was a required check, and WIP over its limits —
-each of which ages out of the fourteen-day window rather than being explained
-away.
+v1.0.0 is tagged after fourteen consecutive green daily runs. The count is kept
+in the [health issue](https://github.com/17twenty/flow/issues/92), which the
+daily run rewrites each morning with what it found and why — that is where to
+read it, rather than a number here that somebody has to remember to change.
 
 What the audit reads, against the expectations of
 [spec 17 §7](docs/design/17-dogfood.md):
