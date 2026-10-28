@@ -78,3 +78,10 @@ followups:
     opened_at: 2026-10-12T11:55:58Z
     nudged_at: 2026-10-21T04:11:08Z
     state: open
+attestations:
+  - check: tracker.expedite
+    by: 17twenty
+    note: the board's Expedite view (projects/2/views/2) filters label:incident; 17twenty checked it on 2026-10-28
+    at: 2026-10-28T03:39:06Z
+    expires_at: 2026-11-27T03:39:06Z
+    inputs: sha256:9759eaf7b7d4d3e0415c6b970dac3a9201a42ed04a85c4515c155198281dd23c
