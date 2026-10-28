@@ -41,7 +41,13 @@ func fakeAdapters(a *Context, s *session) (engine.Adapters, error) {
 	if err != nil {
 		return engine.Adapters{}, err
 	}
-	adapters := engine.Adapters{Forge: world.forge, Tracker: world.tracker, Deploys: world.deploys}
+	adapters := engine.Adapters{Forge: world.forge, Tracker: world.tracker}
+	// A world with no deployment source must hand over no source, not a nil
+	// *FakeDeploys inside a non-nil interface, which every "is there one?"
+	// would answer yes to (issue #295).
+	if world.deploys != nil {
+		adapters.Deploys = world.deploys
+	}
 	if projectNumber(s.Config, s.Lock) == 0 {
 		adapters.Tracker = unnumberedTracker{Tracker: world.tracker}
 	}
@@ -191,8 +197,12 @@ func newFakeWorld(s *session) (*fakeWorld, error) {
 	// rather than by the source, exactly as [liveAdapters] reads it: a fake
 	// that looked the source up would ask the registry for a name it has
 	// never held and fail where the real build succeeds.
-	switch s.Config.Deploys.Source {
-	case "", config.DeploySourceNone:
+	//
+	// A forge that keeps no deployment records is given no source for
+	// forge_deployments, as [liveAdapters] gives it none (issue #295).
+	switch {
+	case s.Config.Deploys.Source == "", s.Config.Deploys.Source == config.DeploySourceNone:
+	case s.Config.Deploys.Source == config.DeploySourceForge && engine.DeploysUnreadable(world.forge):
 	default:
 		deployCaps, err := s.Registry.Of(core.KindDeploys)
 		if err != nil {

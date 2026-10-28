@@ -67,6 +67,27 @@ func ReadsDeployments(cfg *config.Config) (bool, string) {
 	return true, ""
 }
 
+// DeploysUnreadable reports that the forge keeps no deployment records flow
+// can read (issue #295), which is its declaration's to say rather than a list
+// of forge names here. `source: forge_deployments` on such a forge has nobody
+// to read it: the only reader is GitHub's. No forge at all is not such a
+// forge; it is the auth check's to report.
+func DeploysUnreadable(forge core.Forge) bool {
+	return forge != nil && !forge.Capabilities().CanVerify(core.CapDeploymentsRead)
+}
+
+// unreadableDeploys is why a configuration's deployments cannot be read
+// through the forge it names, and false when they can or when it asks for
+// none from the forge. Only forge_deployments asks the forge for its own
+// records; a commit status source reads statuses, which every forge keeps.
+func unreadableDeploys(env *Env) (string, bool) {
+	if env.Config.Deploys.Source != config.DeploySourceForge || !DeploysUnreadable(env.Adapters.Forge) {
+		return "", false
+	}
+	return fmt.Sprintf("deploys.source is %s, but %s keeps no deployment records flow can read",
+		config.DeploySourceForge, env.Adapters.Forge.Kind()), true
+}
+
 // deploysRecent asks whether anything has reached the environment lately.
 //
 // It is the one live check for which silence is the finding rather than the
@@ -86,6 +107,9 @@ func (a *audit) deploysRecent() Check {
 		Run: func(ctx context.Context, env *Env) Result {
 			if reads, why := ReadsDeployments(env.Config); !reads {
 				return Skip("%s", why)
+			}
+			if why, unreadable := unreadableDeploys(env); unreadable {
+				return Skip("%s; deploys.source says what to use instead", why)
 			}
 			age := env.Config.Deploys.MaxAge
 			if age.Std() <= 0 {
@@ -136,6 +160,9 @@ func (a *audit) deploysLag() Check {
 		Run: func(ctx context.Context, env *Env) Result {
 			if reads, why := ReadsDeployments(env.Config); !reads {
 				return Skip("%s", why)
+			}
+			if why, unreadable := unreadableDeploys(env); unreadable {
+				return Skip("%s; deploys.source says what to use instead", why)
 			}
 			lag := env.Config.Deploys.MaxLag
 			if lag.Std() <= 0 {

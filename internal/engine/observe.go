@@ -392,6 +392,14 @@ func flowCommands(content []byte, wanted string) []string {
 // and flow only has to be able to see it (spec 13 §3).
 func (o *observer) deploys(ctx context.Context, item DesiredItem) (core.Observation, error) {
 	if o.adapters.Deploys == nil {
+		// A forge that keeps no deployment records flow can read is given no
+		// source for them (issue #295), and the item is left unobserved: with
+		// no provider behind it the plan resolves it as unsupported, and
+		// deploys.source says why. Refusing here instead would fail the whole
+		// observation, and with it every check doctor plans, over one setting.
+		if DeploysUnreadable(o.adapters.Forge) {
+			return core.Observation{}, nil
+		}
 		return core.Observation{}, fmt.Errorf("%w: no deployment source", core.ErrUnsupported)
 	}
 	var items []core.Item
