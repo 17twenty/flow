@@ -376,7 +376,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 		})
 	case strings.Contains(query.Query, "projectsV2("):
 		f.writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{field: map[string]any{"projectsV2": f.page(query.Variables)}},
+			"data": map[string]any{field: map[string]any{"projectsV2": f.page(query.Query, query.Variables)}},
 		})
 	case strings.Contains(query.Query, "projectV2("):
 		f.writeJSON(w, http.StatusOK, map[string]any{
@@ -391,7 +391,7 @@ func (f *ghProjectsFake) graphQL(w http.ResponseWriter, r *http.Request) {
 // hand back fewer nodes than were asked for, so the fake pages at its own
 // small size: an adapter that reads the first page and stops would pass
 // against one that always answered in full.
-func (f *ghProjectsFake) page(variables map[string]any) map[string]any {
+func (f *ghProjectsFake) page(document string, variables map[string]any) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	from := 0
@@ -407,7 +407,18 @@ func (f *ghProjectsFake) page(variables map[string]any) map[string]any {
 	}
 	nodes := make([]any, 0, len(rest))
 	for _, node := range rest {
-		nodes = append(nodes, ghNodeJSON(node))
+		doc := ghNodeJSON(node)
+		// Only when asked: a fake that volunteers the links answers a query
+		// that forgot them, and the engine would then take another
+		// repository's board as this one's (#262).
+		if strings.Contains(document, "repositories(") {
+			repos := make([]any, 0, len(node.Repositories.Nodes))
+			for _, repo := range node.Repositories.Nodes {
+				repos = append(repos, map[string]any{"nameWithOwner": repo.NameWithOwner})
+			}
+			doc["repositories"] = map[string]any{"nodes": repos}
+		}
+		nodes = append(nodes, doc)
 	}
 	return map[string]any{
 		"nodes": nodes,

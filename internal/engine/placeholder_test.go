@@ -781,3 +781,74 @@ func TestResolutionIsRecordedInTheLockNotTheConfiguration(t *testing.T) {
 		t.Errorf("tracker.project = %q, want the configuration left as written", cfg.Tracker.Project)
 	}
 }
+
+// TestTheOnlyBoardIsNotTakenWhenItIsAnotherRepositorys is issue #262. With
+// flow-demo-web's own board deleted, the only board on the account was flow's
+// — linked to another repository, 161 items — and doctor offered it as the
+// only answer there is. Creating a board is always another answer, so a lone
+// board linked elsewhere is offered, never taken, and nothing is written.
+func TestTheOnlyBoardIsNotTakenWhenItIsAnotherRepositorys(t *testing.T) {
+	t.Parallel()
+
+	theirs := core.Candidate{ID: "2", Name: "Flow", URL: "https://tracker.test/projects/2", Linked: []string{"acme/flow"}}
+	answers, lock := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, theirs), Fix: true})
+
+	got := answer(t, answers, core.ItemTrackerProject)
+	if got.Resolved() || got.Takeable {
+		t.Fatalf("answer = %+v, want another repository's board neither taken nor offered as the answer", got)
+	}
+	if len(lock.Resolved) != 0 {
+		t.Errorf("lock = %v, want nothing written", lock.Resolved)
+	}
+	steps := strings.Join(got.Steps, "\n")
+	for _, want := range []string{"another repository's board", "linked to acme/flow", "create a board for this repository"} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("the steps do not say %q:\n%s", want, steps)
+		}
+	}
+	if result := got.Result(); result.Remediation.Command == "flow doctor --fix" {
+		t.Errorf("the remedy is %q, which would take it", result.Remediation.Command)
+	}
+}
+
+// A board the tracker says is this repository's is the answer however many
+// other boards there are: the tracker has already said whose it is. That is
+// what makes the demo's case work — flow's own board and the demo's, both
+// visible, and only one of them linked to the demo.
+func TestTheBoardLinkedToThisRepositoryIsTheAnswer(t *testing.T) {
+	t.Parallel()
+
+	theirs := core.Candidate{ID: "2", Name: "Flow", URL: "https://tracker.test/projects/2", Linked: []string{"acme/flow"}}
+	ours := core.Candidate{ID: "6", Name: "Widget", URL: "https://tracker.test/projects/6", Linked: []string{"Acme/Widget"}}
+
+	looked, _ := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, theirs, ours)})
+	if got := answer(t, looked, core.ItemTrackerProject); !got.Takeable || got.Result().Remediation.Command != "flow doctor --fix" {
+		t.Errorf("a look without --fix = %+v, want it to say flow would take this repository's board", got)
+	}
+
+	answers, lock := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, theirs, ours), Fix: true})
+	got := answer(t, answers, core.ItemTrackerProject)
+	if got.How != engine.HowDiscovered || got.Ref.ID != "6" {
+		t.Fatalf("how = %q, ref = %+v, want the board linked to this repository", got.How, got.Ref)
+	}
+	if lock.Resolved[core.ItemTrackerProject] != "6" {
+		t.Errorf("lock = %v, want the board linked to this repository", lock.Resolved)
+	}
+}
+
+// Two boards both linked to this repository are a question only a person can
+// settle, as any two boards are.
+func TestTwoBoardsLinkedToThisRepositoryAreAQuestion(t *testing.T) {
+	t.Parallel()
+
+	one := core.Candidate{ID: "6", Name: "Widget", Linked: []string{"acme/widget"}}
+	two := core.Candidate{ID: "7", Name: "Widget (old)", Linked: []string{"acme/widget"}}
+	answers, lock := resolve(t, engine.ResolveInput{Tracker: resolveTracker(t, one, two), Fix: true})
+
+	if got := answer(t, answers, core.ItemTrackerProject); got.Resolved() || got.Takeable {
+		t.Fatalf("answer = %+v, want a question", got)
+	}
+	if len(lock.Resolved) != 0 {
+		t.Errorf("lock = %v, want nothing written", lock.Resolved)
+	}
+}

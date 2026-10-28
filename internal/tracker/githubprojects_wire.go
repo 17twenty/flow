@@ -104,7 +104,7 @@ func ghProjectsQuery(ownerType string) string {
 	return "query($login:String!,$first:Int!,$after:String){" +
 		ghOwnerField(ownerType) + "(login:$login){" +
 		"projectsV2(first:$first,after:$after){" +
-		"nodes{id number title shortDescription closed items{totalCount}}" +
+		"nodes{id number title shortDescription closed items{totalCount} repositories(first:20){nodes{nameWithOwner}}}" +
 		"pageInfo{hasNextPage endCursor}}}}"
 }
 
@@ -172,6 +172,14 @@ type ghProjectNode struct {
 	ShortDescription string      `json:"shortDescription"`
 	Closed           bool        `json:"closed"`
 	Items            ghItemCount `json:"items"`
+	Repositories     ghRepoList  `json:"repositories"`
+}
+
+// ghRepoList is the repositories a project is linked to.
+type ghRepoList struct {
+	Nodes []struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	} `json:"nodes"`
 }
 
 // ghItemCount is how many items a board holds.
@@ -193,12 +201,19 @@ func (n ghProjectNode) toCandidate(site, owner, ownerType string) (core.Candidat
 	if detail == "" {
 		detail = strconv.Itoa(n.Items.TotalCount) + " items"
 	}
+	var linked []string
+	for _, repo := range n.Repositories.Nodes {
+		if repo.NameWithOwner != "" {
+			linked = append(linked, repo.NameWithOwner)
+		}
+	}
 	return core.Candidate{
 		What:   core.ItemTrackerProject,
 		ID:     strconv.Itoa(n.Number),
 		Name:   n.Title,
 		URL:    ghProjectURL(site, owner, ownerType, n.Number),
 		Detail: detail,
+		Linked: linked,
 	}, true
 }
 
