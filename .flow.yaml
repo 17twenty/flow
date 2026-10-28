@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/17twenty/flow/main/assets/schema/flow.v1.json
-# flow's own workflow — see .ralph/specs/17-dogfood.md
+# flow's own workflow — see docs/design/17-dogfood.md
 version: 1
 preset: lean-kanban
 forge:
@@ -35,7 +35,7 @@ commits:
   types: [feat, fix, perf, refactor, test, docs, build, ci, chore, revert, style]
   header_max: 72
   merge_strategy: squash
-  scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, ralph, deps] }
+  scopes: { required: true, allowed: [cli, core, config, git, commits, engine, forge, tracker, deploys, ui, assets, ci, docs, design, deps] }
   unlinked_types: [ci, build, docs, chore]
 deploys: { source: forge_deployments, environment: production, max_lag: 2h, max_age: 7d }
 policy:  { status_context: flow/policy, strictness: strict, comment: on_failure }

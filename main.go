@@ -1,5 +1,5 @@
 // Command flow makes a lean, trunk-based delivery workflow true and provably
-// true across a Git forge and a ticket tracker. See .ralph/specs for the
+// true across a Git forge and a ticket tracker. See docs/design for the
 // contract this implementation follows.
 package main
 

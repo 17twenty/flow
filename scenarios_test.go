@@ -18,7 +18,7 @@ import (
 // this file reads the spec, reads the tests, and refuses to let them disagree.
 
 // scenarioPath is the spec that lists what flow has promised to do.
-const scenarioPath = ".ralph/specs/19-acceptance-scenarios.md"
+const scenarioPath = "docs/design/19-acceptance-scenarios.md"
 
 // scenarioHeadingRe matches a scenario in spec 19: a bullet whose bold run
 // opens with the id, whether or not the name of the scenario is inside the

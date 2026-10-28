@@ -27,7 +27,7 @@ const (
 	proposalDoc = "assets/docs/lean-kanban-workflow.md"
 
 	// overviewSpec is where flow's non-goals live.
-	overviewSpec = ".ralph/specs/00-overview.md"
+	overviewSpec = "docs/design/00-overview.md"
 )
 
 // gapIssue is the link a gap carries: the issue that will close it.

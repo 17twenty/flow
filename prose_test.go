@@ -45,6 +45,11 @@ func proseDocs(t *testing.T) map[string]string {
 			if err != nil {
 				return err
 			}
+			if d.IsDir() && path == specDir {
+				// The design record lives under docs/ but answers to
+				// specs_test.go, as the comment above says.
+				return filepath.SkipDir
+			}
 			if !d.IsDir() && filepath.Ext(path) == ".md" {
 				read(path)
 			}

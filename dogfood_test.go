@@ -64,7 +64,7 @@ func TestDogfoodCopiesAreWhatTheRepositoryRuns(t *testing.T) {
 			}
 			if string(got) != string(want) {
 				t.Errorf("%s has drifted from %s: a repository copying it would not get the workflow this one runs.\n"+
-					"Copy %s over it, or — if the difference is deliberate — record it as a Decision in .ralph/specs/17-dogfood.md and change this test with the reason.\n"+
+					"Copy %s over it, or — if the difference is deliberate — record it as a Decision in docs/design/17-dogfood.md and change this test with the reason.\n"+
 					"first difference at byte %d", copied, relative, relative, firstDifference(string(got), string(want)))
 			}
 		})

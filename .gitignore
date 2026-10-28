@@ -4,5 +4,4 @@
 *.test
 *.out
 .flow-bot-token
-.klaudia/MEMORY.md
 .env
