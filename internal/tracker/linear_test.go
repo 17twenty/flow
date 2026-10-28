@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -136,6 +137,60 @@ func TestLinearRefusalsArriveInLinearsOwnWords(t *testing.T) {
 	}
 	if !strings.Contains(user.Why, "Could not find referenced Issue") {
 		t.Errorf("the refusal explains itself as %q, want Linear's own words", user.Why)
+	}
+}
+
+// Linear says "slow down" in the envelope, with RATELIMITED under extensions,
+// and a burst that hits it must back off and carry on rather than end the run
+// (#294). It is answered with both of the statuses Linear has documented for
+// it: 400 once, 429 now.
+func TestLinearWaitsOutAThrottleAndCarriesOn(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusTooManyRequests, http.StatusOK} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			fake, linear := linearWorld(t)
+			fake.refuses("FlowIssue", lnFakeRefusal{
+				Message: "Rate limit exceeded",
+				Code:    "RATELIMITED",
+				Type:    "ratelimited",
+				Status:  status,
+				Once:    true,
+			})
+
+			if _, err := linear.Ticket(t.Context(), lnFakeKeyPrefix+"10"); err != nil {
+				t.Fatalf("Ticket after one throttle = %v, want it to wait and ask again", err)
+			}
+			if got := fake.called("FlowIssue"); got != 2 {
+				t.Errorf("FlowIssue was asked %d times, want once more after the throttle", got)
+			}
+		})
+	}
+}
+
+// A throttle that does not lift is reported as one, after the retries every
+// other request is allowed and no more.
+func TestLinearReportsAThrottleThatDoesNotLift(t *testing.T) {
+	fake, linear := linearWorld(t)
+	fake.refuses("FlowIssue", lnFakeRefusal{Message: "Rate limit exceeded", Code: "RATELIMITED", Status: http.StatusBadRequest})
+
+	_, err := linear.Ticket(t.Context(), lnFakeKeyPrefix+"10")
+	if !errors.Is(err, core.ErrRateLimited) {
+		t.Fatalf("Ticket under a lasting throttle = %v, want ErrRateLimited", err)
+	}
+	if got := fake.called("FlowIssue"); got != 1+core.DefaultRetries {
+		t.Errorf("FlowIssue was asked %d times, want %d", got, 1+core.DefaultRetries)
+	}
+}
+
+// A refusal that waiting cannot fix is asked once.
+func TestLinearDoesNotRetryARefusal(t *testing.T) {
+	fake, linear := linearWorld(t)
+	fake.refuses("FlowIssue", lnFakeRefusal{Message: "Argument Validation Error", Code: "INVALID_INPUT", Status: http.StatusBadRequest})
+
+	if _, err := linear.Ticket(t.Context(), lnFakeKeyPrefix+"10"); err == nil {
+		t.Fatal("Ticket that Linear refused succeeded")
+	}
+	if got := fake.called("FlowIssue"); got != 1 {
+		t.Errorf("FlowIssue was asked %d times, want once: invalid input stays invalid", got)
 	}
 }
 

@@ -164,6 +164,12 @@ type Request struct {
 	Retry RetryPolicy
 	// NoCache skips the ETag cache for this request.
 	NoCache bool
+	// Throttled, when set, reads an answer for a throttle its status did not
+	// state. A GraphQL provider can say "slow down" in the body of a 200 or
+	// a 400 (Linear writes RATELIMITED there, #294), and only a refusal the
+	// retry loop can see is one it can wait out: once Do has returned, the
+	// attempts are spent.
+	Throttled func(body []byte) bool
 }
 
 // Response is what a provider answered, after retries and cache validation.
@@ -309,10 +315,33 @@ func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
 		if res != nil {
 			rate = res.Rate
 		}
+		if errors.Is(err, ErrRateLimited) {
+			// A throttle that names when its budget returns is waited out
+			// until then, and one that returns later than any wait flow
+			// will endure is reported now rather than asked again, which
+			// would only be refused again (#294).
+			asked := throttleWait(rate, c.clock.Now())
+			if asked > MaxBackoff {
+				return nil, lastErr
+			}
+			rate.RetryAfter = asked
+		}
 		if err := c.clock.Sleep(ctx, c.backoff(attempt, rate)); err != nil {
 			return nil, err
 		}
 	}
+}
+
+// throttleWait is how long a provider that throttled a request asked flow to
+// wait: what Retry-After said, or, when the budget is spent, the time until
+// it resets. A reset beside a budget that is not spent is the window the
+// next refusal would wait for, not this one — GitHub sends one on every
+// answer, including the secondary limits that spend no budget at all.
+func throttleWait(rate RateLimit, now time.Time) time.Duration {
+	if !rate.Exhausted() {
+		return rate.RetryAfter
+	}
+	return rate.Wait(now)
 }
 
 // attempt sends the request once. It reports whether the failure it returns is
@@ -372,7 +401,11 @@ func (c *Client) attempt(ctx context.Context, attempt int, method, target string
 		out.FromCache = true
 		return out, false, nil
 	}
-	if sentinel := StatusSentinel(out.Status, out.Header, out.Body); sentinel != nil {
+	sentinel := StatusSentinel(out.Status, out.Header, out.Body)
+	if r.Throttled != nil && r.Throttled(out.Body) {
+		sentinel = ErrRateLimited
+	}
+	if sentinel != nil {
 		retryable := c.retryableFailure(method, r.Retry, out, sentinel)
 		return out, retryable, c.statusError(method, target, out, sentinel)
 	}

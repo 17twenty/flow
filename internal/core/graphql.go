@@ -3,6 +3,8 @@ package core
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -78,6 +80,7 @@ func GraphQL[T any](ctx context.Context, c *Client, req Request, q GraphQLQuery,
 	req.Body = q
 	req.Out = &envelope
 	req.Retry = RetryAlways
+	req.Throttled = func(body []byte) bool { return graphQLThrottled(body, sentinel) }
 	if _, err := c.Do(ctx, req); err != nil {
 		return zero, err
 	}
@@ -85,6 +88,22 @@ func GraphQL[T any](ctx context.Context, c *Client, req Request, q GraphQLQuery,
 		return zero, GraphQLRefusal(envelope.Errors, sentinel)
 	}
 	return envelope.Data, nil
+}
+
+// graphQLThrottled reports whether an answer's errors say the provider is
+// throttling. A provider that says so in the envelope rather than the status
+// (Linear's RATELIMITED, GitHub's RATE_LIMITED) has to be heard inside the
+// retry loop, or the one refusal that waiting would fix is the one that ends
+// the run (#294). It asks [GraphQLRefusal] rather than reading the errors
+// itself, so that what is retried and what is reported cannot disagree.
+func graphQLThrottled(body []byte, sentinel func(errType string) error) bool {
+	var envelope struct {
+		Errors []GraphQLError `json:"errors"`
+	}
+	// A body that is not an envelope carries no errors, and no errors are
+	// not a throttle: the status has already said whatever it means.
+	_ = json.Unmarshal(body, &envelope)
+	return errors.Is(GraphQLRefusal(envelope.Errors, sentinel), ErrRateLimited)
 }
 
 // GraphQLRefusal states an errors array as one refusal, keeping every message:
