@@ -475,35 +475,35 @@ Human-only steps use ids `H.<n>` (never seeded).
 
 ## Phase 9 — Reconcile (spec 20)
 
-- [ ] 9.1 `flow sync`: the catch-ups flow owns, on a short window, nothing published — specs: 20 §2, 02 — deps: — (#211)
+- [x] 9.1 `flow sync`: the catch-ups flow owns, on a short window, nothing published — specs: 20 §2, 02 — deps: — (#211)
   - AC: runs exactly `live.transitions.flow` and `live.prs.closed_issues` with `--fix` semantics, default `--window 48h`
   - AC: never publishes the health report, proposes the lock or files a follow-up; exits as doctor does on the checks it ran
   - AC: spec 02 lists the command; `doctor --fix` still performs the same catch-ups through the same code
-- [ ] 9.2 Every template and flow's own workflow run `sync` after the gate, hourly and on push to the trunk — specs: 20 §3, 17 — deps: 9.1 (#212)
+- [x] 9.2 Every template and flow's own workflow run `sync` after the gate, hourly and on push to the trunk — specs: 20 §3, 17 — deps: 9.1 (#212)
   - AC: the gate job runs `flow sync` as a step after `check pr` that cannot fail the job
   - AC: a `sync` job runs on an hourly schedule and on `push` to the default branch
-- [ ] 9.3 Auto-merge stays off where the forge's merges start nothing, and the docs say why — specs: 20 Decisions, 17 — deps: 9.5 (#213)
+- [x] 9.3 Auto-merge stays off where the forge's merges start nothing, and the docs say why — specs: 20 Decisions, 17 — deps: 9.5 (#213)
   - AC: `forge.auto_merge` stays false in flow's own `.flow.yaml`
   - AC: the cookbook's auto-merge section names the Actions-token hazard and the credential that avoids it, beside `live.trunk.built`
-- [ ] 9.4 Flow owns `pr_merged` and `issue_closed` by default — specs: 20 §4, 04 §5 — deps: 9.1 (#214)
+- [x] 9.4 Flow owns `pr_merged` and `issue_closed` by default — specs: 20 §4, 04 §5 — deps: 9.1 (#214)
   - AC: the shipped presets give both to flow; spec 04 §5 and the delivery-board document say so
   - AC: `sync` moves a merged pull request's ticket to the done column; a native automation that already moved it leaves nothing to do
   - AC: flow's own `.flow.yaml` follows; the two attestations it no longer needs stop being asked for
-- [ ] 9.5 `live.trunk.built`: a merge the forge built nothing for is a finding — specs: 20 §6, 07 §6 — deps: — (#215)
+- [x] 9.5 `live.trunk.built`: a merge the forge built nothing for is a finding — specs: 20 §6, 07 §6 — deps: — (#215)
   - AC: every merge in the window has one of `forge.required_checks` reported against its merge commit, or the check names it
   - AC: GitHub's `auto_merge` declaration carries the Actions-token hazard and the remedy text the check prints
-- [ ] 9.6 Credential roles in the documentation and the probe — specs: 20 §5, 15 — deps: — (#216)
+- [x] 9.6 Credential roles in the documentation and the probe — specs: 20 §5, 15 — deps: — (#216)
   - AC: spec 15 and the cookbook describe reader, gate and actor; doctor's auth checks say which roles a credential can fill
   - AC: the README, spec 15 and the cookbook agree on the agent's identity (machine user, not an App)
-- [ ] 9.7 The runner seam: `FLOW_PR`/`FLOW_RUN_URL`, then the CI system flow recognises — specs: 20 §7, 02 — deps: — (#217)
+- [x] 9.7 The runner seam: `FLOW_PR`/`FLOW_RUN_URL`, then the CI system flow recognises — specs: 20 §7, 02 — deps: — (#217)
   - AC: `check pr` takes its pull request from `FLOW_PR` before any CI-specific payload; GitHub Actions and GitLab CI are recognised
-- [ ] 9.8 Templates install a pinned release binary, per CI system — specs: 20 §7, 16, 06 §2 — deps: 9.7 (#218)
+- [x] 9.8 Templates install a pinned release binary, per CI system — specs: 20 §7, 16, 06 §2 — deps: 9.7 (#218)
   - AC: no template compiles flow from source; each pins the version `init` ran as
   - AC: a GitLab CI template and a Forgejo/Gitea Actions template ship beside GitHub's
-- [ ] 9.9 `mode: observe | gate | automate` — specs: 20 §8, 03 — deps: 9.1 (#219)
+- [x] 9.9 `mode: observe | gate | automate` — specs: 20 §8, 03 — deps: 9.1 (#219)
   - AC: observe writes nothing anywhere and needs only a reader; gate writes only the status and its comment
   - AC: `flow init --mode observe` writes the mode; the workflow is the same in every mode
-- [ ] 9.10 Specs agree with themselves — specs: 02, 03, 07 — deps: — (#220)
+- [x] 9.10 Specs agree with themselves — specs: 02, 03, 07 — deps: — (#220)
   - AC: one attestation lifetime in specs 02, 03, 07 and the cookbook
   - AC: spec 03's rule for `owner: native` matches what `config.semantics` accepts
 ---
