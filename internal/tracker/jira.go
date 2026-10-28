@@ -210,6 +210,11 @@ func (j *JiraCloud) Probe(ctx context.Context) (core.Permissions, error) {
 		if !errors.Is(err, core.ErrNotFound) {
 			return core.Permissions{}, core.Explain(err, "ask %s what the credential may do", j.Slug())
 		}
+		// Jira answers 404 for a project that is gone and for one the
+		// account may not browse alike, and both leave the credential
+		// blind to the board it was given (issue #292). Only a request
+		// naming a project can come back 404, so one is always named.
+		permissions.Unreachable = "the project " + j.key
 		return permissions, nil
 	}
 	permissions.Tokens = held.tokens()

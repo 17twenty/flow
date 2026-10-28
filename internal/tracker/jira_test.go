@@ -683,6 +683,32 @@ func TestJiraFilesAFollowUpTheLabelsCannotStop(t *testing.T) {
 	}
 }
 
+// A project the credential cannot see is named, so that auth.tracker can say
+// which board it is blind to; one it can see, or none at all, is not
+// (issue #292).
+func TestJiraProbeNamesAProjectItCannotSee(t *testing.T) {
+	fx := coretest.ContractTracker()
+	_, srv := newJiraServer(t, &fx)
+	for _, tc := range []struct {
+		name, project, want string
+	}{
+		{"reachable", jiraFixtureProject, ""},
+		{"unreachable", "NOPE", "the project NOPE"},
+		{"not configured", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			jira := newJiraAdapter(t, srv, func(opts *JiraCloudOptions) { opts.Project = tc.project })
+			permissions, err := jira.Probe(t.Context())
+			if err != nil {
+				t.Fatalf("Probe: %v", err)
+			}
+			if permissions.Unreachable != tc.want {
+				t.Errorf("Unreachable = %q, want %q", permissions.Unreachable, tc.want)
+			}
+		})
+	}
+}
+
 // jiraSeedFollowUp puts an issue carrying a marker into the fake, as a
 // follow-up filed by an earlier run would be.
 func jiraSeedFollowUp(fake *jiraFake, title string, marker core.Marker, labels ...string) string {
