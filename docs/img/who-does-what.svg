@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="510" viewBox="0 0 1000 510" role="img" aria-label="Who does what: flow, the forge, the tracker, CI and a person"><title>Who does what: flow, the forge, the tracker, CI and a person</title>
+<style>
+  .bg { fill: #ffffff; }
+  .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+  .flow { fill: #ddf4ff; stroke: #54aeff; }
+  .person { fill: #fff8c5; stroke: #d4a72c; }
+  .done { fill: #dafbe1; stroke: #4ac26b; }
+  .t { font: 600 14px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #1f2328; }
+  .s { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; }
+  .code { font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+  .h { font: 700 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #59636e; letter-spacing: .08em; }
+  .a { stroke: #59636e; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+  .an { stroke: #bf8700; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrow-native); }
+  .ah { fill: #59636e; } .ahn { fill: #bf8700; }
+  .badge { font: 600 11px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  .bf { fill: #0969da; } .bn { fill: #9a6700; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .flow { fill: #0c2d6b; stroke: #1f6feb; }
+    .person { fill: #3b2e0a; stroke: #9e6a03; }
+    .done { fill: #04260f; stroke: #238636; }
+    .t, .code { fill: #f0f6fc; } .s, .h { fill: #9198a1; }
+    .a { stroke: #9198a1; } .ah { fill: #9198a1; }
+    .an { stroke: #d29922; } .ahn { fill: #d29922; }
+    .bf { fill: #4493f8; } .bn { fill: #d29922; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="arrow-native" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahn" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<rect class="bg" width="1000" height="510" rx="12"/><rect class="box flow" x="395" y="190" width="210" height="80" rx="9"/><text class="t" x="500.0" y="226.0" text-anchor="middle">flow</text><text class="s" x="500.0" y="244.0" text-anchor="middle">sets up · gates · verifies</text><rect class="box" x="40" y="40" width="400" height="86" rx="9"/><text class="t" x="240" y="68" text-anchor="middle">the forge</text><text class="s" x="240" y="90" text-anchor="middle">protection, required checks, merge settings,</text><text class="s" x="240" y="108" text-anchor="middle">the CI files, by pull request</text><rect class="box" x="560" y="40" width="400" height="86" rx="9"/><text class="t" x="760" y="68" text-anchor="middle">the tracker</text><text class="s" x="760" y="90" text-anchor="middle">columns, labels, moving cards,</text><text class="s" x="760" y="108" text-anchor="middle">follow-up tickets</text><rect class="box" x="40" y="350" width="400" height="86" rx="9"/><text class="t" x="240" y="378" text-anchor="middle">CI</text><text class="s" x="240" y="400" text-anchor="middle">the gate on every pull request,</text><text class="s" x="240" y="418" text-anchor="middle">sync hourly, doctor daily</text><rect class="box person" x="560" y="350" width="400" height="86" rx="9"/><text class="t" x="760" y="378" text-anchor="middle">a person</text><text class="s" x="760" y="400" text-anchor="middle">approves agent work, does follow-ups,</text><text class="s" x="760" y="418" text-anchor="middle">vouches for what flow cannot see</text><path class="a" d="M440,188 L300,128"/><path class="a" d="M560,188 L700,128"/><path class="a" d="M300,348 L440,272"/><path class="a" d="M560,272 L700,348"/><text class="t" x="60" y="470" text-anchor="start">native</text><text class="s" x="60" y="488" text-anchor="start">the provider does it, flow checks it</text><text class="t" x="290" y="470" text-anchor="start">compensated</text><text class="s" x="290" y="488" text-anchor="start">flow enforces it another way</text><text class="t" x="520" y="470" text-anchor="start">follow-up</text><text class="s" x="520" y="488" text-anchor="start">a ticket for whoever can</text><text class="t" x="750" y="470" text-anchor="start">attest</text><text class="s" x="750" y="488" text-anchor="start">a person vouches; asked again in 30d</text></svg>

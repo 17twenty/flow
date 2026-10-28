@@ -1,0 +1,12 @@
+· pr.ticket.linked  a "ci" pull request may merge without a ticket
+· pr.ticket.in_project  there is no linked ticket to look for
+· ticket.ready  there is no linked ticket to judge
+✓ pr.title.conventional
+✓ pr.breaking.explained
+· agent.human_review  a person opened this
+✓ wip.review
+✓ wip.in_progress
+· ticket.not_blocked  there is no linked ticket to be blocked
+✓ pr.stacked  this stands on nothing but the trunk
+✓ every rule passes
+dry run: nothing was posted

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1151" height="1518" viewBox="0 0 1151 1518" role="img" aria-label="flow doctor — 17twenty/flow-demo-web">
+<title>flow doctor — 17twenty/flow-demo-web</title>
+<rect width="1151" height="1518" rx="10" fill="#0d1117"/>
+<rect width="1151" height="34" rx="10" fill="#161b22"/>
+<rect y="24" width="1151" height="10" fill="#161b22"/>
+<circle cx="20" cy="17" r="6" fill="#ff5f57"/><circle cx="40" cy="17" r="6" fill="#febc2e"/><circle cx="60" cy="17" r="6" fill="#28c840"/>
+<text x="575.5" y="22" text-anchor="middle" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">flow doctor — 17twenty/flow-demo-web</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e6edf3">
+<text x="20" y="68" xml:space="preserve"><tspan fill="#7ee787">$</tspan> flow doctor</text>
+<text x="20" y="87" xml:space="preserve"></text>
+<text x="20" y="106" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">config</tspan></text>
+<text x="20" y="125" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> config.syntax<tspan fill="#8b949e">  ~/flow-demo-web/.flow.yaml parses</tspan></text>
+<text x="20" y="144" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> config.semantics<tspan fill="#8b949e">  every column, transition and gate the configuration names exists</tspan></text>
+<text x="20" y="163" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> config.secrets<tspan fill="#8b949e">  ~/flow-demo-web/.flow.yaml names where to find its credentials and holds none</tspan></text>
+<text x="20" y="182" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> lock.consistent<tspan fill="#8b949e">  the lock is version 1, with 5 resolved values, 1 observation, 2 attestations and 5 follow-ups</tspan></text>
+<text x="20" y="201" xml:space="preserve">      <tspan fill="#8b949e">- the configuration has changed since the lock was written, so an attestation taken against the whole of it has lapsed</tspan></text>
+<text x="20" y="220" xml:space="preserve"></text>
+<text x="20" y="239" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">local</tspan></text>
+<text x="20" y="258" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> local.git<tspan fill="#8b949e">  this working copy is 17twenty/flow-demo-web</tspan></text>
+<text x="20" y="277" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> local.hook<tspan fill="#8b949e">  the commit-msg hook is at ~/flow-demo-web/.git/hooks/commit-msg</tspan></text>
+<text x="20" y="296" xml:space="preserve"></text>
+<text x="20" y="315" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">auth</tspan></text>
+<text x="20" y="334" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> auth.forge<tspan fill="#8b949e">  the forge credential is accepted by github</tspan></text>
+<text x="20" y="353" xml:space="preserve">      <tspan fill="#8b949e">- repository permissions: push, triage, pull</tspan></text>
+<text x="20" y="372" xml:space="preserve">      <tspan fill="#8b949e">- can act as reader, gate, actor (spec 15 §3.1)</tspan></text>
+<text x="20" y="391" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> auth.tracker<tspan fill="#8b949e">  the tracker credential is accepted by github-projects</tspan></text>
+<text x="20" y="410" xml:space="preserve">      <tspan fill="#8b949e">- read the project 17twenty/projects/6</tspan></text>
+<text x="20" y="429" xml:space="preserve">      <tspan fill="#8b949e">- can act as reader, actor (spec 15 §3.1)</tspan></text>
+<text x="20" y="448" xml:space="preserve"></text>
+<text x="20" y="467" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">forge</tspan></text>
+<text x="20" y="486" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.repo<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="505" xml:space="preserve">      <tspan fill="#8b949e">- 17twenty/flow-demo-web&#x27;s default branch is main</tspan></text>
+<text x="20" y="524" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.protection<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="543" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.required_status<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="562" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.merge_settings<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="581" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.squash_text<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="600" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> forge.files<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="619" xml:space="preserve"></text>
+<text x="20" y="638" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">tracker</tspan></text>
+<text x="20" y="657" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.project<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="676" xml:space="preserve">      <tspan fill="#8b949e">- tracker.project was locked this run</tspan></text>
+<text x="20" y="695" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.status_options<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="714" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.labels<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="733" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.native.changes_requested<tspan fill="#8b949e">  flow cannot verify this, and a human has attested that it is true</tspan></text>
+<text x="20" y="752" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.wip<tspan fill="#8b949e">  the provider cannot be made to do this, so flow enforces the same intent through policy.wip</tspan></text>
+<text x="20" y="771" xml:space="preserve">      <tspan fill="#8b949e">- enforced by policy.wip instead of what the configuration named</tspan></text>
+<text x="20" y="790" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> tracker.expedite<tspan fill="#8b949e">  flow cannot verify this, and a human has attested that it is true</tspan></text>
+<text x="20" y="809" xml:space="preserve"></text>
+<text x="20" y="828" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">deploys</tspan></text>
+<text x="20" y="847" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> deploys.source<tspan fill="#8b949e">  the provider already matches what was asked for</tspan></text>
+<text x="20" y="866" xml:space="preserve"></text>
+<text x="20" y="885" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">live</tspan></text>
+<text x="20" y="904" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.linked 4/4<tspan fill="#8b949e">  all 4 merged pull requests named a ticket</tspan></text>
+<text x="20" y="923" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.gated 4/4<tspan fill="#8b949e">  all 4 merged pull requests carried a flow/policy success</tspan></text>
+<text x="20" y="942" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.conventional 5/5<tspan fill="#8b949e">  all 5 commits on the trunk read as the convention</tspan></text>
+<text x="20" y="961" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.reviewed 0/0<tspan fill="#8b949e">  nothing a machine wrote merged in the window</tspan></text>
+<text x="20" y="980" xml:space="preserve">  <tspan fill="#8b949e">·</tspan> live.trunk.built<tspan fill="#8b949e">  forge.required_checks names nothing the trunk must build</tspan></text>
+<text x="20" y="999" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.current 0/0<tspan fill="#8b949e">  no pull request that passed the gate is behind its base</tspan></text>
+<text x="20" y="1018" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.deploys.recent<tspan fill="#8b949e">  github-pages took db99140 on 2026-10-28</tspan></text>
+<text x="20" y="1037" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.deploys.lag 3/3<tspan fill="#8b949e">  all 3 merged pull requests reached github-pages within 2h</tspan></text>
+<text x="20" y="1056" xml:space="preserve">      <tspan fill="#8b949e">- left out 1 merge no longer on the trunk, which can never reach github-pages</tspan></text>
+<text x="20" y="1075" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.shared_board 0/0<tspan fill="#8b949e">  every ticket on this board is 17twenty/flow-demo-web&#x27;s</tspan></text>
+<text x="20" y="1094" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.done_merged 0/0<tspan fill="#8b949e">  nothing reached Done in the window</tspan></text>
+<text x="20" y="1113" xml:space="preserve">  <tspan fill="#8b949e">·</tspan> live.tickets.done_deployed<tspan fill="#8b949e">  workflow.done_on is merged, so a deployment is verified as lag rather than tracked as status</tspan></text>
+<text x="20" y="1132" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.review_has_pr 0/0<tspan fill="#8b949e">  nothing is in In review</tspan></text>
+<text x="20" y="1151" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.review_stuck 0/0<tspan fill="#8b949e">  nothing in In review has been approved yet</tspan></text>
+<text x="20" y="1170" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.review_stale 0/0<tspan fill="#8b949e">  nothing is in In review</tspan></text>
+<text x="20" y="1189" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.progress_stale 0/0<tspan fill="#8b949e">  nothing is in In progress</tspan></text>
+<text x="20" y="1208" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.ready_dor 0/0<tspan fill="#8b949e">  nothing is in Ready</tspan></text>
+<text x="20" y="1227" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.tickets.blocked_explained 0/0<tspan fill="#8b949e">  nothing on the board is marked blocked</tspan></text>
+<text x="20" y="1246" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.transitions.native.changes_requested 0/0<tspan fill="#8b949e">  nothing in the window needed the tracker to move a ticket on changes_requested</tspan></text>
+<text x="20" y="1265" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.transitions.flow 0/0<tspan fill="#8b949e">  nothing in the window needed flow to move a ticket</tspan></text>
+<text x="20" y="1284" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.prs.closed_issues 0/0<tspan fill="#8b949e">  no merged pull request in the window named an issue this tracker holds</tspan></text>
+<text x="20" y="1303" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.wip 15/15<tspan fill="#8b949e">  all 15 days in the window were inside the limit of 3 on In review and the limit of 2 each in In progress</tspan></text>
+<text x="20" y="1322" xml:space="preserve">      <tspan fill="#8b949e">- every day but today is reconstructed from how long each pull request was open, because no tracker records what a column held last week</tspan></text>
+<text x="20" y="1341" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.flags.cleanup 0/0<tspan fill="#8b949e">  nothing in the window added a feature flag</tspan></text>
+<text x="20" y="1360" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.flags.age 0/0<tspan fill="#8b949e">  no feature flag flow has a ticket for has stood longer than 90d</tspan></text>
+<text x="20" y="1379" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> live.agents.rework 0/0<tspan fill="#8b949e">  nothing a machine wrote merged since 2026-10-14</tspan></text>
+<text x="20" y="1398" xml:space="preserve"></text>
+<text x="20" y="1417" xml:space="preserve"><tspan font-weight="700" fill="#e6edf3">followups</tspan></text>
+<text x="20" y="1436" xml:space="preserve">  <tspan fill="#3fb950">✓</tspan> followups.health<tspan fill="#8b949e">  nothing is waiting on anybody, and 1 follow-up open</tspan></text>
+<text x="20" y="1455" xml:space="preserve">      <tspan fill="#8b949e">- deploys.source: #10</tspan></text>
+<text x="20" y="1474" xml:space="preserve"></text>
+<text x="20" y="1493" xml:space="preserve"><tspan font-weight="700">0 actions for you · 0 waiting on others · 0 attestations due · exit 0</tspan></text>
+</g>
+</svg>
