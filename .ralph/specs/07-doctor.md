@@ -1247,3 +1247,14 @@ checks only via `--check 'config.*,lock.*,forge.*,tracker.*'`); daily scheduled
   completed when the work is not done is still reopened, and a person
   reopening a declined ticket makes it outstanding again. The decision ends
   up where it is reviewed, without flow overruling the person who made it.
+- **A check that was not planned because a value is still to find out says
+  so (#263).** Scenario A05 has doctor plan nothing while a placeholder is
+  unanswered, so the one question is not buried under twenty failures. The
+  checks reading the plan then found nothing in it and reported "this
+  configuration does not ask for it" — about protection, required status
+  and files the configuration plainly asks for. The environment now carries
+  why there is no plan, and those checks are `blocked`, *not asked:
+  tracker.project is still to find out*, as the tracker's own items already
+  were. `forge.repo` passes on reachability, which is its own question,
+  rather than holding every forge check behind a question that is the
+  tracker's.
