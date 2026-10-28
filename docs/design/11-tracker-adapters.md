@@ -708,3 +708,9 @@ reopen, pagination, error mapping.
   (issue #184).** A missing board is the project check's finding,
   and every other tracker check waits on that one. A second complaint
   underneath it is noise.
+- **§3 Jira and Linear name the board their credential cannot see
+  (issue #292).** Jira's 404 on `mypermissions?projectKey=` and
+  Linear's empty `teams(filter: {key})` each mean "gone or not shared",
+  which is what `Permissions.Unreachable` holds, so `auth.tracker`
+  warns with steps instead of burying it in evidence. Neither probe
+  can reach that answer without a project or team configured.
